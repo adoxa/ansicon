@@ -1,0 +1,41 @@
+/*
+  ansi.rc - Version resource for ANSI{32,64}.dll.
+
+  Jason Hood, 11 November, 2009.
+*/
+
+#include <winver.h>
+
+#ifdef _WIN64
+# define BITS "64"
+#else
+# define BITS "32"
+#endif
+
+1 VERSIONINFO
+FILEVERSION	1,3,0,0
+PRODUCTVERSION	1,3,0,0
+FILEOS		VOS_NT
+FILETYPE	VFT_DLL
+{
+  BLOCK "StringFileInfo"
+  {
+    BLOCK "040904B0"
+    {
+      VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
+      VALUE "CompanyName",      "Jason Hood"
+      VALUE "FileDescription",  "ANSI Console"
+      VALUE "FileVersion",      "1.30"
+      VALUE "InternalName",     "ANSI" BITS
+      VALUE "LegalCopyright",   "Freeware"
+      VALUE "OriginalFilename", "ANSI" BITS ".dll"
+      VALUE "ProductName",      "ANSICON"
+      VALUE "ProductVersion",   "1.30"
+    }
+  }
+
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x0409, 0x04B0
+  }
+}
