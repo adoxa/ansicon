@@ -65,8 +65,8 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
     si.cb = sizeof(si);
     // ...ANSI32.dll\0
     CopyMemory( code, dll, len - 7*sizeof(WCHAR) );
-    // ...ANSI-LLA.exe\0
-    CopyMemory( code + len - 7*sizeof(WCHAR), L"-LLA.exe", 9*sizeof(WCHAR) );
+    // ...ANSI-LLW.exe\0
+    CopyMemory( code + len - 7*sizeof(WCHAR), L"-LLW.exe", 9*sizeof(WCHAR) );
     if (!CreateProcessW( (LPCWSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
 			 &si, &pi ))
       return;
