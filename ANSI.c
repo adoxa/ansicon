@@ -1154,11 +1154,18 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
   DWORD Mode;
   if (GetConsoleMode( hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
+    TCHAR name[MAX_PATH];
+    DWORD len;
+    BOOL  rc;
     DEBUGSTR( TEXT("\\WriteFile: %lu \"%.*hs\""), nNumberOfBytesToWrite, nNumberOfBytesToWrite, lpBuffer );
-    return MyWriteConsoleA( hFile, lpBuffer,
-			    nNumberOfBytesToWrite,
-			    lpNumberOfBytesWritten,
-			    lpOverlapped );
+    rc = MyWriteConsoleA( hFile, lpBuffer,
+			  nNumberOfBytesToWrite,
+			  lpNumberOfBytesWritten,
+			  lpOverlapped );
+    len = GetModuleFileName( NULL, name, lenof(name) );
+    if (len >= 8 && lstrcmpi( name + len - 8, TEXT("ruby.exe") ) == 0)
+      *lpNumberOfBytesWritten = nNumberOfBytesToWrite;
+    return rc;
   }
   else	    // here, WriteFile is the old function (this module is not hooked)
   {
