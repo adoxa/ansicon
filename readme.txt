@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2010 Jason Hood
 
-			    Version 1.30.  Freeware
+			    Version 1.31.  Freeware
 
 
     ===========
@@ -39,6 +39,7 @@
     ---------
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
+    Delete ANSI-LLA.dll, it has been replaced with ANSI-LLW.dll.
 
 
     =====
@@ -120,6 +121,10 @@
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.31 - 13 November, 2010:
+    - fixed multibyte support (no extra junk with UTF-8 files);
+    * fixed potential problem if install path uses Unicode.
 
     1.30 - 7 September, 2010:
     + x64 version.
@@ -233,4 +238,4 @@
 
 
     ==============================
-    Jason Hood, 7 September, 2010.
+    Jason Hood, 13 November, 2010.

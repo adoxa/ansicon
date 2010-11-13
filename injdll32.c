@@ -31,23 +31,24 @@ TWow64SetThreadContext Wow64SetThreadContext;
 #endif
 
 
-DWORD LLA;
+DWORD LLW;
 
 
-void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCSTR dll )
+void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 {
   CONTEXT context;
   DWORD   len;
   LPVOID  mem;
   DWORD   mem32;
   #define CODESIZE 20
-  BYTE	  code[CODESIZE+MAX_PATH];
+  BYTE	  code[CODESIZE+MAX_PATH*sizeof(WCHAR)];
 
-  len = lstrlenA( dll ) + 1;
+  len = lstrlenW( dll ) + 1;
   if (len > MAX_PATH)
     return;
+  len *= sizeof(WCHAR);
 
-  if (LLA == 0)
+  if (LLW == 0)
   {
 #ifdef _WIN64
     extern HMODULE hKernel;
@@ -62,18 +63,19 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCSTR dll )
     PROCESS_INFORMATION pi;
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
-    CopyMemory( code, dll, len - 7 );			// ...ANSI32.dll\0
-    CopyMemory( code + len - 7, "-LLA.exe", 9 );        // ...ANSI-LLA.exe\0
+    // ...ANSI32.dll\0
+    CopyMemory( code, dll, len - 7*sizeof(WCHAR) );
+    // ...ANSI-LLA.exe\0
+    CopyMemory( code + len - 7*sizeof(WCHAR), L"-LLA.exe", 9*sizeof(WCHAR) );
     if (!CreateProcess( (char*)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
 			&si, &pi ))
       return;
     WaitForSingleObject( pi.hProcess, INFINITE );
-    GetExitCodeProcess( pi.hProcess, &LLA );
+    GetExitCodeProcess( pi.hProcess, &LLW );
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 #else
-    LLA = (DWORD)GetProcAddress( GetModuleHandleA( "kernel32.dll" ),
-						   "LoadLibraryA" );
+    LLW = (DWORD)LoadLibraryW;
 #endif
   }
 
@@ -97,10 +99,10 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCSTR dll )
   *ip.pL++ = context.Eip;
   *ip.pB++ = 0x9c;			// pushf
   *ip.pB++ = 0x60;			// pusha
-  *ip.pB++ = 0x68;			// push  "path\to\ANSI32.dll"
+  *ip.pB++ = 0x68;			// push  L"path\to\ANSI32.dll"
   *ip.pL++ = mem32 + CODESIZE;
-  *ip.pB++ = 0xe8;			// call  LoadLibraryA
-  *ip.pL++ = LLA - (mem32 + (ip.pB+4 - code));
+  *ip.pB++ = 0xe8;			// call  LoadLibraryW
+  *ip.pL++ = LLW - (mem32 + (ip.pB+4 - code));
   *ip.pB++ = 0x61;			// popa
   *ip.pB++ = 0x9d;			// popf
   *ip.pB++ = 0xc3;			// ret

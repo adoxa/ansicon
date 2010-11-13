@@ -37,10 +37,13 @@
 
   v1.30, 3 August to 7 September, 2010:
     x64 support.
+
+  v1.31, 13 November, 2010:
+    use LLW to fix potential Unicode path problems.
 */
 
-#define PVERS "1.30"
-#define PDATE "7 September, 2010"
+#define PVERS "1.31"
+#define PDATE "13 November, 2010"
 
 #define UNICODE
 #define _UNICODE
@@ -57,6 +60,8 @@
 #include <io.h>
 #include "injdll.h"
 
+#define lenof(str) (sizeof(str)/sizeof(TCHAR))
+
 #ifdef __MINGW32__
 int _CRT_glob = 0;
 #endif
@@ -64,10 +69,10 @@ int _CRT_glob = 0;
 
 #ifdef _WIN64
 # define InjectDLL InjectDLL64
-# define BITS	   "64"
+# define BITS	   L"64"
 #else
 # define InjectDLL InjectDLL32
-# define BITS	   "32"
+# define BITS	   L"32"
 #endif
 
 
@@ -91,12 +96,12 @@ BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi );
 void Inject( LPPROCESS_INFORMATION ppi )
 {
   DWORD len;
-  CHAR	dll[MAX_PATH];
+  WCHAR dll[MAX_PATH];
 
-  len = GetModuleFileNameA( NULL, dll, sizeof(dll) );
+  len = GetModuleFileName( NULL, dll, lenof(dll) );
   while (dll[len-1] != '\\')
     --len;
-  lstrcpyA( dll + len, "ANSI" BITS ".dll" );
+  lstrcpy( dll + len, L"ANSI" BITS L".dll" );
 
   InjectDLL( ppi, dll );
 }

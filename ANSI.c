@@ -53,6 +53,9 @@
 
   v1.30, 3 August to 7 September, 2010:
     x64 support.
+
+  v1.31, 13 November, 2010:
+    fix multibyte conversion problems.
 */
 
 #define UNICODE
@@ -934,10 +937,10 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 
   if (con)
   {
-    CHAR  dll[MAX_PATH];
+    WCHAR dll[MAX_PATH];
 #ifdef _WIN64
-    DWORD len = GetModuleFileNameA( GetModuleHandleA( "ANSI64.dll" ),
-				    dll, sizeof(dll) );
+    DWORD len = GetModuleFileName( GetModuleHandleA( "ANSI64.dll" ),
+				   dll, lenof(dll) );
     if (x86)
     {
       dll[len-6] = '3';
@@ -949,7 +952,7 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
       InjectDLL64( pinfo, dll );
     }
 #else
-    GetModuleFileNameA( GetModuleHandleA( "ANSI32.dll" ), dll, sizeof(dll) );
+    GetModuleFileName( GetModuleHandleA( "ANSI32.dll" ), dll, lenof(dll) );
     InjectDLL32( pinfo, dll );
 #endif
   }
@@ -1091,28 +1094,26 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
 			DWORD nNumberOfCharsToWrite,
 			LPDWORD lpNumberOfCharsWritten, LPVOID lpReserved )
 {
-  DWORD Mode;
-  #define BUF_SIZE 4096
-  WCHAR buf[BUF_SIZE];
-  DWORD len;
-  BOOL	rc = TRUE;
+  DWORD  Mode;
+  LPWSTR buf;
+  DWORD  len;
+  BOOL	 rc = TRUE;
 
   // if we write in a console buffer with processed output
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
     UINT cp = GetConsoleOutputCP();
     DEBUGSTR( TEXT("\\WriteConsoleA: %lu \"%.*hs\""), nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
-    *lpNumberOfCharsWritten = 0;
-    while (nNumberOfCharsToWrite)
+    len = MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, NULL, 0 );
+    buf = malloc( len * sizeof(WCHAR) );
+    if (buf == NULL)
     {
-      len = (nNumberOfCharsToWrite > BUF_SIZE) ? BUF_SIZE
-					       : nNumberOfCharsToWrite;
-      MultiByteToWideChar( cp, 0, lpBuffer, len, buf, len );
-      rc = ParseAndPrintString( hCon, buf, len, &Mode );
-      *lpNumberOfCharsWritten += Mode;
-      lpBuffer += len;
-      nNumberOfCharsToWrite -= len;
+      *lpNumberOfCharsWritten = 0;
+      return (nNumberOfCharsToWrite == 0);
     }
+    MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, buf, len );
+    rc = ParseAndPrintString( hCon, buf, len, lpNumberOfCharsWritten );
+    free( buf );
     return rc;
   }
   else

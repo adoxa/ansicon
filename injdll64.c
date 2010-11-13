@@ -18,16 +18,16 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCSTR dll )
+void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 {
   CONTEXT context;
   DWORD   len;
   LPVOID  mem;
-  DWORD64 LLA;
+  DWORD64 LLW;
   #define CODESIZE 92
   static BYTE code[CODESIZE+MAX_PATH] = {
 	0,0,0,0,0,0,0,0,	   // original rip
-	0,0,0,0,0,0,0,0,	   // LoadLibraryA
+	0,0,0,0,0,0,0,0,	   // LoadLibraryW
 	0x9C,			   // pushfq
 	0x50,			   // push  rax
 	0x51,			   // push  rcx
@@ -45,8 +45,8 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCSTR dll )
 	0x41,0x56,		   // push  r14
 	0x41,0x57,		   // push  r15
 	0x48,0x83,0xEC,0x28,	   // sub   rsp, 40
-	0x48,0x8D,0x0D,41,0,0,0,   // lea   ecx, "path\to\ANSI.dll"
-	0xFF,0x15,-49,-1,-1,-1,    // call  LoadLibraryA
+	0x48,0x8D,0x0D,41,0,0,0,   // lea   ecx, L"path\to\ANSI.dll"
+	0xFF,0x15,-49,-1,-1,-1,    // call  LoadLibraryW
 	0x48,0x83,0xC4,0x28,	   // add   rsp, 40
 	0x41,0x5F,		   // pop   r15
 	0x41,0x5E,		   // pop   r14
@@ -65,12 +65,13 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCSTR dll )
 	0x58,			   // pop   rax
 	0x9D,			   // popfq
 	0xFF,0x25,-91,-1,-1,-1,    // jmp   original Rip
-	0,			   // dword alignment for LLA, fwiw
+	0,			   // dword alignment for LLW, fwiw
   };
 
-  len = lstrlenA( dll ) + 1;
+  len = lstrlenW( dll ) + 1;
   if (len > MAX_PATH)
     return;
+  len *= sizeof(WCHAR);
   CopyMemory( code + CODESIZE, dll, len );
   len += CODESIZE;
 
@@ -78,8 +79,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCSTR dll )
   GetThreadContext( ppi->hThread, &context );
   mem = VirtualAllocEx( ppi->hProcess, NULL, len, MEM_COMMIT,
 			PAGE_EXECUTE_READWRITE );
-  LLA = (DWORD64)GetProcAddress( GetModuleHandleA( "kernel32.dll" ),
-						   "LoadLibraryA" );
+  LLW = (DWORD64)LoadLibraryW;
 
   union
   {
@@ -89,7 +89,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCSTR dll )
   ip.pB = code;
 
   *ip.pL++ = context.Rip;
-  *ip.pL++ = LLA;
+  *ip.pL++ = LLW;
 
   WriteProcessMemory( ppi->hProcess, mem, code, len, NULL );
   FlushInstructionCache( ppi->hProcess, mem, len );
