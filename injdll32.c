@@ -59,7 +59,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
     if (Wow64GetThreadContext == 0)
       return;
 
-    STARTUPINFO si;
+    STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
@@ -67,8 +67,8 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
     CopyMemory( code, dll, len - 7*sizeof(WCHAR) );
     // ...ANSI-LLA.exe\0
     CopyMemory( code + len - 7*sizeof(WCHAR), L"-LLA.exe", 9*sizeof(WCHAR) );
-    if (!CreateProcess( (char*)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
-			&si, &pi ))
+    if (!CreateProcessW( (LPCWSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
+			 &si, &pi ))
       return;
     WaitForSingleObject( pi.hProcess, INFINITE );
     GetExitCodeProcess( pi.hProcess, &LLW );
