@@ -18,10 +18,12 @@
 #include "injdll.h"
 
 #ifdef _WIN64
+#if defined(__MINGW64__) || (defined(_MSC_VER) && _MSC_VER <= 1400)
 #include "wow64.h"
 
 TWow64GetThreadContext Wow64GetThreadContext;
 TWow64SetThreadContext Wow64SetThreadContext;
+#endif
 
 #define CONTEXT 	 WOW64_CONTEXT
 #undef	CONTEXT_CONTROL
@@ -34,23 +36,29 @@ TWow64SetThreadContext Wow64SetThreadContext;
 DWORD LLW;
 
 
-void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
+void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 {
   CONTEXT context;
   DWORD   len;
   LPVOID  mem;
   DWORD   mem32;
   #define CODESIZE 20
-  BYTE	  code[CODESIZE+MAX_PATH*sizeof(WCHAR)];
+  BYTE	  code[CODESIZE+MAX_PATH*sizeof(TCHAR)];
+  union
+  {
+    PBYTE  pB;
+    PDWORD pL;
+  } ip;
 
-  len = lstrlenW( dll ) + 1;
+  len = lstrlen( dll ) + 1;
   if (len > MAX_PATH)
     return;
-  len *= sizeof(WCHAR);
+  len *= sizeof(TCHAR);
 
   if (LLW == 0)
   {
 #ifdef _WIN64
+#ifdef __MINGW64__
     extern HMODULE hKernel;
     #define GETPROC( proc ) proc = (T##proc)GetProcAddress( hKernel, #proc )
     GETPROC( Wow64GetThreadContext );
@@ -58,24 +66,25 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
     // Assume if one is defined, so is the other.
     if (Wow64GetThreadContext == 0)
       return;
+#endif
 
-    STARTUPINFOW si;
+    STARTUPINFO si;
     PROCESS_INFORMATION pi;
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
     // ...ANSI32.dll\0
-    CopyMemory( code, dll, len - 7*sizeof(WCHAR) );
+    CopyMemory( code, dll, len - 7*sizeof(TCHAR) );
     // ...ANSI-LLW.exe\0
-    CopyMemory( code + len - 7*sizeof(WCHAR), L"-LLW.exe", 9*sizeof(WCHAR) );
-    if (!CreateProcessW( (LPCWSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
-			 &si, &pi ))
+    CopyMemory( code + len - 7*sizeof(TCHAR), L"-LLW.exe", 9*sizeof(TCHAR) );
+    if (!CreateProcess( (LPCTSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
+			&si, &pi ))
       return;
     WaitForSingleObject( pi.hProcess, INFINITE );
     GetExitCodeProcess( pi.hProcess, &LLW );
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 #else
-    LLW = (DWORD)LoadLibraryW;
+    LLW = (DWORD)LoadLibrary;
 #endif
   }
 
@@ -88,11 +97,6 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 			PAGE_EXECUTE_READWRITE );
   mem32 = (DWORD)(DWORD_PTR)mem;
 
-  union
-  {
-    PBYTE  pB;
-    PDWORD pL;
-  } ip;
   ip.pB = code;
 
   *ip.pB++ = 0x68;			// push  eip
@@ -102,7 +106,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
   *ip.pB++ = 0x68;			// push  L"path\to\ANSI32.dll"
   *ip.pL++ = mem32 + CODESIZE;
   *ip.pB++ = 0xe8;			// call  LoadLibraryW
-  *ip.pL++ = LLW - (mem32 + (ip.pB+4 - code));
+  *ip.pL++ = LLW - (mem32 + (DWORD)(ip.pB+4 - code));
   *ip.pB++ = 0x61;			// popa
   *ip.pB++ = 0x9d;			// popf
   *ip.pB++ = 0xc3;			// ret

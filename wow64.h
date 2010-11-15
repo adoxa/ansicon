@@ -82,7 +82,7 @@ typedef struct _WOW64_CONTEXT {
 typedef WOW64_CONTEXT *PWOW64_CONTEXT;
 
 
-typedef BOOL WINAPI (*TWow64GetThreadContext)( HANDLE hThread, PWOW64_CONTEXT lpContext );
-typedef BOOL WINAPI (*TWow64SetThreadContext)( HANDLE hThread, CONST WOW64_CONTEXT *lpContext );
+typedef BOOL (WINAPI *TWow64GetThreadContext)( HANDLE hThread, PWOW64_CONTEXT lpContext );
+typedef BOOL (WINAPI *TWow64SetThreadContext)( HANDLE hThread, CONST WOW64_CONTEXT *lpContext );
 
 #endif

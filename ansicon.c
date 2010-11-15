@@ -38,20 +38,22 @@
   v1.30, 3 August to 7 September, 2010:
     x64 support.
 
-  v1.31, 13 November, 2010:
-    use LLW to fix potential Unicode path problems.
+  v1.31, 13 to 15 November, 2010:
+    use LLW to fix potential Unicode path problems;
+    VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
+    explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
 */
 
-#define PVERS "1.31"
-#define PDATE "13 November, 2010"
+#define PVERS L"1.31"
+#define PDATE L"15 November, 2010"
 
-#define UNICODE
-#define _UNICODE
+#ifndef UNICODE
+# define UNICODE
+#endif
 
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0500	// MinGW wants this defined for OpenThread
 #include <windows.h>
-#include <tchar.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <shellapi.h>
@@ -60,7 +62,7 @@
 #include <io.h>
 #include "injdll.h"
 
-#define lenof(str) (sizeof(str)/sizeof(TCHAR))
+#define lenof(array) (sizeof(array)/sizeof(*(array)))
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
@@ -76,8 +78,8 @@ int _CRT_glob = 0;
 #endif
 
 
-#define CMDKEY	TEXT("Software\\Microsoft\\Command Processor")
-#define AUTORUN TEXT("AutoRun")
+#define CMDKEY	L"Software\\Microsoft\\Command Processor"
+#define AUTORUN L"AutoRun"
 
 
 void help( void );
@@ -96,7 +98,7 @@ BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi );
 void Inject( LPPROCESS_INFORMATION ppi )
 {
   DWORD len;
-  WCHAR dll[MAX_PATH];
+  TCHAR dll[MAX_PATH];
 
   len = GetModuleFileName( NULL, dll, lenof(dll) );
   while (dll[len-1] != '\\')
@@ -112,9 +114,9 @@ static CONSOLE_SCREEN_BUFFER_INFO csbi;
 
 void get_original_attr( void )
 {
-  hConOut = CreateFile( TEXT("CONOUT$"), GENERIC_READ | GENERIC_WRITE,
-					 FILE_SHARE_READ | FILE_SHARE_WRITE,
-					 NULL, OPEN_EXISTING, 0, 0 );
+  hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				    FILE_SHARE_READ | FILE_SHARE_WRITE,
+				    NULL, OPEN_EXISTING, 0, 0 );
   GetConsoleScreenBufferInfo( hConOut, &csbi );
 }
 
@@ -145,27 +147,27 @@ int main( void )
   int	  rc = 0;
 
   int argc;
-  LPWSTR* argv = CommandLineToArgvW( GetCommandLineW(), &argc );
+  LPWSTR* argv = CommandLineToArgvW( GetCommandLine(), &argc );
 
   if (argc > 1)
   {
-    if (lstrcmp( argv[1], TEXT("--help") ) == 0 ||
+    if (lstrcmp( argv[1], L"--help" ) == 0 ||
 	(argv[1][0] == '-' && (argv[1][1] == '?' || argv[1][1] == 'h')) ||
 	(argv[1][0] == '/' && argv[1][1] == '?'))
     {
       help();
       return rc;
     }
-    if (lstrcmp( argv[1], TEXT("--version") ) == 0)
+    if (lstrcmp( argv[1], L"--version" ) == 0)
     {
-      _putts( TEXT("ANSICON (" BITS "-bit) version " PVERS " (" PDATE ").") );
+      _putws( L"ANSICON (" BITS L"-bit) version " PVERS L" (" PDATE L")." );
       return rc;
     }
   }
 
   option = (argc > 1 && argv[1][0] == '-');
-  if (option && (_totlower( argv[1][1] ) == 'i' ||
-		 _totlower( argv[1][1] ) == 'u'))
+  if (option && (towlower( argv[1][1] ) == 'i' ||
+		 towlower( argv[1][1] ) == 'u'))
   {
     process_autorun( argv[1][1] );
     return rc;
@@ -177,15 +179,15 @@ int main( void )
   if (option && argv[1][1] == 'm')
   {
     WORD attr = 7;
-    if (_istxdigit( argv[1][2] ))
+    if (iswxdigit( argv[1][2] ))
     {
-      attr = _istdigit( argv[1][2] ) ? argv[1][2] - '0'
-				     : (argv[1][2] | 0x20) - 'a' + 10;
-      if (_istxdigit( argv[1][3]))
+      attr = iswdigit( argv[1][2] ) ? argv[1][2] - '0'
+				    : (argv[1][2] | 0x20) - 'a' + 10;
+      if (iswxdigit( argv[1][3]))
       {
 	attr <<= 4;
-	attr |= _istdigit( argv[1][3] ) ? argv[1][3] - '0'
-					: (argv[1][3] | 0x20) - 'a' + 10;
+	attr |= iswdigit( argv[1][3] ) ? argv[1][3] - '0'
+				       : (argv[1][3] | 0x20) - 'a' + 10;
       }
     }
     SetConsoleTextAttribute( hConOut, attr );
@@ -196,7 +198,7 @@ int main( void )
     option = (argc > 1 && argv[1][0] == '-');
   }
 
-  installed = (GetEnvironmentVariable( TEXT("ANSICON"), NULL, 0 ) != 0);
+  installed = (GetEnvironmentVariable( L"ANSICON", NULL, 0 ) != 0);
 
   if (option && argv[1][1] == 'p')
   {
@@ -215,7 +217,7 @@ int main( void )
     }
     else
     {
-      _putts( TEXT("ANSICON: could not obtain the parent process.") );
+      _putws( L"ANSICON: could not obtain the parent process." );
       rc = 1;
     }
   }
@@ -223,7 +225,7 @@ int main( void )
   {
     ansi = 0;
     if (!installed)
-      ansi = LoadLibrary( TEXT("ANSI" BITS ".dll") );
+      ansi = LoadLibrary( L"ANSI" BITS L".dll" );
 
     if (option && (argv[1][1] == 't' || argv[1][1] == 'T'))
     {
@@ -236,10 +238,10 @@ int main( void )
       for (; argc > 2; ++argv, --argc)
       {
 	if (title)
-	  _tprintf( TEXT("==> %s <==\n"), argv[2] );
+	  wprintf( L"==> %s <==\n", argv[2] );
 	display( argv[2], title );
 	if (title)
-	  _puttchar( '\n' );
+	  putwchar( '\n' );
       }
     }
     else
@@ -251,21 +253,21 @@ int main( void )
 
       if (cmd[0] == '-' && (cmd[1] == 'e' || cmd[1] == 'E'))
       {
-	_fputts( cmd + 3, stdout );
+	fputws( cmd + 3, stdout );
 	if (cmd[1] == 'e')
-	  _puttchar( '\n' );
+	  putwchar( '\n' );
       }
-      else if (!isatty( 0 ) && *cmd == '\0')
+      else if (!_isatty( 0 ) && *cmd == '\0')
       {
-	display( TEXT("-"), FALSE );
+	display( L"-", FALSE );
       }
       else
       {
 	if (*cmd == '\0')
 	{
-	  cmd = _tgetenv( TEXT("ComSpec") );
+	  cmd = _wgetenv( L"ComSpec" );
 	  if (cmd == NULL)
-	    cmd = TEXT("cmd");
+	    cmd = L"cmd";
 	}
 
 	ZeroMemory( &si, sizeof(si) );
@@ -278,7 +280,7 @@ int main( void )
 	else
 	{
 	  *skip_arg( cmd ) = '\0';
-	  _tprintf( TEXT("ANSICON: '%s' could not be executed.\n"), cmd );
+	  wprintf( L"ANSICON: '%s' could not be executed.\n", cmd );
 	  rc = 1;
 	}
       }
@@ -300,8 +302,8 @@ void print_error( LPCTSTR name, BOOL title )
   FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
 		 NULL, GetLastError(), 0, (LPTSTR)(LPVOID)&errmsg, 0, NULL );
   if (!title)
-    _tprintf( TEXT("ANSICON: %s: "), name );
-  _fputts( errmsg, stdout );
+    wprintf( L"ANSICON: %s: ", name );
+  fputws( errmsg, stdout );
   LocalFree( errmsg );
 }
 
@@ -309,26 +311,28 @@ void print_error( LPCTSTR name, BOOL title )
 // Display a file.
 void display( LPCTSTR name, BOOL title )
 {
+  HANDLE file;
+  int	 c;
+  LARGE_INTEGER size, offset;
+
   // Handle the pipe differently.
   if (*name == '-' && name[1] == '\0')
   {
     if (title)
-      _puttchar( '\n' );
-    int c;
+      putwchar( '\n' );
     while ((c = getchar()) != EOF)
       putchar( c );
     return;
   }
 
-  HANDLE file = CreateFile( name, GENERIC_READ, FILE_SHARE_READ, NULL,
-			    OPEN_EXISTING, 0, NULL );
+  file = CreateFile( name, GENERIC_READ, FILE_SHARE_READ, NULL,
+		     OPEN_EXISTING, 0, NULL );
   if (file == INVALID_HANDLE_VALUE)
   {
     print_error( name, title );
     return;
   }
 
-  LARGE_INTEGER size;
   GetFileSizeEx( file, &size );
   if (size.QuadPart != 0)
   {
@@ -336,8 +340,7 @@ void display( LPCTSTR name, BOOL title )
     if (map)
     {
       if (title)
-	_puttchar( '\n' );
-      LARGE_INTEGER offset;
+	putwchar( '\n' );
       offset.QuadPart = 0;
       do
       {
@@ -378,11 +381,11 @@ void process_autorun( TCHAR cmd )
   len = GetModuleFileName( NULL, ansicon+2, MAX_PATH );
   ansicon[0] = '&';
   ansicon[1] = ansicon[2+len] = '"';
-  _tcscpy( ansicon + 3+len, L" -p" );
+  wcscpy( ansicon + 3+len, L" -p" );
   len += 6;
 
-  inst = (_totlower( cmd ) == 'i');
-  RegCreateKeyEx( (_istlower( cmd )) ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
+  inst = (towlower( cmd ) == 'i');
+  RegCreateKeyEx( (iswlower( cmd )) ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
 		  CMDKEY, 0, NULL,
 		  REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL,
 		  &cmdkey, &exist );
@@ -394,12 +397,12 @@ void process_autorun( TCHAR cmd )
   {
     exist += sizeof(TCHAR);
     RegQueryValueEx( cmdkey, AUTORUN, NULL, &type, (PBYTE)autorun, &exist );
-    ansirun = _tcsstr( autorun, ansicon+1 );
+    ansirun = wcsstr( autorun, ansicon+1 );
     if (inst)
     {
       if (!ansirun)
       {
-	_tcscpy( (LPTSTR)((PBYTE)autorun + exist - sizeof(TCHAR)), ansicon );
+	wcscpy( (LPTSTR)((PBYTE)autorun + exist - sizeof(TCHAR)), ansicon );
 	RegSetValueEx( cmdkey, AUTORUN, 0, type, (PBYTE)autorun,
 		       exist + len*sizeof(TCHAR) );
       }
@@ -515,32 +518,32 @@ LPTSTR skip_arg( LPTSTR cmd )
 
 void help( void )
 {
-  _putts( TEXT(
-"ANSICON by Jason Hood <jadoxa@yahoo.com.au>.\n"
-"Version " PVERS " (" PDATE ").  Freeware.\n"
-"http://ansicon.adoxa.cjb.net/\n"
-"\n"
+  _putws(
+L"ANSICON by Jason Hood <jadoxa@yahoo.com.au>.\n"
+L"Version " PVERS L" (" PDATE L").  Freeware.\n"
+L"http://ansicon.adoxa.cjb.net/\n"
+L"\n"
 #ifdef _WIN64
-"Process ANSI escape sequences in Windows console programs.\n"
+L"Process ANSI escape sequences in Windows console programs.\n"
 #else
-"Process ANSI escape sequences in Win32 console programs.\n"
+L"Process ANSI escape sequences in Win32 console programs.\n"
 #endif
-"\n"
-"ansicon -i|I | -u|U\n"
-"ansicon [-m[<attr>]] [-p | -e|E string | -t|T [file(s)] | program [args]]\n"
-"\n"
-"  -i\t\tinstall - add ANSICON to the AutoRun entry\n"
-"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
-"  -I -U\t\tuse local machine instead of current user\n"
-"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"
-"  -p\t\thook into the parent process\n"
-"  -e\t\techo string\n"
-"  -E\t\techo string, don't append newline\n"
-"  -t\t\tdisplay files (\"-\" for stdin), combined as a single stream\n"
-"  -T\t\tdisplay files, name first, blank line before and after\n"
-"  program\trun the specified program\n"
-"  nothing\trun a new command processor, or display stdin if redirected\n"
-"\n"
-"<attr> is one or two hexadecimal digits; please use \"COLOR /?\" for details."
-	      ) );
+L"\n"
+L"ansicon -i|I | -u|U\n"
+L"ansicon [-m[<attr>]] [-p | -e|E string | -t|T [file(s)] | program [args]]\n"
+L"\n"
+L"  -i\t\tinstall - add ANSICON to the AutoRun entry\n"
+L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
+L"  -I -U\t\tuse local machine instead of current user\n"
+L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"
+L"  -p\t\thook into the parent process\n"
+L"  -e\t\techo string\n"
+L"  -E\t\techo string, don't append newline\n"
+L"  -t\t\tdisplay files (\"-\" for stdin), combined as a single stream\n"
+L"  -T\t\tdisplay files, name first, blank line before and after\n"
+L"  program\trun the specified program\n"
+L"  nothing\trun a new command processor, or display stdin if redirected\n"
+L"\n"
+L"<attr> is one or two hexadecimal digits; please use \"COLOR /?\" for details."
+	      );
 }

@@ -15,17 +15,21 @@
   I've decided to simply keep the memory.
 */
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "injdll.h"
 
-void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
+void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 {
   CONTEXT context;
   DWORD   len;
   LPVOID  mem;
   DWORD64 LLW;
+  union
+  {
+    PBYTE    pB;
+    PDWORD64 pL;
+  } ip;
   #define CODESIZE 92
-  static BYTE code[CODESIZE+MAX_PATH] = {
+  static BYTE code[CODESIZE+MAX_PATH*sizeof(TCHAR)] = {
 	0,0,0,0,0,0,0,0,	   // original rip
 	0,0,0,0,0,0,0,0,	   // LoadLibraryW
 	0x9C,			   // pushfq
@@ -45,7 +49,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 	0x41,0x56,		   // push  r14
 	0x41,0x57,		   // push  r15
 	0x48,0x83,0xEC,0x28,	   // sub   rsp, 40
-	0x48,0x8D,0x0D,41,0,0,0,   // lea   ecx, L"path\to\ANSI.dll"
+	0x48,0x8D,0x0D,41,0,0,0,   // lea   ecx, L"path\to\ANSI64.dll"
 	0xFF,0x15,-49,-1,-1,-1,    // call  LoadLibraryW
 	0x48,0x83,0xC4,0x28,	   // add   rsp, 40
 	0x41,0x5F,		   // pop   r15
@@ -68,10 +72,10 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 	0,			   // dword alignment for LLW, fwiw
   };
 
-  len = lstrlenW( dll ) + 1;
+  len = lstrlen( dll ) + 1;
   if (len > MAX_PATH)
     return;
-  len *= sizeof(WCHAR);
+  len *= sizeof(TCHAR);
   CopyMemory( code + CODESIZE, dll, len );
   len += CODESIZE;
 
@@ -81,11 +85,6 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCWSTR dll )
 			PAGE_EXECUTE_READWRITE );
   LLW = (DWORD64)LoadLibraryW;
 
-  union
-  {
-    PBYTE    pB;
-    PDWORD64 pL;
-  } ip;
   ip.pB = code;
 
   *ip.pL++ = context.Rip;

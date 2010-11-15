@@ -58,17 +58,19 @@
     fix multibyte conversion problems.
 */
 
-#define UNICODE
-#define _UNICODE
-#include <tchar.h>
+#ifndef UNICODE
+# define UNICODE
+#endif
 
-#define lenof(str) (sizeof(str)/sizeof(TCHAR))
-
-#include <stdio.h>
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <ImageHlp.h>
 #include <tlhelp32.h>
 #include "injdll.h"
+
+#define lenof(array) (sizeof(array)/sizeof(*(array)))
 
 #define isdigit(c) ('0' <= (c) && (c) <= '9')
 
@@ -87,7 +89,7 @@ void DEBUGSTR( LPTSTR szFormat, ... )	// sort of OutputDebugStringf
   TCHAR szBuffer[1024], szEscape[1024];
   va_list pArgList;
   va_start( pArgList, szFormat );
-  _vsntprintf( szBuffer, lenof(szBuffer), szFormat, pArgList );
+  _vsnwprintf( szBuffer, lenof(szBuffer), szFormat, pArgList );
   va_end( pArgList );
 
   szFormat = szBuffer;
@@ -106,10 +108,11 @@ void DEBUGSTR( LPTSTR szFormat, ... )	// sort of OutputDebugStringf
 	  case '\t': *pos++ = 't'; break;
 	  case '\r': *pos++ = 'r'; break;
 	  case '\n': *pos++ = 'n'; break;
-	  case '\e': *pos++ = 'e'; break;
-	  default: pos += _tprintf( pos, TEXT("%.*o"),
+	  case	27 : *pos++ = 'e'; break;
+	  default:
+	    pos += wprintf( pos, L"%.*o",
 			    (szFormat[1] >= '0' && szFormat[1] <= '7') ? 3 : 1,
-				    *szFormat );
+			    *szFormat );
 	}
       }
       else if (*szFormat == '"')
@@ -131,18 +134,24 @@ void DEBUGSTR( LPTSTR szFormat, ... )	// sort of OutputDebugStringf
     szFormat = szEscape;
   }
 #if (MYDEBUG > 1)
+  {
   FILE* file = fopen( tempfile, "a" );
   if (file != NULL)
   {
-    _ftprintf( file, TEXT("%s\n"), szFormat );
+    fwprintf( file, L"%s\n", szFormat );
     fclose( file );
+  }
   }
 #else
   OutputDebugString( szFormat );
 #endif
 }
 #else
+#if defined(_MSC_VER) && _MSC_VER <= 1400
+void DEBUGSTR() { }
+#else
 #define DEBUGSTR(...)
+#endif
 #endif
 
 // ========== Global variables and constants
@@ -223,11 +232,11 @@ WORD foreground;
 WORD background;
 WORD bold;
 WORD underline;
-WORD rvideo	= 0;
-WORD concealed	= 0;
+WORD rvideo;
+WORD concealed;
 
 // saved cursor position
-COORD SavePos = { 0, 0 };
+COORD SavePos;
 
 
 // ========== Hooking API functions
@@ -270,7 +279,7 @@ BOOL HookAPIOneMod(
   pDosHeader = (PIMAGE_DOS_HEADER)hFromModule;
   if (pDosHeader->e_magic != IMAGE_DOS_SIGNATURE)
   {
-    DEBUGSTR( TEXT("error: %s(%d)"), TEXT(__FILE__), __LINE__ );
+    DEBUGSTR( L"error: %S(%d)", __FILE__, __LINE__ );
     return FALSE;
   }
 
@@ -280,7 +289,7 @@ BOOL HookAPIOneMod(
   // One more test to make sure we're looking at a "PE" image
   if (pNTHeader->Signature != IMAGE_NT_SIGNATURE)
   {
-    DEBUGSTR( TEXT("error: %s(%d)"), TEXT(__FILE__), __LINE__ );
+    DEBUGSTR( L"error: %S(%d)", __FILE__, __LINE__ );
     return FALSE;
   }
 
@@ -305,7 +314,7 @@ BOOL HookAPIOneMod(
     PCSTR* lib;
     PSTR pszModName = MakePtr( PSTR, pDosHeader, pImportDesc->Name );
     for (lib = APIs; *lib; ++lib)
-      if (stricmp( pszModName, *lib ) == 0)
+      if (_stricmp( pszModName, *lib ) == 0)
 	break;
     if (*lib == NULL)
       continue;
@@ -335,7 +344,7 @@ BOOL HookAPIOneMod(
 	  DWORD flOldProtect, flNewProtect, flDummy;
 	  MEMORY_BASIC_INFORMATION mbi;
 
-	  DEBUGSTR( TEXT("  %hs"), hook->name );
+	  DEBUGSTR( L"  %S", hook->name );
 	  // Get the current protection attributes.
 	  VirtualQuery( &pThunk->u1.Function, &mbi, sizeof(mbi) );
 	  // Take the access protection flags.
@@ -354,7 +363,7 @@ BOOL HookAPIOneMod(
 				   &pThunk->u1.Function,
 				   &patch, sizeof(patch), NULL ))
 	  {
-	    DEBUGSTR( TEXT("error: %s(%d)"), TEXT(__FILE__), __LINE__ );
+	    DEBUGSTR( L"error: %S(%d)", __FILE__, __LINE__ );
 	    return FALSE;
 	  }
 
@@ -389,7 +398,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
   if (hModuleSnap == INVALID_HANDLE_VALUE)
   {
-    DEBUGSTR( TEXT("error: %s(%d)"), TEXT(__FILE__), __LINE__ );
+    DEBUGSTR( L"error: %S(%d)", __FILE__, __LINE__ );
     return FALSE;
   }
 
@@ -403,7 +412,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
     // We don't hook functions in our own module.
     if (me.hModule != hDllInstance && me.hModule != hKernel)
     {
-      DEBUGSTR( (restore) ? TEXT("Unhooking from %s") : TEXT("Hooking in %s"),
+      DEBUGSTR( (restore) ? L"Unhooking from %s" : L"Hooking in %s",
 		me.szModule );
       // Hook this function in this module.
       if (!HookAPIOneMod( me.hModule, Hooks, restore ))
@@ -448,7 +457,7 @@ void PushBuffer( TCHAR c )
   if (nCharInBuffer >= BUFFER_SIZE)
   {
     FlushBuffer();
-    DEBUGSTR( TEXT("flush") );
+    DEBUGSTR( L"flush" );
   }
 }
 
@@ -918,13 +927,13 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 	      }
 	      else
 	      {
-		DEBUGSTR( TEXT("  Ignoring unsupported machine (%x)"),
+		DEBUGSTR( L"  Ignoring unsupported machine (%x)",
 			  nt_header.FileHeader.Machine );
 	      }
 	    }
 	    else
 	    {
-	      DEBUGSTR( TEXT("  Ignoring non-console subsystem (%u)"),
+	      DEBUGSTR( L"  Ignoring non-console subsystem (%u)",
 			nt_header.OptionalHeader.Subsystem );
 	    }
 	    break;
@@ -990,7 +999,7 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       &pi ))
     return FALSE;
 
-  DEBUGSTR( TEXT("CreateProcessA: \"%hs\", \"%hs\""),
+  DEBUGSTR( L"CreateProcessA: \"%S\", \"%S\"",
 	    (lpApplicationName == NULL) ? "" : lpApplicationName,
 	    (lpCommandLine == NULL) ? "" : lpCommandLine );
   Inject( &pi, lpProcessInformation, dwCreationFlags );
@@ -1024,7 +1033,7 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       &pi ))
     return FALSE;
 
-  DEBUGSTR( TEXT("CreateProcessW: \"%ls\", \"%ls\""),
+  DEBUGSTR( L"CreateProcessW: \"%s\", \"%s\"",
 	    (lpApplicationName == NULL) ? L"" : lpApplicationName,
 	    (lpCommandLine == NULL) ? L"" : lpCommandLine );
   Inject( &pi, lpProcessInformation, dwCreationFlags );
@@ -1038,7 +1047,7 @@ HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
   HMODULE hMod = LoadLibraryA( lpFileName );
   if (hMod && hMod != hKernel)
   {
-    DEBUGSTR( TEXT("Hooking in %hs (LoadLibraryA)"), lpFileName );
+    DEBUGSTR( L"Hooking in %S (LoadLibraryA)", lpFileName );
     HookAPIOneMod( hMod, Hooks, FALSE );
   }
   return hMod;
@@ -1050,7 +1059,7 @@ HMODULE WINAPI MyLoadLibraryW( LPCWSTR lpFileName )
   HMODULE hMod = LoadLibraryW( lpFileName );
   if (hMod && hMod != hKernel)
   {
-    DEBUGSTR( TEXT("Hooking in %ls (LoadLibraryW)"), lpFileName );
+    DEBUGSTR( L"Hooking in %s (LoadLibraryW)", lpFileName );
     HookAPIOneMod( hMod, Hooks, FALSE );
   }
   return hMod;
@@ -1063,7 +1072,7 @@ HMODULE WINAPI MyLoadLibraryExA( LPCSTR lpFileName, HANDLE hFile,
   HMODULE hMod = LoadLibraryExA( lpFileName, hFile, dwFlags );
   if (hMod && hMod != hKernel && !(dwFlags & LOAD_LIBRARY_AS_DATAFILE))
   {
-    DEBUGSTR( TEXT("Hooking in %hs (LoadLibraryExA)"), lpFileName );
+    DEBUGSTR( L"Hooking in %S (LoadLibraryExA)", lpFileName );
     HookAPIOneMod( hMod, Hooks, FALSE );
   }
   return hMod;
@@ -1076,7 +1085,7 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
   HMODULE hMod = LoadLibraryExW( lpFileName, hFile, dwFlags );
   if (hMod && hMod != hKernel && !(dwFlags & LOAD_LIBRARY_AS_DATAFILE))
   {
-    DEBUGSTR( TEXT("Hooking in %ls (LoadLibraryExW)"), lpFileName );
+    DEBUGSTR( L"Hooking in %s (LoadLibraryExW)", lpFileName );
     HookAPIOneMod( hMod, Hooks, FALSE );
   }
   return hMod;
@@ -1103,7 +1112,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
     UINT cp = GetConsoleOutputCP();
-    DEBUGSTR( TEXT("\\WriteConsoleA: %lu \"%.*hs\""), nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
+    DEBUGSTR( L"\\WriteConsoleA: %lu \"%.*S\"", nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     len = MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, NULL, 0 );
     buf = malloc( len * sizeof(WCHAR) );
     if (buf == NULL)
@@ -1133,7 +1142,7 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
   DWORD Mode;
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    DEBUGSTR( TEXT("\\WriteConsoleW: %lu \"%.*ls\""), nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
+    DEBUGSTR( L"\\WriteConsoleW: %lu \"%.*s\"", nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     return ParseAndPrintString( hCon, lpBuffer,
 				nNumberOfCharsToWrite,
 				lpNumberOfCharsWritten );
@@ -1154,7 +1163,7 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
   DWORD Mode;
   if (GetConsoleMode( hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    DEBUGSTR( TEXT("\\WriteFile: %lu \"%.*hs\""), nNumberOfBytesToWrite, nNumberOfBytesToWrite, lpBuffer );
+    DEBUGSTR( L"\\WriteFile: %lu \"%.*S\"", nNumberOfBytesToWrite, nNumberOfBytesToWrite, lpBuffer );
     return MyWriteConsoleA( hFile, lpBuffer,
 			    nNumberOfBytesToWrite,
 			    lpNumberOfBytesWritten,
@@ -1175,24 +1184,24 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
 {
   CONSOLE_SCREEN_BUFFER_INFO csbi;
+  TCHAR buf[64];
 
   if (pcsbi == NULL)
   {
     HANDLE hConOut;
-    hConOut = CreateFile( TEXT("CONOUT$"), GENERIC_READ | GENERIC_WRITE,
-			  FILE_SHARE_READ | FILE_SHARE_WRITE,
-			  NULL, OPEN_EXISTING, 0, 0 );
+    hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				      FILE_SHARE_READ | FILE_SHARE_WRITE,
+				      NULL, OPEN_EXISTING, 0, 0 );
     GetConsoleScreenBufferInfo( hConOut, &csbi );
     CloseHandle( hConOut );
     pcsbi = &csbi;
   }
 
-  TCHAR buf[64];
-  wsprintf( buf, TEXT("%dx%d (%dx%d)"),
+  wsprintf( buf, L"%dx%d (%dx%d)",
 	    pcsbi->dwSize.X, pcsbi->dwSize.Y,
 	    pcsbi->srWindow.Right - pcsbi->srWindow.Left + 1,
 	    pcsbi->srWindow.Bottom - pcsbi->srWindow.Top + 1 );
-  SetEnvironmentVariable( TEXT("ANSICON"), buf );
+  SetEnvironmentVariable( L"ANSICON", buf );
 }
 
 DWORD
@@ -1206,7 +1215,7 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
 DWORD
 WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 {
-  if (lstrcmpiW( lpName, L"ANSICON" ) == 0)
+  if (lstrcmpi( lpName, L"ANSICON" ) == 0)
     set_ansicon( NULL );
   return GetEnvironmentVariableW( lpName, lpBuffer, nSize );
 }
@@ -1242,9 +1251,9 @@ void OriginalAttr( void )
   HANDLE hConOut;
   CONSOLE_SCREEN_BUFFER_INFO csbi;
 
-  hConOut = CreateFile( TEXT("CONOUT$"), GENERIC_READ | GENERIC_WRITE,
-					 FILE_SHARE_READ | FILE_SHARE_WRITE,
-					 NULL, OPEN_EXISTING, 0, 0 );
+  hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				    FILE_SHARE_READ | FILE_SHARE_WRITE,
+				    NULL, OPEN_EXISTING, 0, 0 );
   if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     csbi.wAttributes = 7;
   CloseHandle( hConOut );
@@ -1281,7 +1290,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 #endif
 
     hDllInstance = hInstance; // save Dll instance handle
-    DEBUGSTR( TEXT("hDllInstance = %p"), hDllInstance );
+    DEBUGSTR( L"hDllInstance = %p", hDllInstance );
 
     // Get the entry points to the original functions.
     hKernel = GetModuleHandleA( APIKernel );
@@ -1299,7 +1308,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   }
   else if (dwReason == DLL_PROCESS_DETACH && lpReserved == NULL)
   {
-    DEBUGSTR( TEXT("Unloading") );
+    DEBUGSTR( L"Unloading" );
     HookAPIAllMod( Hooks, TRUE );
   }
 

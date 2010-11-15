@@ -7,10 +7,14 @@
 #ifndef INJDLL_H
 #define INJDLL_H
 
+#ifndef UNICODE
+# define UNICODE
+#endif
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-void InjectDLL32( LPPROCESS_INFORMATION, LPCWSTR );
-void InjectDLL64( LPPROCESS_INFORMATION, LPCWSTR );
+void InjectDLL32( LPPROCESS_INFORMATION, LPCTSTR );
+void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
 
 #endif
