@@ -1133,7 +1133,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
       DWORD len;
       len = GetModuleFileName( NULL, name, lenof(name) );
       if (len >= 8 && _wcsicmp( name + len - 8, L"ruby.exe" ) == 0)
-	*lpNumberOfBytesWritten = nNumberOfBytesToWrite;
+	*lpNumberOfCharsWritten = nNumberOfCharsToWrite;
     }
     return rc;
   }
