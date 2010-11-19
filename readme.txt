@@ -70,6 +70,25 @@
     an individual request, not as part of the entire environment block).
     For example, "set an" will not update it, but "echo %ansicon%" will.
 
+    The Windows API WriteFile and WriteConsoleA functions will set the num-
+    ber of characters written, not the number of bytes.  When using a multi-
+    byte character set, this results in a smaller number (since multiple
+    bytes are used to represent a single character).  Some programs recog-
+    nise this as a reduced write and will inadvertently repeat previous
+    characters.  If you discover such a program, use the ANSICON_API envir-
+    onment variable to record it and override the API, returning the origin-
+    al byte count.  Ruby is an example of such a program (at least, up till
+    1.9.2p0), so use "set ANSICON_API=ruby" to avoid the repitition.  The
+    full syntax of the variable is:
+
+	ANSICON_API=[!]program;program;program...
+
+    PROGRAM is the name of the program, with no path and extension.  The
+    leading exclamation inverts the usage, meaning the API will always be
+    overridden, unless the program is in the list.  The variable can be made
+    permanent by going to System Properties, selecting the Advanced tab and
+    clicking Environment Variables (using XP; Vista/7 may be different).
+
 
     =========
     Sequences
@@ -122,8 +141,9 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.31 - 13 November, 2010:
+    1.31 - 19 November, 2010:
     - fixed multibyte support (no extra junk with UTF-8 files);
+    * provide workaround for API byte/character differences;
     * fixed potential problem if install path uses Unicode.
 
     1.30 - 7 September, 2010:
@@ -238,4 +258,4 @@
 
 
     ==============================
-    Jason Hood, 13 November, 2010.
+    Jason Hood, 19 November, 2010.

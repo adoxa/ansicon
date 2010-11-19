@@ -5,6 +5,9 @@
 # and the 64-bit version in the x64 directory.	MinGW32 (gcc 3.4.5) will also
 # build the 32-bit version, but will of course fail on the 64-bit.
 
+# 19 November, 2010:
+#   explicitly use 64-bit flags, in case the compiler isn't.
+
 CC = gcc
 CFLAGS = -O2 -Wall
 
@@ -15,10 +18,10 @@ x86/%v.o: %.rc
 	windres -U _WIN64 -F pe-i386 $< $@
 
 x64/%.o: %.c
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
+	$(CC) -m64 -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 x64/%v.o: %.rc
-	windres $< $@
+	windres -F pe-x86-64 $< $@
 
 all: ansicon32 ansicon64
 

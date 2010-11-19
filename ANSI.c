@@ -54,7 +54,7 @@
   v1.30, 3 August to 7 September, 2010:
     x64 support.
 
-  v1.31, 13 November, 2010:
+  v1.31, 13 & 19 November, 2010:
     fix multibyte conversion problems.
 */
 
@@ -1129,11 +1129,39 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
       // "character" count.  This causes some programs to think not everything
       // was written, so the difference is sent again.	Fudge the (presumably)
       // correct count.
-      TCHAR name[MAX_PATH];
-      DWORD len;
-      len = GetModuleFileName( NULL, name, lenof(name) );
-      if (len >= 8 && _wcsicmp( name + len - 8, L"ruby.exe" ) == 0)
-	*lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+      TCHAR env[2048];
+      if (GetEnvironmentVariable( L"ANSICON_API", env, lenof(env) ))
+      {
+	BOOL   not;
+
+	not = (*env == '!');
+	if (not && env[1] == '\0')
+	{
+	  *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+	}
+	else
+	{
+	  TCHAR  path[MAX_PATH];
+	  LPTSTR name, exe;
+
+	  GetModuleFileName( NULL, path, lenof(path) );
+	  name = wcsrchr( path, '\\' );
+	  if (name == NULL)
+	    name = path;
+	  else
+	    ++name;
+	  exe = wcsrchr( name, '.' );
+	  if (exe != NULL && exe != name)
+	    *exe = '\0';
+	  for (exe = wcstok( env + not, L";" ); exe; exe = wcstok( NULL, L";" ))
+	  {
+	    if (_wcsicmp( name, exe ) == 0)
+	      break;
+	  }
+	  if ((exe && !not) || (!exe && not))
+	    *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+	}
+      }
     }
     return rc;
   }

@@ -38,14 +38,14 @@
   v1.30, 3 August to 7 September, 2010:
     x64 support.
 
-  v1.31, 13 to 15 November, 2010:
+  v1.31, 13 & 15 November, 2010:
     use LLW to fix potential Unicode path problems;
     VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
     explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
 */
 
 #define PVERS L"1.31"
-#define PDATE L"15 November, 2010"
+#define PDATE L"19 November, 2010"
 
 #ifndef UNICODE
 # define UNICODE
