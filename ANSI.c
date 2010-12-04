@@ -56,6 +56,9 @@
 
   v1.31, 13 & 19 November, 2010:
     fix multibyte conversion problems.
+
+  v1.32, 4 December, 2010:
+    test for lpNumberOfCharsWritten/lpNumberOfBytesWritten being NULL.
 */
 
 #ifndef UNICODE
@@ -135,7 +138,7 @@ void DEBUGSTR( LPTSTR szFormat, ... )	// sort of OutputDebugStringf
   }
 #if (MYDEBUG > 1)
   {
-  FILE* file = fopen( tempfile, "a" );
+  FILE* file = fopen( tempfile, "at" ); // _fmode might be binary
   if (file != NULL)
   {
     fwprintf( file, L"%s\n", szFormat );
@@ -877,7 +880,8 @@ ParseAndPrintString( HANDLE hDev,
     }
   }
   FlushBuffer();
-  *lpNumberOfBytesWritten = nNumberOfBytesToWrite - i;
+  if (lpNumberOfBytesWritten != NULL)
+    *lpNumberOfBytesWritten = nNumberOfBytesToWrite - i;
   return( i == 0 );
 }
 
@@ -888,69 +892,14 @@ ParseAndPrintString( HANDLE hDev,
 void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 	     DWORD dwCreationFlags )
 {
-  char* ptr = 0;
-  MEMORY_BASIC_INFORMATION minfo;
-  BOOL	con = FALSE;
-#ifdef _WIN64
-  BOOL	x86 = FALSE;
-#endif
-
-  while (VirtualQueryEx( pinfo->hProcess, ptr, &minfo, sizeof(minfo) ))
-  {
-    IMAGE_DOS_HEADER dos_header;
-    SIZE_T read;
-    if (ReadProcessMemory( pinfo->hProcess, minfo.AllocationBase,
-			   &dos_header, sizeof(dos_header), &read ))
-    {
-      if (dos_header.e_magic == IMAGE_DOS_SIGNATURE)
-      {
-	IMAGE_NT_HEADERS nt_header;
-	if (ReadProcessMemory( pinfo->hProcess, (char*)minfo.AllocationBase +
-			       dos_header.e_lfanew, &nt_header,
-			       sizeof(nt_header), &read ))
-	{
-	  if (nt_header.Signature == IMAGE_NT_SIGNATURE)
-	  {
-	    if (nt_header.OptionalHeader.Subsystem ==
-						   IMAGE_SUBSYSTEM_WINDOWS_CUI)
-	    {
-	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-	      {
-		con = TRUE;
-#ifdef _WIN64
-		x86 = TRUE;
-	      }
-	      else if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
-	      {
-		con = TRUE;
-#endif
-	      }
-	      else
-	      {
-		DEBUGSTR( L"  Ignoring unsupported machine (%x)",
-			  nt_header.FileHeader.Machine );
-	      }
-	    }
-	    else
-	    {
-	      DEBUGSTR( L"  Ignoring non-console subsystem (%u)",
-			nt_header.OptionalHeader.Subsystem );
-	    }
-	    break;
-	  }
-	}
-      }
-    }
-    ptr += minfo.RegionSize;
-  }
-
-  if (con)
+  int type = ProcessType( pinfo );
+  if (type != 0)
   {
     WCHAR dll[MAX_PATH];
 #ifdef _WIN64
     DWORD len = GetModuleFileName( GetModuleHandleA( "ANSI64.dll" ),
 				   dll, lenof(dll) );
-    if (x86)
+    if (type == 32)
     {
       dll[len-6] = '3';
       dll[len-5] = '2';
@@ -965,6 +914,11 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
     InjectDLL32( pinfo, dll );
 #endif
   }
+  else
+  {
+    DEBUGSTR( L"  Unsupported process type" );
+  }
+
 
   if (lpi)
     memcpy( lpi, pinfo, sizeof(PROCESS_INFORMATION) );
@@ -1117,7 +1071,8 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
     buf = malloc( len * sizeof(WCHAR) );
     if (buf == NULL)
     {
-      *lpNumberOfCharsWritten = 0;
+      if (lpNumberOfCharsWritten != NULL)
+	*lpNumberOfCharsWritten = 0;
       return (nNumberOfCharsToWrite == 0);
     }
     MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, buf, len );
@@ -1203,7 +1158,7 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
   DWORD Mode;
   if (GetConsoleMode( hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    DEBUGSTR( L"\\WriteFile: %lu \"%.*S\"", nNumberOfBytesToWrite, nNumberOfBytesToWrite, lpBuffer );
+    DEBUGSTR( L"WriteFile->" );
     return MyWriteConsoleA( hFile, lpBuffer,
 			    nNumberOfBytesToWrite,
 			    lpNumberOfBytesWritten,

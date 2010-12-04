@@ -42,10 +42,13 @@
     use LLW to fix potential Unicode path problems;
     VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
     explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
+
+  v1.32, 4 December, 2010:
+    make -p more robust.
 */
 
-#define PVERS L"1.31"
-#define PDATE L"19 November, 2010"
+#define PVERS L"1.32"
+#define PDATE L"4 December, 2010"
 
 #ifndef UNICODE
 # define UNICODE
@@ -70,11 +73,9 @@ int _CRT_glob = 0;
 
 
 #ifdef _WIN64
-# define InjectDLL InjectDLL64
-# define BITS	   L"64"
+# define BITS L"64"
 #else
-# define InjectDLL InjectDLL32
-# define BITS	   L"32"
+# define BITS L"32"
 #endif
 
 
@@ -82,30 +83,43 @@ int _CRT_glob = 0;
 #define AUTORUN L"AutoRun"
 
 
-void help( void );
+void   help( void );
 
 void   display( LPCTSTR, BOOL );
 LPTSTR skip_spaces( LPTSTR );
 LPTSTR skip_arg( LPTSTR );
 
-void process_autorun( TCHAR );
+void   process_autorun( TCHAR );
 
-BOOL find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe );
-BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi );
+BOOL   find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe );
+BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi );
 
 
 // Find the name of the DLL and inject it.
-void Inject( LPPROCESS_INFORMATION ppi )
+BOOL Inject( LPPROCESS_INFORMATION ppi )
 {
   DWORD len;
-  TCHAR dll[MAX_PATH];
+  WCHAR dll[MAX_PATH];
+  int	type;
+
+  type = ProcessType( ppi );
+  if (type == 0)
+    return FALSE;
 
   len = GetModuleFileName( NULL, dll, lenof(dll) );
   while (dll[len-1] != '\\')
     --len;
-  lstrcpy( dll + len, L"ANSI" BITS L".dll" );
-
-  InjectDLL( ppi, dll );
+#ifdef _WIN64
+  swprintf( dll + len, L"ANSI%d.dll", type );
+  if (type == 32)
+    InjectDLL32( ppi, dll );
+  else
+    InjectDLL64( ppi, dll );
+#else
+  wcscpy( dll + len, L"ANSI32.dll" );
+  InjectDLL32( ppi, dll );
+#endif
+  return TRUE;
 }
 
 
@@ -210,7 +224,11 @@ int main( void )
       pi.hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId );
       pi.hThread  = OpenThread(  THREAD_ALL_ACCESS,  FALSE, pi.dwThreadId  );
       SuspendThread( pi.hThread );
-      Inject( &pi );
+      if (!Inject( &pi ))
+      {
+	_putws( L"ANSICON: parent process type is not supported." );
+	rc = 1;
+      }
       ResumeThread( pi.hThread );
       CloseHandle( pi.hThread );
       CloseHandle( pi.hProcess );
