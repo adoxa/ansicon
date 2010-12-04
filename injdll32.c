@@ -59,7 +59,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   {
 #ifdef _WIN64
 #ifdef __MINGW64__
-    extern HMODULE hKernel;
+    HMODULE hKernel = GetModuleHandleA( "kernel32.dll" );
     #define GETPROC( proc ) proc = (T##proc)GetProcAddress( hKernel, #proc )
     GETPROC( Wow64GetThreadContext );
     GETPROC( Wow64SetThreadContext );

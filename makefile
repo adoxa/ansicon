@@ -15,7 +15,7 @@ x86/%v.o: %.rc
 	windres -U _WIN64 -F pe-i386 $< $@
 
 x64/%.o: %.c
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
+	$(CC) -m64 -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 x64/%v.o: %.rc
 	windres $< $@
@@ -29,20 +29,20 @@ ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll x64/ANSI32.dll x64/ANSI-LLW.exe
 x86:
 	mkdir x86
 
-x86/ansicon.exe: x86/ansicon.o x86/injdll32.o x86/ansiconv.o
+x86/ansicon.exe: x86/ansicon.o x86/proctype.o x86/injdll32.o x86/ansiconv.o
 	$(CC) -m32 $+ -s -o $@
 
-x86/ANSI32.dll: x86/ANSI.o x86/injdll32.o x86/ansiv.o
+x86/ANSI32.dll: x86/ANSI.o x86/proctype.o x86/injdll32.o x86/ansiv.o
 	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared
 
 x64:
 	mkdir x64
 
-x64/ansicon.exe: x64/ansicon.o x64/injdll64.o x64/ansiconv.o
-	$(CC) $+ -s -o $@
+x64/ansicon.exe: x64/ansicon.o x64/proctype.o x64/injdll64.o x64/injdll32.o x64/ansiconv.o
+	$(CC) -m64 $+ -s -o $@
 
-x64/ANSI64.dll: x64/ANSI.o x64/injdll64.o x64/injdll32.o x64/ansiv.o
-	$(CC) $+ -s -o $@ -mdll -Wl,-shared
+x64/ANSI64.dll: x64/ANSI.o x64/proctype.o x64/injdll64.o x64/injdll32.o x64/ansiv.o
+	$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared
 
 x64/ANSI32.dll: x86/ANSI32.dll
 	cp -p x86/ANSI32.dll x64/ANSI32.dll
