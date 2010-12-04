@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2010 Jason Hood
 
-			    Version 1.31.  Freeware
+			    Version 1.32.  Freeware
 
 
     ===========
@@ -134,12 +134,19 @@
 
     If running CMD.EXE, its own COLOR will be the initial color.
 
+    The 64-bit version can inject into a 32-bit process, but that will not
+    then inject into a 64-bit process.
+
 
     ===============
     Version History
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.32 - 4 December, 2010:
+    - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
+    - -p will test the parent process for validity.
 
     1.31 - 19 November, 2010:
     - fixed multibyte support (no extra junk with UTF-8 files);
@@ -257,5 +264,5 @@
     in the version text and a source diff is included.
 
 
-    ==============================
-    Jason Hood, 19 November, 2010.
+    =============================
+    Jason Hood, 4 December, 2010.
