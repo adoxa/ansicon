@@ -64,6 +64,7 @@
 #include <ctype.h>
 #include <io.h>
 #include "injdll.h"
+#include "debugstr.h"
 
 #define lenof(array) (sizeof(array)/sizeof(*(array)))
 
