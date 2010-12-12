@@ -15,7 +15,7 @@
   I've decided to simply keep the memory.
 */
 
-#include "injdll.h"
+#include "ansicon.h"
 
 void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 {

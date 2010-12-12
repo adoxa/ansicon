@@ -2,24 +2,31 @@
   debugstr.c - Auxiliary debug functionality.
 */
 
-#ifndef UNICODE
-# define UNICODE
+#include "ansicon.h"
+
+#if (MYDEBUG > 1)
+char tempfile[MAX_PATH];
 #endif
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <ImageHlp.h>
-#include "debugstr.h"
-
-#define lenof(array) (sizeof(array)/sizeof(*(array)))
 
 #if (MYDEBUG > 0)
 void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
 {
   TCHAR szBuffer[1024], szEscape[1024];
   va_list pArgList;
+
+#if (MYDEBUG > 1)
+  if (*tempfile == '\0')
+    _snprintf( tempfile, MAX_PATH, "%s\\ansicon.log", getenv( "TEMP" ) );
+#endif
+
+  if (szFormat == NULL)
+  {
+#if (MYDEBUG > 1)
+    DeleteFileA( tempfile );
+#endif
+    return;
+  }
+
   va_start( pArgList, szFormat );
   _vsnwprintf( szBuffer, lenof(szBuffer), szFormat, pArgList );
   va_end( pArgList );
@@ -33,33 +40,34 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
     {
       if (*szFormat < 32)
       {
-  *pos++ = '\\';
-  switch (*szFormat)
-  {
-    case '\b': *pos++ = 'b'; break;
-    case '\t': *pos++ = 't'; break;
-    case '\r': *pos++ = 'r'; break;
-    case '\n': *pos++ = 'n'; break;
-    case  27 : *pos++ = 'e'; break;
-    default:
-      pos += wprintf( pos, L"%.*o",
-          (szFormat[1] >= '0' && szFormat[1] <= '7') ? 3 : 1,
-          *szFormat );
-  }
+	*pos++ = '\\';
+	switch (*szFormat)
+	{
+	  case '\a': *pos++ = 'a'; break;
+	  case '\b': *pos++ = 'b'; break;
+	  case '\t': *pos++ = 't'; break;
+	  case '\r': *pos++ = 'r'; break;
+	  case '\n': *pos++ = 'n'; break;
+	  case	27 : *pos++ = 'e'; break;
+	  default:
+	    pos += _snwprintf( pos, 32, L"%.*o",
+			     (szFormat[1] >= '0' && szFormat[1] <= '7') ? 3 : 1,
+			     *szFormat );
+	}
       }
       else if (*szFormat == '"')
       {
-  if (first)
-    first = FALSE;
-  else if (szFormat[1] == '\0')
-    ;
-  else
-    *pos++ = '\\';
-  *pos++ = '"';
+	if (first)
+	  first = FALSE;
+	else if (szFormat[1] == '\0')
+	  ;
+	else
+	  *pos++ = '\\';
+	*pos++ = '"';
       }
       else
       {
-  *pos++ = *szFormat;
+	*pos++ = *szFormat;
       }
     }
     *pos = '\0';

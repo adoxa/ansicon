@@ -114,6 +114,9 @@
 	\e[#@	    ICH: Insert CHaracter
 	\e[#P	    DCH: Delete CHaracter
 	\e[#;#;#m   SGM: Set Graphics Mode
+	\e[#n	    DSR: Device Status Report
+	\e[21t		 Report (xterm) window's title
+	\e]0;titleBEL	 Set (xterm) window's title (and icon)
 
     `\e' represents the escape character (ASCII 27); `#' represents a
     decimal number (optional, in most cases defaulting to 1).  Regarding
@@ -144,9 +147,11 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.32 - 4 December, 2010:
+    1.32 - 12 December, 2010:
     - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
-    - -p will test the parent process for validity.
+    - -p will test the parent process for validity;
+    * hook into GUI processes;
+    + recognise DSR and xterm window title sequences.
 
     1.31 - 19 November, 2010:
     - fixed multibyte support (no extra junk with UTF-8 files);
@@ -238,6 +243,8 @@
     Dmitry Menshikov, Marko Bozikovic and Philippe Villiers, for their
     assistance in making the 64-bit version a reality.
 
+    Luis Lavena and the Ruby people for additional improvements.
+
 
     =======
     Contact
@@ -245,6 +252,7 @@
 
     mailto:jadoxa@yahoo.com.au
     http://ansicon.adoxa.cjb.net/
+    https://github.com/adoxa/ansicon
 
     Jason Hood
     11 Buckle Street
@@ -264,5 +272,5 @@
     in the version text and a source diff is included.
 
 
-    =============================
-    Jason Hood, 4 December, 2010.
+    ==============================
+    Jason Hood, 12 December, 2010.

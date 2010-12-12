@@ -57,25 +57,17 @@
   v1.31, 13 & 19 November, 2010:
     fix multibyte conversion problems.
 
-  v1.32, 4 December, 2010:
-    test for lpNumberOfCharsWritten/lpNumberOfBytesWritten being NULL.
+  v1.32, 4 & 12 December, 2010:
+    test for lpNumberOfCharsWritten/lpNumberOfBytesWritten being NULL;
+    recognise DSR and xterm window title;
+    ignore sequences starting with \e[? & \e[>.
 */
 
-#ifndef UNICODE
-# define UNICODE
-#endif
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "ansicon.h"
 #include <tlhelp32.h>
-#include "injdll.h"
-#include "debugstr.h"
-
-#define lenof(array) (sizeof(array)/sizeof(*(array)))
 
 #define isdigit(c) ('0' <= (c) && (c) <= '9')
+
 
 // ========== Global variables and constants
 
@@ -107,14 +99,18 @@ HMODULE   hKernel;		// Kernel32 module handle
 HINSTANCE hDllInstance; 	// Dll instance handle
 HANDLE	  hConOut;		// handle to CONOUT$
 
-#define ESC	'\x1B'	        // ESCape character
+#define ESC	'\x1B'          // ESCape character
+#define BEL	'\x07'
 
 #define MAX_ARG 16		// max number of args in an escape sequence
 int   state;			// automata state
-//TCHAR prefix; 		// escape sequence prefix ( '[' or '(' );
+TCHAR prefix;			// escape sequence prefix ( '[', ']' or '(' );
+TCHAR prefix2;			// secondary prefix ( '?' or '>' );
 TCHAR suffix;			// escape sequence suffix
 int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
+TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
+int   Pt_len;
 
 // color constants
 
@@ -384,6 +380,30 @@ void PushBuffer( TCHAR c )
   }
 }
 
+//-----------------------------------------------------------------------------
+//   SendSequence( LPTSTR seq )
+// Send the string to the input buffer.
+//-----------------------------------------------------------------------------
+
+void SendSequence( LPTSTR seq )
+{
+  DWORD out;
+  INPUT_RECORD in;
+  HANDLE hStdIn = GetStdHandle( STD_INPUT_HANDLE );
+
+  for (; *seq; ++seq)
+  {
+    in.EventType = KEY_EVENT;
+    in.Event.KeyEvent.bKeyDown = TRUE;
+    in.Event.KeyEvent.wRepeatCount = 1;
+    in.Event.KeyEvent.wVirtualKeyCode = 0;
+    in.Event.KeyEvent.wVirtualScanCode = 0;
+    in.Event.KeyEvent.uChar.UnicodeChar = *seq;
+    in.Event.KeyEvent.dwControlKeyState = 0;
+    WriteConsoleInput( hStdIn, &in, 1, &out );
+  }
+}
+
 // ========== Print functions
 
 //-----------------------------------------------------------------------------
@@ -410,7 +430,11 @@ void InterpretEscSeq( void )
   SMALL_RECT Rect;
   CHAR_INFO  CharInfo;
 
-  //if (prefix == '[')
+  // Just ignore \e[? & \e[> sequences.
+  if (prefix2 != 0)
+    return;
+
+  if (prefix == '[')
   {
     GetConsoleScreenBufferInfo( hConOut, &Info );
     switch (suffix)
@@ -707,12 +731,48 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, SavePos );
       return;
 
+      case 'n':                 // ESC[#n Device status report
+	if (es_argc != 1) return; // ESC[n == ESC[0n -> ignored
+	if (es_argv[0] == 5)
+	  SendSequence( L"\x1b[0n" ); // "OK"
+	else if (es_argv[0] == 6)
+	{
+	  TCHAR buf[32];
+	  wsprintf( buf, L"\x1b[%d;%dR", Info.dwCursorPosition.Y + 1,
+					 Info.dwCursorPosition.X + 1 );
+	  SendSequence( buf );
+	}
+      return;
+
+      case 't':                 // ESC[#t Window manipulation
+	if (es_argc != 1) return;
+	if (es_argv[0] == 21)	// ESC[21t Report xterm window's title
+	{
+	  TCHAR buf[MAX_PATH*2];
+	  DWORD len = GetConsoleTitle( buf+3, lenof(buf)-3-2 );
+	  // Too bad if it's too big or fails.
+	  buf[0] = ESC;
+	  buf[1] = ']';
+	  buf[2] = 'l';
+	  buf[3+len] = ESC;
+	  buf[3+len+1] = '\\';
+	  buf[3+len+2] = '\0';
+	  SendSequence( buf );
+	}
+      return;
+
       default:
       return;
     }
   }
+  else // (prefix == ']')
+  {
+    if (es_argc == 1 && es_argv[0] == 0) // ESC]0;titleST
+    {
+      DEBUGSTR( L"SetConsoleTitle = %d", SetConsoleTitle( Pt_arg ) );
+    }
+  }
 }
-
 
 //-----------------------------------------------------------------------------
 //   ParseAndPrintString(hDev, lpBuffer, nNumberOfBytesToWrite)
@@ -748,11 +808,14 @@ ParseAndPrintString( HANDLE hDev,
     else if (state == 2)
     {
       if (*s == ESC) ;	// \e\e...\e == \e
-      else if ((*s == '[')) // || (*s == '('))
+      else if ((*s == '[') || (*s == ']')) // || (*s == '('))
       {
 	FlushBuffer();
-	//prefix = *s;
+	prefix = *s;
+	prefix2 = 0;
 	state = 3;
+	Pt_len = 0;
+	*Pt_arg = '\0';
       }
       else state = 1;
     }
@@ -771,6 +834,10 @@ ParseAndPrintString( HANDLE hDev,
 	es_argv[1] = 0;
         state = 4;
       }
+      else if (*s == '?' || *s == '>')
+      {
+	prefix2 = *s;
+      }
       else
       {
         es_argc = 0;
@@ -788,7 +855,9 @@ ParseAndPrintString( HANDLE hDev,
       else if (*s == ';')
       {
         if (es_argc < MAX_ARG-1) es_argc++;
-        es_argv[es_argc] = 0;
+	es_argv[es_argc] = 0;
+	if (prefix == ']')
+	  state = 5;
       }
       else
       {
@@ -797,6 +866,23 @@ ParseAndPrintString( HANDLE hDev,
         InterpretEscSeq();
         state = 1;
       }
+    }
+    else if (state == 5)
+    {
+      if (*s == BEL)
+      {
+	Pt_arg[Pt_len] = '\0';
+        InterpretEscSeq();
+        state = 1;
+      }
+      else if (*s == '\\' && Pt_len > 0 && Pt_arg[Pt_len-1] == ESC)
+      {
+	Pt_arg[--Pt_len] = '\0';
+        InterpretEscSeq();
+        state = 1;
+      }
+      else if (Pt_len < lenof(Pt_arg)-1)
+	Pt_arg[Pt_len++] = *s;
     }
   }
   FlushBuffer();
@@ -834,11 +920,6 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
     InjectDLL32( pinfo, dll );
 #endif
   }
-  else
-  {
-    DEBUGSTR( L"  Unsupported process type" );
-  }
-
 
   if (lpi)
     memcpy( lpi, pinfo, sizeof(PROCESS_INFORMATION) );
@@ -1194,14 +1275,10 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   HMODULE api;
   PHookFn hook;
 
-#if (MYDEBUG > 1)
-  _snprintf( tempfile, MAX_PATH, "%s\\ansicon.log", getenv( "TEMP" ) );
-#endif
-
   if (dwReason == DLL_PROCESS_ATTACH)
   {
 #if (MYDEBUG > 1)
-    DeleteFileA( tempfile );
+    DEBUGSTR( NULL );
 #endif
 
     hDllInstance = hInstance; // save Dll instance handle

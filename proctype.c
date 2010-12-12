@@ -2,15 +2,13 @@
   Test for a valid process.
 */
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "ansicon.h"
 
 
 int ProcessType( LPPROCESS_INFORMATION pinfo )
 {
   MEMORY_BASIC_INFORMATION minfo;
   char* ptr = 0;
-  int	type = 0;
 
   while (VirtualQueryEx( pinfo->hProcess, ptr, &minfo, sizeof(minfo) ))
   {
@@ -28,37 +26,31 @@ int ProcessType( LPPROCESS_INFORMATION pinfo )
 	{
 	  if (nt_header.Signature == IMAGE_NT_SIGNATURE)
 	  {
-	    if (nt_header.OptionalHeader.Subsystem ==
-						   IMAGE_SUBSYSTEM_WINDOWS_CUI)
+	    if (nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI ||
+		nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI)
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-	      {
-		type = 32;
+		return 32;
 #ifdef _WIN64
-	      }
-	      else if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
-	      {
-		type = 64;
+	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
+		return 64;
 #endif
-	      }
-	      else
-	      {
-		//DEBUGSTR( L"  Ignoring unsupported machine (%x)",
-		//	  nt_header.FileHeader.Machine );
-	      }
+	      DEBUGSTR( L"  Ignoring unsupported machine (0x%X)",
+			nt_header.FileHeader.Machine );
 	    }
 	    else
 	    {
-	      //DEBUGSTR( L"  Ignoring non-console subsystem (%u)",
-	      //	nt_header.OptionalHeader.Subsystem );
+	      DEBUGSTR( L"  Ignoring non-Windows subsystem (%u)",
+			nt_header.OptionalHeader.Subsystem );
 	    }
-	    break;
 	  }
 	}
+	return 0;
       }
     }
     ptr += minfo.RegionSize;
   }
 
-  return type;
+  DEBUGSTR( L"  Ignoring non-Windows process" );
+  return 0;
 }

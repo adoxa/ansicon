@@ -43,30 +43,19 @@
     VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
     explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
 
-  v1.32, 4 December, 2010:
-    make -p more robust.
+  v1.32, 4 & 12 December, 2010:
+    make -p more robust;
+    inject into GUI processes again.
 */
 
 #define PVERS L"1.32"
-#define PDATE L"4 December, 2010"
+#define PDATE L"12 December, 2010"
 
-#ifndef UNICODE
-# define UNICODE
-#endif
-
-#define WIN32_LEAN_AND_MEAN
-#define _WIN32_WINNT 0x0500	// MinGW wants this defined for OpenThread
-#include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "ansicon.h"
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <ctype.h>
 #include <io.h>
-#include "injdll.h"
-#include "debugstr.h"
-
-#define lenof(array) (sizeof(array)/sizeof(*(array)))
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;

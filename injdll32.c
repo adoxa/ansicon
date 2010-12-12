@@ -15,7 +15,7 @@
   I've decided to simply keep the memory.
 */
 
-#include "injdll.h"
+#include "ansicon.h"
 
 #ifdef _WIN64
 #if defined(__MINGW64__) || (defined(_MSC_VER) && _MSC_VER <= 1400)
@@ -65,7 +65,10 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     GETPROC( Wow64SetThreadContext );
     // Assume if one is defined, so is the other.
     if (Wow64GetThreadContext == 0)
+    {
+      DEBUGSTR( "Failed to get pointer to Wow64GetThreadContext.\n" );
       return;
+    }
 #endif
 
     STARTUPINFO si;
@@ -78,7 +81,10 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     CopyMemory( code + len - 7*sizeof(TCHAR), L"-LLW.exe", 9*sizeof(TCHAR) );
     if (!CreateProcess( (LPCTSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
 			&si, &pi ))
+    {
+      DEBUGSTR( "Failed to execute \"%s\".\n", (LPCTSTR)code );
       return;
+    }
     WaitForSingleObject( pi.hProcess, INFINITE );
     GetExitCodeProcess( pi.hProcess, &LLW );
     CloseHandle( pi.hProcess );
