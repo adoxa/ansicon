@@ -391,15 +391,15 @@ void SendSequence( LPTSTR seq )
   INPUT_RECORD in;
   HANDLE hStdIn = GetStdHandle( STD_INPUT_HANDLE );
 
+  in.EventType = KEY_EVENT;
+  in.Event.KeyEvent.bKeyDown = TRUE;
+  in.Event.KeyEvent.wRepeatCount = 1;
+  in.Event.KeyEvent.wVirtualKeyCode = 0;
+  in.Event.KeyEvent.wVirtualScanCode = 0;
+  in.Event.KeyEvent.dwControlKeyState = 0;
   for (; *seq; ++seq)
   {
-    in.EventType = KEY_EVENT;
-    in.Event.KeyEvent.bKeyDown = TRUE;
-    in.Event.KeyEvent.wRepeatCount = 1;
-    in.Event.KeyEvent.wVirtualKeyCode = 0;
-    in.Event.KeyEvent.wVirtualScanCode = 0;
     in.Event.KeyEvent.uChar.UnicodeChar = *seq;
-    in.Event.KeyEvent.dwControlKeyState = 0;
     WriteConsoleInput( hStdIn, &in, 1, &out );
   }
 }
@@ -733,16 +733,24 @@ void InterpretEscSeq( void )
 
       case 'n':                 // ESC[#n Device status report
 	if (es_argc != 1) return; // ESC[n == ESC[0n -> ignored
-	if (es_argv[0] == 5)
-	  SendSequence( L"\x1b[0n" ); // "OK"
-	else if (es_argv[0] == 6)
+	switch (es_argv[0])
 	{
-	  TCHAR buf[32];
-	  wsprintf( buf, L"\x1b[%d;%dR", Info.dwCursorPosition.Y + 1,
-					 Info.dwCursorPosition.X + 1 );
-	  SendSequence( buf );
+	  case 5:		// ESC[5n Report status
+	    SendSequence( L"\33[0n" ); // "OK"
+	  return;
+
+	  case 6:		// ESC[6n Report cursor position
+	  {
+	    TCHAR buf[32];
+	    wsprintf( buf, L"\33[%d;%dR", Info.dwCursorPosition.Y + 1,
+					  Info.dwCursorPosition.X + 1 );
+	    SendSequence( buf );
+	  }
+	  return;
+
+	  default:
+	  return;
 	}
-      return;
 
       case 't':                 // ESC[#t Window manipulation
 	if (es_argc != 1) return;
@@ -769,7 +777,7 @@ void InterpretEscSeq( void )
   {
     if (es_argc == 1 && es_argv[0] == 0) // ESC]0;titleST
     {
-      DEBUGSTR( L"SetConsoleTitle = %d", SetConsoleTitle( Pt_arg ) );
+      SetConsoleTitle( Pt_arg );
     }
   }
 }
@@ -1067,7 +1075,8 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
     UINT cp = GetConsoleOutputCP();
-    DEBUGSTR( L"\\WriteConsoleA: %lu \"%.*S\"", nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
+    DEBUGSTR( L"\\WriteConsoleA: %lu \"%.*S\"",
+	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     len = MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, NULL, 0 );
     buf = malloc( len * sizeof(WCHAR) );
     if (buf == NULL)
@@ -1079,7 +1088,8 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
     MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, buf, len );
     rc = ParseAndPrintString( hCon, buf, len, lpNumberOfCharsWritten );
     free( buf );
-    if (rc && *lpNumberOfCharsWritten != nNumberOfCharsToWrite)
+    if (rc && lpNumberOfCharsWritten != NULL &&
+	      *lpNumberOfCharsWritten != nNumberOfCharsToWrite)
     {
       // Converting a multibyte character to Unicode results in a different
       // "character" count.  This causes some programs to think not everything
@@ -1088,7 +1098,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
       TCHAR env[2048];
       if (GetEnvironmentVariable( L"ANSICON_API", env, lenof(env) ))
       {
-	BOOL   not;
+	BOOL not;
 
 	not = (*env == '!');
 	if (not && env[1] == '\0')
@@ -1138,7 +1148,8 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
   DWORD Mode;
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    DEBUGSTR( L"\\WriteConsoleW: %lu \"%.*s\"", nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
+    DEBUGSTR( L"\\WriteConsoleW: %lu \"%.*s\"",
+	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     return ParseAndPrintString( hCon, lpBuffer,
 				nNumberOfCharsToWrite,
 				lpNumberOfCharsWritten );
@@ -1278,7 +1289,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   if (dwReason == DLL_PROCESS_ATTACH)
   {
 #if (MYDEBUG > 1)
-    DEBUGSTR( NULL );
+    DEBUGSTR( NULL );	// create a new file
 #endif
 
     hDllInstance = hInstance; // save Dll instance handle

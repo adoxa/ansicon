@@ -137,8 +137,8 @@
 
     If running CMD.EXE, its own COLOR will be the initial color.
 
-    The 64-bit version can inject into a 32-bit process, but that will not
-    then inject into a 64-bit process.
+    The 64-bit version can inject into a 32-bit process, but the 32-bit
+    version will not inject into a 64-bit process.
 
 
     ===============

@@ -100,7 +100,7 @@ BOOL Inject( LPPROCESS_INFORMATION ppi )
   while (dll[len-1] != '\\')
     --len;
 #ifdef _WIN64
-  swprintf( dll + len, L"ANSI%d.dll", type );
+  wsprintf( dll + len, L"ANSI%d.dll", type );
   if (type == 32)
     InjectDLL32( ppi, dll );
   else
@@ -233,7 +233,14 @@ int main( void )
   {
     ansi = 0;
     if (!installed)
+    {
       ansi = LoadLibrary( L"ANSI" BITS L".dll" );
+      if (!ansi)
+      {
+	fputws( L"ANSICON: failed to load ANSI" BITS L".dll.\n", stderr );
+	rc = 1;
+      }
+    }
 
     if (option && (argv[1][1] == 't' || argv[1][1] == 'T'))
     {

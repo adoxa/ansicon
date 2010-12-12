@@ -28,7 +28,7 @@ void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
 // ========== Auxiliary debug function
 
 //#define MYDEBUG 1	// use OutputDebugString
-#define MYDEBUG 2	// use %temp%\ansicon.log
+//#define MYDEBUG 2	// use %temp%\ansicon.log
 #ifndef MYDEBUG
 #  define MYDEBUG 0	// no debugging
 #endif
@@ -37,7 +37,7 @@ void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
     void DEBUGSTR( LPTSTR szFormat, ... );
 #else
 #   if defined(_MSC_VER) && _MSC_VER <= 1400
-      void DEBUGSTR() { }
+      #define DEBUGSTR (void)
 #   else
 #     define DEBUGSTR(...)
 #   endif

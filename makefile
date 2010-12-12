@@ -1,4 +1,4 @@
-# Simple makefile for ANSICON.
+# Makefile for ANSICON.
 # Jason Hood, 11 March, 2006.  Updated 20 June, 2009.
 
 # I've used TDM64 (gcc 4.5.0), building the 32-bit version in the x86 directory

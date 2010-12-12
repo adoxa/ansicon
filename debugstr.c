@@ -17,15 +17,12 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
 #if (MYDEBUG > 1)
   if (*tempfile == '\0')
     _snprintf( tempfile, MAX_PATH, "%s\\ansicon.log", getenv( "TEMP" ) );
-#endif
-
   if (szFormat == NULL)
   {
-#if (MYDEBUG > 1)
     DeleteFileA( tempfile );
-#endif
     return;
   }
+#endif
 
   va_start( pArgList, szFormat );
   _vsnwprintf( szBuffer, lenof(szBuffer), szFormat, pArgList );
