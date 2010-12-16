@@ -26,14 +26,21 @@ int ProcessType( LPPROCESS_INFORMATION pinfo )
 	{
 	  if (nt_header.Signature == IMAGE_NT_SIGNATURE)
 	  {
+	    BOOL gui = (nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI);
 	    if (nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI ||
-		nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI)
+		gui )
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-		return 32;
+	      {
+		DEBUGSTR( L"  32-bit %s", (gui) ? L"GUI" : L"console" );
+		return (gui) ? -32 : 32;
+	      }
 #ifdef _WIN64
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
-		return 64;
+	      {
+		DEBUGSTR( L"  64-bit %s", (gui) ? L"GUI" : L"console" );
+		return (gui) ? -64 : 64;
+	      }
 #endif
 	      DEBUGSTR( L"  Ignoring unsupported machine (0x%X)",
 			nt_header.FileHeader.Machine );

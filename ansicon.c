@@ -43,13 +43,14 @@
     VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
     explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
 
-  v1.32, 4 & 12 December, 2010:
+  v1.32, 4, 12 & 16 December, 2010:
     make -p more robust;
-    inject into GUI processes again.
+    inject into GUI processes again;
+    don't block when directly running a GUI process.
 */
 
 #define PVERS L"1.32"
-#define PDATE L"12 December, 2010"
+#define PDATE L"16 December, 2010"
 
 #include "ansicon.h"
 #include <shellapi.h>
@@ -168,6 +169,10 @@ int main( void )
       return rc;
     }
   }
+
+#if (MYDEBUG > 1)
+  DEBUGSTR( NULL ); // create a new file
+#endif
 
   option = (argc > 1 && argv[1][0] == '-');
   if (option && (towlower( argv[1][1] ) == 'i' ||
@@ -289,8 +294,13 @@ int main( void )
 	si.cb = sizeof(si);
 	if (CreateProcess( NULL, cmd, NULL,NULL, TRUE, 0, NULL,NULL, &si, &pi ))
 	{
-	  SetConsoleCtrlHandler( (PHANDLER_ROUTINE)CtrlHandler, TRUE );
-	  WaitForSingleObject( pi.hProcess, INFINITE );
+	  if (ProcessType( &pi ) > 0)
+	  {
+	    SetConsoleCtrlHandler( (PHANDLER_ROUTINE)CtrlHandler, TRUE );
+	    WaitForSingleObject( pi.hProcess, INFINITE );
+	  }
+	  CloseHandle( pi.hProcess );
+	  CloseHandle( pi.hThread );
 	}
 	else
 	{

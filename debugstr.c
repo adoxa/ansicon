@@ -75,7 +75,18 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
   FILE* file = fopen( tempfile, "at" ); // _fmode might be binary
   if (file != NULL)
   {
-    fwprintf( file, L"%s\n", szFormat );
+    TCHAR  path[MAX_PATH];
+    LPTSTR prog, ext;
+    GetModuleFileName( NULL, path, lenof(path) );
+    prog = wcsrchr( path, '\\' );
+    if (prog != NULL)
+      ++prog;
+    else
+      prog = path;
+    ext = wcsrchr( prog, '.' );
+    if (ext != NULL)
+      *ext = '\0';
+    fwprintf( file, L"%s: %s\n", prog, szFormat );
     fclose( file );
   }
   }

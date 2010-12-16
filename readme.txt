@@ -147,7 +147,7 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.32 - 12 December, 2010:
+    1.32 - 16 December, 2010:
     - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
     - -p will test the parent process for validity;
     * hook into GUI processes;
@@ -273,4 +273,4 @@
 
 
     ==============================
-    Jason Hood, 12 December, 2010.
+    Jason Hood, 16 December, 2010.

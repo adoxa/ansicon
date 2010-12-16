@@ -57,10 +57,11 @@
   v1.31, 13 & 19 November, 2010:
     fix multibyte conversion problems.
 
-  v1.32, 4 & 12 December, 2010:
+  v1.32, 4, 12 & 16 December, 2010:
     test for lpNumberOfCharsWritten/lpNumberOfBytesWritten being NULL;
     recognise DSR and xterm window title;
-    ignore sequences starting with \e[? & \e[>.
+    ignore sequences starting with \e[? & \e[>;
+    close the handles opened by CreateProcess.
 */
 
 #include "ansicon.h"
@@ -347,10 +348,8 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
 // ========== Print Buffer functions
 
-#define BUFFER_SIZE 256
-
-int   nCharInBuffer = 0;
-TCHAR ChBuffer[BUFFER_SIZE];
+int	nCharInBuffer;
+LPCTSTR ChBuffer;
 
 //-----------------------------------------------------------------------------
 //   FlushBuffer()
@@ -366,18 +365,14 @@ void FlushBuffer( void )
 }
 
 //-----------------------------------------------------------------------------
-//   PushBuffer( char c )
-// Adds a character in the buffer and flushes the buffer if it is full.
+//   PushBuffer( LPCTSTR s )
+// Adds a character in the "buffer".
 //-----------------------------------------------------------------------------
 
-void PushBuffer( TCHAR c )
+void PushBuffer( LPCTSTR s )
 {
-  ChBuffer[nCharInBuffer++] = c;
-  if (nCharInBuffer >= BUFFER_SIZE)
-  {
-    FlushBuffer();
-    DEBUGSTR( L"flush" );
-  }
+  if (nCharInBuffer++ == 0)
+    ChBuffer = s;
 }
 
 //-----------------------------------------------------------------------------
@@ -798,20 +793,20 @@ ParseAndPrintString( HANDLE hDev,
 		     LPDWORD lpNumberOfBytesWritten
 		     )
 {
-  DWORD  i;
-  LPTSTR s;
+  DWORD   i;
+  LPCTSTR s;
 
   if (hDev != hConOut)	// reinit if device has changed
   {
     hConOut = hDev;
     state = 1;
   }
-  for (i = nNumberOfBytesToWrite, s = (LPTSTR)lpBuffer; i > 0; i--, s++)
+  for (i = nNumberOfBytesToWrite, s = (LPCTSTR)lpBuffer; i > 0; i--, s++)
   {
     if (state == 1)
     {
       if (*s == ESC) state = 2;
-      else PushBuffer( *s );
+      else PushBuffer( s );
     }
     else if (state == 2)
     {
@@ -929,11 +924,18 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 #endif
   }
 
-  if (lpi)
-    memcpy( lpi, pinfo, sizeof(PROCESS_INFORMATION) );
-
   if (!(dwCreationFlags & CREATE_SUSPENDED))
     ResumeThread( pinfo->hThread );
+
+  if (lpi)
+  {
+    memcpy( lpi, pinfo, sizeof(PROCESS_INFORMATION) );
+  }
+  else
+  {
+    CloseHandle( pinfo->hProcess );
+    CloseHandle( pinfo->hThread );
+  }
 }
 
 
@@ -1288,10 +1290,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
   if (dwReason == DLL_PROCESS_ATTACH)
   {
-#if (MYDEBUG > 1)
-    DEBUGSTR( NULL );	// create a new file
-#endif
-
     hDllInstance = hInstance; // save Dll instance handle
     DEBUGSTR( L"hDllInstance = %p", hDllInstance );
 
@@ -1309,10 +1307,17 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     OriginalAttr();
     DisableThreadLibraryCalls( hInstance );
   }
-  else if (dwReason == DLL_PROCESS_DETACH && lpReserved == NULL)
+  else if (dwReason == DLL_PROCESS_DETACH)
   {
-    DEBUGSTR( L"Unloading" );
-    HookAPIAllMod( Hooks, TRUE );
+    if (lpReserved == NULL)
+    {
+      DEBUGSTR( L"Unloading" );
+      HookAPIAllMod( Hooks, TRUE );
+    }
+    else
+    {
+      DEBUGSTR( L"Terminating" );
+    }
   }
 
   return( bResult );

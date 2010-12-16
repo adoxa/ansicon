@@ -14,13 +14,13 @@ CFLAGS = -O2 -Wall
 X86OBJS = x86/proctype.o x86/injdll32.o x86/debugstr.o
 X64OBJS = x64/proctype.o x64/injdll64.o x64/injdll32.o x64/debugstr.o
 
-x86/%.o: %.c
+x86/%.o: %.c ansicon.h
 	$(CC) -m32 -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 x86/%v.o: %.rc
 	windres -U _WIN64 -F pe-i386 $< $@
 
-x64/%.o: %.c
+x64/%.o: %.c ansicon.h
 	$(CC) -m64 -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 x64/%v.o: %.rc
@@ -60,13 +60,6 @@ x86/ansiconv.o: ansicon.rc
 x86/ansiv.o:	ansi.rc
 x64/ansiconv.o: ansicon.rc
 x64/ansiv.o:	ansi.rc
-
-ansicon.c:  ansicon.h
-ANSI.c:     ansicon.h
-debugstr.c: ansicon.h
-injdll32.c: ansicon.h
-injdll64.c: ansicon.h
-proctype.c: ansicon.h
 
 clean:
 	-rm x86/*.o
