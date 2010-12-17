@@ -45,18 +45,20 @@
 
   v1.32, 4, 12 & 16 December, 2010:
     make -p more robust;
-    inject into GUI processes again;
-    don't block when directly running a GUI process.
+    inject into GUI processes;
+    -i implies -p.
 */
 
 #define PVERS L"1.32"
-#define PDATE L"16 December, 2010"
+#define PDATE L"17 December, 2010"
 
 #include "ansicon.h"
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <ctype.h>
 #include <io.h>
+#include <objbase.h>
+#include <psapi.h>
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
@@ -101,6 +103,7 @@ BOOL Inject( LPPROCESS_INFORMATION ppi )
   while (dll[len-1] != '\\')
     --len;
 #ifdef _WIN64
+  type = abs( type );
   wsprintf( dll + len, L"ANSI%d.dll", type );
   if (type == 32)
     InjectDLL32( ppi, dll );
@@ -179,7 +182,7 @@ int main( void )
 		 towlower( argv[1][1] ) == 'u'))
   {
     process_autorun( argv[1][1] );
-    return rc;
+    argv[1][1] = 'p';
   }
 
   get_original_attr();
@@ -294,7 +297,28 @@ int main( void )
 	si.cb = sizeof(si);
 	if (CreateProcess( NULL, cmd, NULL,NULL, TRUE, 0, NULL,NULL, &si, &pi ))
 	{
-	  if (ProcessType( &pi ) > 0)
+	  BOOL	console = FALSE;
+	  TCHAR name[MAX_PATH];
+	  DWORD rc;
+	  CoInitialize( NULL );
+	  do
+	  {
+	    Sleep( 10 );
+	    if (GetModuleFileNameEx( pi.hProcess, NULL, name, lenof(name) ))
+	    {
+	      DWORD_PTR info;
+	      info = SHGetFileInfo( name, 0, NULL, 0, SHGFI_EXETYPE );
+	      if (info == 0x00004550) // console PE
+		console = TRUE;
+	      DEBUGSTR( L"%s", name );
+	      DEBUGSTR( L"  %s (%p)", (console) ? L"Console" : L"Not console",
+				      info );
+	      break;
+	    }
+	  } while (GetExitCodeProcess( pi.hProcess, &rc ) &&
+		   rc == STILL_ACTIVE);
+	  CoUninitialize();
+	  if (console)
 	  {
 	    SetConsoleCtrlHandler( (PHANDLER_ROUTINE)CtrlHandler, TRUE );
 	    WaitForSingleObject( pi.hProcess, INFINITE );
@@ -557,7 +581,7 @@ L"\n"
 L"ansicon -i|I | -u|U\n"
 L"ansicon [-m[<attr>]] [-p | -e|E string | -t|T [file(s)] | program [args]]\n"
 L"\n"
-L"  -i\t\tinstall - add ANSICON to the AutoRun entry\n"
+L"  -i\t\tinstall - add ANSICON to the AutoRun entry (implies -p)\n"
 L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
 L"  -I -U\t\tuse local machine instead of current user\n"
 L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"

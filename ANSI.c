@@ -908,7 +908,7 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 #ifdef _WIN64
     DWORD len = GetModuleFileName( GetModuleHandleA( "ANSI64.dll" ),
 				   dll, lenof(dll) );
-    if (type == 32)
+    if (type == 32 || type == -32)
     {
       dll[len-6] = '3';
       dll[len-5] = '2';
@@ -1077,7 +1077,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
     UINT cp = GetConsoleOutputCP();
-    DEBUGSTR( L"\\WriteConsoleA: %lu \"%.*S\"",
+    DEBUGSTR( L"\33WriteConsoleA: %lu \"%.*S\"",
 	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     len = MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, NULL, 0 );
     buf = malloc( len * sizeof(WCHAR) );
@@ -1150,7 +1150,7 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
   DWORD Mode;
   if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    DEBUGSTR( L"\\WriteConsoleW: %lu \"%.*s\"",
+    DEBUGSTR( L"\33WriteConsoleW: %lu \"%.*s\"",
 	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
     return ParseAndPrintString( hCon, lpBuffer,
 				nNumberOfCharsToWrite,

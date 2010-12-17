@@ -17,6 +17,7 @@ int ProcessType( LPPROCESS_INFORMATION pinfo )
     if (ReadProcessMemory( pinfo->hProcess, minfo.AllocationBase,
 			   &dos_header, sizeof(dos_header), &read ))
     {
+      DEBUGSTR( L"  Base = %p", minfo.AllocationBase );
       if (dos_header.e_magic == IMAGE_DOS_SIGNATURE)
       {
 	IMAGE_NT_HEADERS nt_header;

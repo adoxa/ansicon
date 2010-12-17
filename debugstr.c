@@ -29,7 +29,7 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
   va_end( pArgList );
 
   szFormat = szBuffer;
-  if (*szFormat == '\\')
+  if (*szFormat == '\33')
   {
     BOOL first = TRUE;
     LPTSTR pos = szEscape;

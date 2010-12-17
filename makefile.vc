@@ -26,7 +26,7 @@ DIR = x64
 
 CC = cl
 CFLAGS = /nologo /W3 /Ox /GF /D_CRT_SECURE_NO_WARNINGS
-LIBS = advapi32.lib shell32.lib user32.lib
+LIBS = advapi32.lib shell32.lib user32.lib psapi.lib ole32.lib
 
 X86OBJS = x86\proctype.obj x86\injdll32.obj x86\debugstr.obj
 X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\debugstr.obj
