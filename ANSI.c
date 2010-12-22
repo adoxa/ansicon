@@ -57,7 +57,7 @@
   v1.31, 13 & 19 November, 2010:
     fix multibyte conversion problems.
 
-  v1.32, 4, 12 & 16 December, 2010:
+  v1.32, 4 to 22 December, 2010:
     test for lpNumberOfCharsWritten/lpNumberOfBytesWritten being NULL;
     recognise DSR and xterm window title;
     ignore sequences starting with \e[? & \e[>;
@@ -908,7 +908,7 @@ void Inject( LPPROCESS_INFORMATION pinfo, LPPROCESS_INFORMATION lpi,
 #ifdef _WIN64
     DWORD len = GetModuleFileName( GetModuleHandleA( "ANSI64.dll" ),
 				   dll, lenof(dll) );
-    if (type == 32 || type == -32)
+    if (type == 32)
     {
       dll[len-6] = '3';
       dll[len-5] = '2';

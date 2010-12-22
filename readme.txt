@@ -140,6 +140,8 @@
     The 64-bit version can inject into a 32-bit process, but the 32-bit
     version will not inject into a 64-bit process.
 
+    Building rubyinstaller on Win7 crashes (XP is fine).
+
 
     ===============
     Version History
@@ -147,11 +149,12 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.32 - 16 December, 2010:
+    1.32 - 22 December, 2010:
     - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
     - -p will test the parent process for validity;
     * hook into GUI processes;
-    + recognise DSR and xterm window title sequences.
+    + recognise DSR and xterm window title sequences;
+    - fixed MinGW32 binaries (LLW was wrong).
 
     1.31 - 19 November, 2010:
     - fixed multibyte support (no extra junk with UTF-8 files);
@@ -273,4 +276,4 @@
 
 
     ==============================
-    Jason Hood, 16 December, 2010.
+    Jason Hood, 22 December, 2010.

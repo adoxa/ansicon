@@ -43,14 +43,14 @@
     VC compatibility (2008 Express for 32-bit, PSDK 2003 R2 for 64-bit);
     explicitly use wide characters (stick with TCHAR, but not <tchar.h>).
 
-  v1.32, 4, 12 & 16 December, 2010:
+  v1.32, 4 to 22 December, 2010:
     make -p more robust;
     inject into GUI processes;
     -i implies -p.
 */
 
 #define PVERS L"1.32"
-#define PDATE L"17 December, 2010"
+#define PDATE L"22 December, 2010"
 
 #include "ansicon.h"
 #include <shellapi.h>
@@ -95,6 +95,10 @@ BOOL Inject( LPPROCESS_INFORMATION ppi )
   WCHAR dll[MAX_PATH];
   int	type;
 
+#if (MYDEBUG > 0)
+  if (GetModuleFileNameEx( ppi->hProcess, NULL, dll, lenof(dll) ))
+    DEBUGSTR( L"%s", dll );
+#endif
   type = ProcessType( ppi );
   if (type == 0)
     return FALSE;
@@ -103,7 +107,6 @@ BOOL Inject( LPPROCESS_INFORMATION ppi )
   while (dll[len-1] != '\\')
     --len;
 #ifdef _WIN64
-  type = abs( type );
   wsprintf( dll + len, L"ANSI%d.dll", type );
   if (type == 32)
     InjectDLL32( ppi, dll );
@@ -303,7 +306,15 @@ int main( void )
 	  CoInitialize( NULL );
 	  do
 	  {
-	    Sleep( 10 );
+	    // When I first tried doing this, it took a little while to
+	    // succeed.  Testing again shows it works immediately - perhaps the
+	    // CoInitialize introduces enough of a delay.  Still, play it safe
+	    // and keep trying.  And if you're wondering why I do it at all,
+	    // ProcessType may detect GUI, even for a console process.	That's
+	    // fine after injection (including -p), but not here.  We *need* to
+	    // suspend our own execution whilst running the child, otherwise
+	    // bad things happen (besides which, I want to restore the original
+	    // attributes when the child exits).
 	    if (GetModuleFileNameEx( pi.hProcess, NULL, name, lenof(name) ))
 	    {
 	      DWORD_PTR info;
@@ -315,6 +326,7 @@ int main( void )
 				      info );
 	      break;
 	    }
+	    Sleep( 10 );
 	  } while (GetExitCodeProcess( pi.hProcess, &rc ) &&
 		   rc == STILL_ACTIVE);
 	  CoUninitialize();

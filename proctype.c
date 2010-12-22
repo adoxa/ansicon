@@ -1,5 +1,13 @@
 /*
-  Test for a valid process.
+  Test for a valid process.  This may sometimes detect GUI, even for a console
+  process.  I think this is due to a DLL being loaded in the address space
+  before the main image.  Ideally I could just use the base address directly,
+  but that doesn't seem easy to do for another process - there doesn't seem to
+  be a GetModuleHandle for another process.  The CreateRemoteThread trick won't
+  work with 64-bit (exit code is DWORD) and setting it up to make it work
+  hardly seems worth it.  There's GetModuleInformation, but passing in NULL just
+  returns a base of NULL, so that's no help.  Since 64/32 is sufficient, let
+  ansicon.exe handle the difference between console/GUI.
 */
 
 #include "ansicon.h"
@@ -14,10 +22,10 @@ int ProcessType( LPPROCESS_INFORMATION pinfo )
   {
     IMAGE_DOS_HEADER dos_header;
     SIZE_T read;
-    if (ReadProcessMemory( pinfo->hProcess, minfo.AllocationBase,
+    if (minfo.BaseAddress == minfo.AllocationBase &&
+	ReadProcessMemory( pinfo->hProcess, minfo.AllocationBase,
 			   &dos_header, sizeof(dos_header), &read ))
     {
-      DEBUGSTR( L"  Base = %p", minfo.AllocationBase );
       if (dos_header.e_magic == IMAGE_DOS_SIGNATURE)
       {
 	IMAGE_NT_HEADERS nt_header;
@@ -33,14 +41,16 @@ int ProcessType( LPPROCESS_INFORMATION pinfo )
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
 	      {
-		DEBUGSTR( L"  32-bit %s", (gui) ? L"GUI" : L"console" );
-		return (gui) ? -32 : 32;
+		DEBUGSTR( L"  %p: 32-bit %s",
+			  minfo.AllocationBase, (gui) ? L"GUI" : L"console" );
+		return 32;
 	      }
 #ifdef _WIN64
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 	      {
-		DEBUGSTR( L"  64-bit %s", (gui) ? L"GUI" : L"console" );
-		return (gui) ? -64 : 64;
+		DEBUGSTR( L"  %p: 64-bit %s",
+			  minfo.AllocationBase, (gui) ? L"GUI" : L"console" );
+		return 64;
 	      }
 #endif
 	      DEBUGSTR( L"  Ignoring unsupported machine (0x%X)",

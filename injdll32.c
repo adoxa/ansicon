@@ -57,9 +57,9 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 
   if (LLW == 0)
   {
+    HMODULE hKernel = GetModuleHandleA( "kernel32.dll" );
 #ifdef _WIN64
 #ifdef __MINGW64__
-    HMODULE hKernel = GetModuleHandleA( "kernel32.dll" );
     #define GETPROC( proc ) proc = (T##proc)GetProcAddress( hKernel, #proc )
     GETPROC( Wow64GetThreadContext );
     GETPROC( Wow64SetThreadContext );
@@ -90,7 +90,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 #else
-    LLW = (DWORD)LoadLibrary;
+    LLW = (DWORD)GetProcAddress( hKernel, "LoadLibraryW" );
 #endif
   }
 
