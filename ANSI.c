@@ -62,6 +62,9 @@
     recognise DSR and xterm window title;
     ignore sequences starting with \e[? & \e[>;
     close the handles opened by CreateProcess.
+
+  25 February, 2011:
+    hook GetProcAddress, addresses issues with .NET (work with PowerShell).
 */
 
 #include "ansicon.h"
@@ -1007,6 +1010,51 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 }
 
 
+FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
+{
+  PHookFn hook;
+  FARPROC proc;
+
+  proc = GetProcAddress( hModule, lpProcName );
+
+  if (proc)
+  {
+    if (hModule == hKernel)
+    {
+      // Ignore LoadLibrary so other hooks continue to work (our version
+      // might end up at a different address).
+      if (proc == Hooks[0].oldfunc || proc == Hooks[1].oldfunc)
+	return proc;
+
+      for (hook = Hooks+2; hook->name; ++hook)
+      {
+	if (proc == hook->oldfunc)
+	{
+	  DEBUGSTR( L"GetProcAddress: %S", lpProcName );
+	  return hook->newfunc;
+	}
+      }
+    }
+    else if (Hooks[0].apifunc) // assume if one is defined, all are
+    {
+      if (proc == Hooks[0].apifunc || proc == Hooks[1].apifunc)
+	return proc;
+
+      for (hook = Hooks+2; hook->name; ++hook)
+      {
+	if (proc == hook->apifunc)
+	{
+	  DEBUGSTR( L"GetProcAddress: %S", lpProcName );
+	  return hook->newfunc;
+	}
+      }
+    }
+  }
+
+  return proc;
+}
+
+
 HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryA( lpFileName );
@@ -1233,12 +1281,14 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 // ========== Initialisation
 
 HookFn Hooks[] = {
+  // These two are expected first!
+  { APILibraryLoader,	   "LoadLibraryA",            (PROC)MyLoadLibraryA,            NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryW",            (PROC)MyLoadLibraryW,            NULL, NULL },
   { APIProcessThreads,	   "CreateProcessA",          (PROC)MyCreateProcessA,          NULL, NULL },
   { APIProcessThreads,	   "CreateProcessW",          (PROC)MyCreateProcessW,          NULL, NULL },
   { APIProcessEnvironment, "GetEnvironmentVariableA", (PROC)MyGetEnvironmentVariableA, NULL, NULL },
   { APIProcessEnvironment, "GetEnvironmentVariableW", (PROC)MyGetEnvironmentVariableW, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryA",            (PROC)MyLoadLibraryA,            NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryW",            (PROC)MyLoadLibraryW,            NULL, NULL },
+  { APILibraryLoader,	   "GetProcAddress",          (PROC)MyGetProcAddress,          NULL, NULL },
   { APILibraryLoader,	   "LoadLibraryExA",          (PROC)MyLoadLibraryExA,          NULL, NULL },
   { APILibraryLoader,	   "LoadLibraryExW",          (PROC)MyLoadLibraryExW,          NULL, NULL },
   { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL },

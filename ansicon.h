@@ -28,7 +28,7 @@ void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
 // ========== Auxiliary debug function
 
 #ifndef MYDEBUG
-#  define MYDEBUG 0	// 0 - no debugging
+#  define MYDEBUG 2	// 0 - no debugging
 			// 1 - use OutputDebugString
 			// 2 - use %temp%\ansicon.log
 #endif
