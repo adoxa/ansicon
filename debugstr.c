@@ -72,6 +72,8 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
   }
 #if (MYDEBUG > 1)
   {
+  HANDLE mutex = CreateMutex( NULL, FALSE, L"ANSICON_debug_file" );
+  DWORD wait = WaitForSingleObject( mutex, 500 );
   FILE* file = fopen( tempfile, "at" ); // _fmode might be binary
   if (file != NULL)
   {
@@ -89,6 +91,9 @@ void DEBUGSTR( LPTSTR szFormat, ... ) // sort of OutputDebugStringf
     fwprintf( file, L"%s: %s\n", prog, szFormat );
     fclose( file );
   }
+  if (wait == WAIT_OBJECT_0)
+    ReleaseMutex( mutex );
+  CloseHandle( mutex );
   }
 #else
   OutputDebugString( szFormat );

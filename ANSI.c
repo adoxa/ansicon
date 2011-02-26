@@ -63,8 +63,10 @@
     ignore sequences starting with \e[? & \e[>;
     close the handles opened by CreateProcess.
 
-  25 February, 2011:
-    hook GetProcAddress, addresses issues with .NET (work with PowerShell).
+  25 & 26 February, 2011:
+    hook GetProcAddress, addresses issues with .NET (work with PowerShell);
+    implement SO & SI to use the DEC Special Graphics Character Set (enables
+     line drawing via ASCII); ignore \e(X & \e)X (where X is any character).
 */
 
 #include "ansicon.h"
@@ -105,6 +107,8 @@ HANDLE	  hConOut;		// handle to CONOUT$
 
 #define ESC	'\x1B'          // ESCape character
 #define BEL	'\x07'
+#define SO	'\x0E'          // Shift Out
+#define SI	'\x0F'          // Shift In
 
 #define MAX_ARG 16		// max number of args in an escape sequence
 int   state;			// automata state
@@ -115,6 +119,52 @@ int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
+BOOL  shifted;
+
+
+// DEC Special Graphics Character Set from
+// http://vt100.net/docs/vt220-rm/table2-4.html
+// Some of these may not look right, depending on the font and code page (in
+// particular, the Control Pictures probably won't work at all).
+const WCHAR G1[] =
+{
+  ' ',          // _ - blank
+  L'\x2666',    // ` - Black Diamond Suit
+  L'\x2592',    // a - Medium Shade
+  L'\x2409',    // b - HT
+  L'\x240c',    // c - FF
+  L'\x240d',    // d - CR
+  L'\x240a',    // e - LF
+  L'\x00b0',    // f - Degree Sign
+  L'\x00b1',    // g - Plus-Minus Sign
+  L'\x2424',    // h - NL
+  L'\x240b',    // i - VT
+  L'\x2518',    // j - Box Drawings Light Up And Left
+  L'\x2510',    // k - Box Drawings Light Down And Left
+  L'\x250c',    // l - Box Drawings Light Down And Right
+  L'\x2514',    // m - Box Drawings Light Up And Right
+  L'\x253c',    // n - Box Drawings Light Vertical And Horizontal
+  L'\x00af',    // o - SCAN 1 - Macron
+  L'\x25ac',    // p - SCAN 3 - Black Rectangle
+  L'\x2500',    // q - SCAN 5 - Box Drawings Light Horizontal
+  L'_',         // r - SCAN 7 - Low Line
+  L'_',         // s - SCAN 9 - Low Line
+  L'\x251c',    // t - Box Drawings Light Vertical And Right
+  L'\x2524',    // u - Box Drawings Light Vertical And Left
+  L'\x2534',    // v - Box Drawings Light Up And Horizontal
+  L'\x252c',    // w - Box Drawings Light Down And Horizontal
+  L'\x2502',    // x - Box Drawings Light Vertical
+  L'\x2264',    // y - Less-Than Or Equal To
+  L'\x2265',    // z - Greater-Than Or Equal To
+  L'\x03c0',    // { - Greek Small Letter Pi
+  L'\x2260',    // | - Not Equal To
+  L'\x00a3',    // } - Pound Sign
+  L'\x00b7',    // ~ - Middle Dot
+};
+
+#define FIRST_G1 '_'
+#define LAST_G1  '~'
+
 
 // color constants
 
@@ -351,8 +401,10 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
 // ========== Print Buffer functions
 
-int	nCharInBuffer;
-LPCTSTR ChBuffer;
+#define BUFFER_SIZE (278+512)		// fill out the section
+
+int   nCharInBuffer;
+WCHAR ChBuffer[BUFFER_SIZE];
 
 //-----------------------------------------------------------------------------
 //   FlushBuffer()
@@ -368,14 +420,17 @@ void FlushBuffer( void )
 }
 
 //-----------------------------------------------------------------------------
-//   PushBuffer( LPCTSTR s )
-// Adds a character in the "buffer".
+//   PushBuffer( WCHAR c )
+// Adds a character in the buffer.
 //-----------------------------------------------------------------------------
 
-void PushBuffer( LPCTSTR s )
+void PushBuffer( WCHAR c )
 {
-  if (nCharInBuffer++ == 0)
-    ChBuffer = s;
+  if (shifted && c >= FIRST_G1 && c <= LAST_G1)
+    c = G1[c-FIRST_G1];
+  ChBuffer[nCharInBuffer] = c;
+  if (++nCharInBuffer == BUFFER_SIZE)
+    FlushBuffer();
 }
 
 //-----------------------------------------------------------------------------
@@ -803,18 +858,21 @@ ParseAndPrintString( HANDLE hDev,
   {
     hConOut = hDev;
     state = 1;
+    shifted = FALSE;
   }
   for (i = nNumberOfBytesToWrite, s = (LPCTSTR)lpBuffer; i > 0; i--, s++)
   {
     if (state == 1)
     {
       if (*s == ESC) state = 2;
-      else PushBuffer( s );
+      else if (*s == SO) shifted = TRUE;
+      else if (*s == SI) shifted = FALSE;
+      else PushBuffer( *s );
     }
     else if (state == 2)
     {
       if (*s == ESC) ;	// \e\e...\e == \e
-      else if ((*s == '[') || (*s == ']')) // || (*s == '('))
+      else if ((*s == '[') || (*s == ']'))
       {
 	FlushBuffer();
 	prefix = *s;
@@ -823,6 +881,7 @@ ParseAndPrintString( HANDLE hDev,
 	Pt_len = 0;
 	*Pt_arg = '\0';
       }
+      else if (*s == ')' || *s == '(') state = 6;
       else state = 1;
     }
     else if (state == 3)
@@ -889,6 +948,11 @@ ParseAndPrintString( HANDLE hDev,
       }
       else if (Pt_len < lenof(Pt_arg)-1)
 	Pt_arg[Pt_len++] = *s;
+    }
+    else if (state == 6)
+    {
+      // Ignore it (ESC ) 0 is implicit; nothing else is supported).
+      state = 1;
     }
   }
   FlushBuffer();
