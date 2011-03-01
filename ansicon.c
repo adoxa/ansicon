@@ -49,8 +49,8 @@
     -i implies -p.
 */
 
-#define PVERS L"1.32"
-#define PDATE L"22 December, 2010"
+#define PVERS L"1.40"
+#define PDATE L"1 March, 2011"
 
 #include "ansicon.h"
 #include <shellapi.h>

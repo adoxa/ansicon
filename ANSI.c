@@ -63,10 +63,11 @@
     ignore sequences starting with \e[? & \e[>;
     close the handles opened by CreateProcess.
 
-  25 & 26 February, 2011:
+  v1.40, 25 & 26 February, 1 March, 2011:
     hook GetProcAddress, addresses issues with .NET (work with PowerShell);
     implement SO & SI to use the DEC Special Graphics Character Set (enables
-     line drawing via ASCII); ignore \e(X & \e)X (where X is any character).
+     line drawing via ASCII); ignore \e(X & \e)X (where X is any character);
+    add \e[?25h & \e[?25l to show/hide the cursor (DECTCEM).
 */
 
 #include "ansicon.h"
@@ -478,17 +479,28 @@ void InterpretEscSeq( void )
   int  i;
   WORD attribut;
   CONSOLE_SCREEN_BUFFER_INFO Info;
+  CONSOLE_CURSOR_INFO CursInfo;
   DWORD len, NumberOfCharsWritten;
   COORD Pos;
   SMALL_RECT Rect;
   CHAR_INFO  CharInfo;
 
-  // Just ignore \e[? & \e[> sequences.
-  if (prefix2 != 0)
-    return;
-
   if (prefix == '[')
   {
+    if (prefix2 == '?' && (suffix == 'h' || suffix == 'l'))
+    {
+      if (es_argc == 1 && es_argv[0] == 25)
+      {
+	GetConsoleCursorInfo( hConOut, &CursInfo );
+	CursInfo.bVisible = (suffix == 'h');
+	SetConsoleCursorInfo( hConOut, &CursInfo );
+	return;
+      }
+    }
+    // Ignore any other \e[? or \e[> sequences.
+    if (prefix2 != 0)
+      return;
+
     GetConsoleScreenBufferInfo( hConOut, &Info );
     switch (suffix)
     {
@@ -828,6 +840,10 @@ void InterpretEscSeq( void )
   }
   else // (prefix == ']')
   {
+    // Ignore any \e]? or \e]> sequences.
+    if (prefix2 != 0)
+      return;
+
     if (es_argc == 1 && es_argv[0] == 0) // ESC]0;titleST
     {
       SetConsoleTitle( Pt_arg );

@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2010 Jason Hood
+			 Copyright 2005-2011 Jason Hood
 
-			    Version 1.32.  Freeware
+			    Version 1.40.  Freeware
 
 
     ===========
@@ -46,22 +46,33 @@
     Usage
     =====
 
+    Options (case sensitive):
+
+	-p	Enable the parent process (i.e. the command shell used to
+		run ANSICON) to recognise escapes.
+
+	-m	Set the current (and default) attribute to grey on black
+		("monochrome"), or the attribute following the `m' (please
+		use `COLOR /?' for attribute values).
+
+	-e	Echo the command line - the character after the `e' is
+		ignored, the remainder is displayed verbatim.
+
+	-E	As above, but no newline is added.
+
+	-t	Display ("type") each file (or standard input if none or the
+		name is "-") as though they are a single file.
+
+	-T	Display "==> FILE NAME <==", a blank line (or an error
+		message), the file and another blank line.
+
     Running ANSICON with no arguments will start a new instance of the com-
     mand processor (the program defined by the `ComSpec' environment var-
     iable, typically `CMD.EXE'), or display standard input if it is redir-
-    ected.  Passing the option `-p' (case sensitive) will enable the parent
-    process to recognise escapes (i.e. the command shell used to run ANSI-
-    CON).  Use `-m' to set the current (and default) attribute to grey on
-    black ("monochrome"), or the attribute following the `m' (please use
-    `COLOR /?' for attribute values).  The option `-e' will echo the command
-    line - the character after the `e' is ignored, the remainder is display-
-    ed verbatim; use `-E' to prevent a newline being written.  The option
-    `-t' will display each file (or standard input if none or it is "-"), as
-    though they are a single file; `-T' will display the file name (in be-
-    tween "==> " and " <=="), a blank line (or an error message), the file
-    and another blank line.  Anything else will be treated as a program and
-    its arguments.  Eg: `ansicon -m30 -t file.ans' will display `file.ans'
-    using black on cyan as the default color.
+    ected.  Any argument will be treated as a program and its arguments.
+    
+    Eg: `ansicon -m30 -t file.ans' will display `file.ans' using black on
+    cyan as the default color.
 
     Once installed, the ANSICON environment variable will be created.  This
     variable is of the form "WxH (wxh)", where W & H are the width and
@@ -90,43 +101,111 @@
     clicking Environment Variables (using XP; Vista/7 may be different).
 
 
-    =========
-    Sequences
-    =========
+    ====================
+    Sequences Recognised
+    ====================
 
     The following escape sequences are recognised.
 
-	\e[#A	    CUU: CUrsor Up
-	\e[#B	    CUD: CUrsor Down
-	\e[#C	    CUF: CUrsor Forward
-	\e[#D	    CUB: CUrsor Backward
-	\e[#E	    CNL: Cursor Next Line
-	\e[#F	    CPL: Cursor Preceding Line
-	\e[#G	    CHA: Cursor Horizontal Absolute
-	\e[#;#H     CUP: CUrsor Position
-	\e[#;#f     HVP: Horizontal and Vertical Position
-	\e[s	    SCP: Save Cursor Position
-	\e[u	    RCP: Restore Cursor Position
-	\e[#J	    ED:  Erase Display
-	\e[#K	    EL:  Erase Line
-	\e[#L	    IL:  Insert Lines
-	\e[#M	    DL:  Delete Lines
-	\e[#@	    ICH: Insert CHaracter
-	\e[#P	    DCH: Delete CHaracter
-	\e[#;#;#m   SGM: Set Graphics Mode
-	\e[#n	    DSR: Device Status Report
-	\e[21t		 Report (xterm) window's title
-	\e]0;titleBEL	 Set (xterm) window's title (and icon)
+	\e[#A		CUU	CUrsor Up
+	\e[#B		CUD	CUrsor Down
+	\e[#C		CUF	CUrsor Forward
+	\e[#D		CUB	CUrsor Backward
+	\e[#E		CNL	Cursor Next Line
+	\e[#F		CPL	Cursor Preceding Line
+	\e[#G		CHA	Cursor Horizontal Absolute
+	\e[#;#H 	CUP	CUrsor Position
+	\e[#;#f 	HVP	Horizontal and Vertical Position
+	\e[s		SCP	Save Cursor Position
+	\e[u		RCP	Restore Cursor Position
+	\e[#J		ED	Erase Display
+	\e[#K		EL	Erase Line
+	\e[#L		IL	Insert Lines
+	\e[#M		DL	Delete Lines
+	\e[#@		ICH	Insert CHaracter
+	\e[#P		DCH	Delete CHaracter
+	\e[#;#;#m	SGM	Set Graphics Mode
+	\e[#n		DSR	Device Status Report
+	\e[21t			Report (xterm) window's title
+	\e]0;titleBEL		Set (xterm) window's title (and icon)
+	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
+	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
+	SO		LS1	Lock shift G1 (see below)
+	SI		LS0	Lock shift G0
 
     `\e' represents the escape character (ASCII 27); `#' represents a
-    decimal number (optional, in most cases defaulting to 1).  Regarding
-    SGM: bold will set the foreground intensity; underline and blink will
-    set the background intensity; conceal uses background as foreground.
+    decimal number (optional, in most cases defaulting to 1); BEL, SO and
+    SI are ASCII 7, 14 and 15.	Regarding SGM: bold will set the foreground
+    intensity; underline and blink will set the background intensity;
+    conceal uses background as foreground.
 
     I make a distinction between "\e[m" and "\e[0;...m".  Both will restore
     the original foreground/background colors (and so "0" should be the
     first parameter); the former will also restore the original bold and
     underline attributes, whilst the latter will explicitly reset them.
+
+
+    =================
+    Sequences Ignored
+    =================
+
+    The following escape sequences are explicitly ignored.
+
+	\e(?		Designate G0 character set (`?' is anything).
+	\e)?		Designate G1 character set (`?' is anything).
+	\e[?... 	Private sequence
+	\e[>... 	Private sequence
+
+    The G0 character set is always ASCII; the G1 character set is always
+    the DEC Special Graphics Character Set.
+
+
+    ==================================
+    DEC Special Graphics Character Set
+    ==================================
+
+    This is my interpretation of the set, as shown by
+    http://vt100.net/docs/vt220-rm/table2-4.html.
+
+
+	Char	Unicode Code Point & Name
+	----	-------------------------
+	_	U+0020	Space (blank)
+	`	U+2666	Black Diamond Suit
+	a	U+2592	Medium Shade
+	b	U+2409	Symbol For Horizontal Tabulation
+	c	U+240C	Symbol For Form Feed
+	d	U+240D	Symbol For Carriage Return
+	e	U+240A	Symbol For Line Feed
+	f	U+00B0	Degree Sign
+	g	U+00B1	Plus-Minus Sign
+	h	U+2424	Symbol For Newline
+	i	U+240B	Symbol For Vertical Tabulation
+	j	U+2518	Box Drawings Light Up And Left
+	k	U+2510	Box Drawings Light Down And Left
+	l	U+250C	Box Drawings Light Down And Right
+	m	U+2514	Box Drawings Light Up And Right
+	n	U+253C	Box Drawings Light Vertical And Horizontal
+	o	U+00AF	Macron (SCAN 1)
+	p	U+25AC	Black Rectangle (SCAN 3)
+	q	U+2500	Box Drawings Light Horizontal (SCAN 5)
+	r	U+005F	Low Line (SCAN 7)
+	s	U+005F	Low Line (SCAN 9)
+	t	U+251C	Box Drawings Light Vertical And Right
+	u	U+2524	Box Drawings Light Vertical And Left
+	v	U+2534	Box Drawings Light Up And Horizontal
+	w	U+252C	Box Drawings Light Down And Horizontal
+	x	U+2502	Box Drawings Light Vertical
+	y	U+2264	Less-Than Or Equal To
+	z	U+2265	Greater-Than Or Equal To
+	{	U+03C0	Greek Small Letter Pi
+	|	U+2260	Not Equal To
+	}	U+00A3	Pound Sign
+	~	U+00B7	Middle Dot
+
+
+    G1-437.txt shows the glyphs according to code page 437; G1-UTF8.txt
+    according to UTF-8 (the file has no BOM).
 
 
     ===========
@@ -142,12 +221,20 @@
 
     Building rubyinstaller on Win7 crashes (XP is fine).
 
+    Display of the DEC Special Graphics Character Set will depend on the
+    current font (the Symbols will probably not display correctly at all).
+
 
     ===============
     Version History
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.40 - 1 March, 2011:
+    - hook GetProcAddress (now PowerShell works);
+    + add SO/SI, using the DEC Special Graphics Character Set for G1;
+    + add DECTCEM to show/hide the cursor.
 
     1.32 - 22 December, 2010:
     - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
@@ -248,6 +335,8 @@
 
     Luis Lavena and the Ruby people for additional improvements.
 
+    Leigh for documentation tweaks.
+
 
     =======
     Contact
@@ -275,5 +364,5 @@
     in the version text and a source diff is included.
 
 
-    ==============================
-    Jason Hood, 22 December, 2010.
+    ==========================
+    Jason Hood, 1 March, 2011.
