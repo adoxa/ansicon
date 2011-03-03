@@ -13,8 +13,8 @@
 #endif
 
 1 VERSIONINFO
-FILEVERSION	1,3,2,0
-PRODUCTVERSION	1,3,2,0
+FILEVERSION	1,4,0,0
+PRODUCTVERSION	1,4,0,0
 FILEOS		VOS_NT
 FILETYPE	VFT_DLL
 {
@@ -25,12 +25,12 @@ FILETYPE	VFT_DLL
       VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
       VALUE "CompanyName",      "Jason Hood"
       VALUE "FileDescription",  "ANSI Console"
-      VALUE "FileVersion",      "1.32"
+      VALUE "FileVersion",      "1.40"
       VALUE "InternalName",     "ANSI" BITS
       VALUE "LegalCopyright",   "Freeware"
       VALUE "OriginalFilename", "ANSI" BITS ".dll"
       VALUE "ProductName",      "ANSICON"
-      VALUE "ProductVersion",   "1.32"
+      VALUE "ProductVersion",   "1.40"
     }
   }
 
