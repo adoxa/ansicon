@@ -204,8 +204,11 @@
 	~	U+00B7	Middle Dot
 
 
-    G1-437.txt shows the glyphs according to code page 437; G1-UTF8.txt
-    according to UTF-8 (the file has no BOM).
+    G1.txt is a Unicode file to view the glyphs "externally".  G1.bat is a
+    batch file (using `x86\ansicon') to show the glyphs in the console.  The
+    characters will appear as they should using Lucida (other than the Sym-
+    bols), but code page will influence them when using a raster font (but
+    of particular interest, 437 and 850 both show the Box Drawings).
 
 
     ===========
@@ -221,9 +224,6 @@
 
     Building rubyinstaller on Win7 crashes (XP is fine).
 
-    Display of the DEC Special Graphics Character Set will depend on the
-    current font (the Symbols will probably not display correctly at all).
-
 
     ===============
     Version History
@@ -231,7 +231,7 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.40 - 1 March, 2011:
+    1.40 - 3 March, 2011:
     - hook GetProcAddress (now PowerShell works);
     + add SO/SI, using the DEC Special Graphics Character Set for G1;
     + add DECTCEM to show/hide the cursor.
@@ -365,4 +365,4 @@
 
 
     ==========================
-    Jason Hood, 1 March, 2011.
+    Jason Hood, 3 March, 2011.
