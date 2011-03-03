@@ -231,7 +231,7 @@
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.40 - 3 March, 2011:
+    1.40 - 1 March, 2011:
     - hook GetProcAddress (now PowerShell works);
     + add SO/SI, using the DEC Special Graphics Character Set for G1;
     + add DECTCEM to show/hide the cursor.
