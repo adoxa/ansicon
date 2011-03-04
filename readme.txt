@@ -335,7 +335,7 @@
 
     Luis Lavena and the Ruby people for additional improvements.
 
-    Leigh for documentation tweaks.
+    Leigh Hebblethwaite for documentation tweaks.
 
 
     =======
