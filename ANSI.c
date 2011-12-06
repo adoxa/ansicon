@@ -386,6 +386,13 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
     // We don't hook functions in our own module.
     if (me.hModule != hDllInstance && me.hModule != hKernel)
     {
+      //attempting to ignore NVIDIA 3D wrapper modules that seem to be in conflict on some systems
+      if (_wcsnicmp(me.szModule, L"nvd3d9wrap", 10) == 0)
+      {
+       	DEBUGSTR(L"Ignoring %s", me.szModule);
+       	continue;
+      }
+      
       DEBUGSTR( (restore) ? L"Unhooking from %s" : L"Hooking in %s",
 		me.szModule );
       // Hook this function in this module.
