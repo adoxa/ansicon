@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2011 Jason Hood
 
-			    Version 1.40.  Freeware
+			    Version 1.50.  Freeware
 
 
     ===========
@@ -30,9 +30,9 @@
     use option `-i' (or `-I') to install it permanently, by adding an entry
     to CMD.EXE's AutoRun registry value (current user or local machine,
     respectively).  Uninstall simply involves closing any programs that are
-    currently using it, running with `-u' (and again with `-U') to remove
-    the AutoRun entry/ies, then removing the directory from PATH or deleting
-    the files.	No other changes are made.
+    currently using it, running with `-u' (and/or `-U') to remove the Auto-
+    Run entry/ies, then removing the directory from PATH or deleting the
+    files.  No other changes are made.
 
     ---------
     Upgrading
@@ -40,6 +40,7 @@
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
     Delete ANSI-LLA.dll, it has been replaced with ANSI-LLW.dll.
+    Uninstall with your current version and install with this version.
 
 
     =====
@@ -48,6 +49,8 @@
 
     Options (case sensitive):
 
+	-l	Log to %temp%\ansicon.log.
+
 	-p	Enable the parent process (i.e. the command shell used to
 		run ANSICON) to recognise escapes.
 
@@ -55,7 +58,7 @@
 		("monochrome"), or the attribute following the `m' (please
 		use `COLOR /?' for attribute values).
 
-	-e	Echo the command line - the character after the `e' is
+	-e	Echo the command line - a space or tab after the `e' is
 		ignored, the remainder is displayed verbatim.
 
 	-E	As above, but no newline is added.
@@ -74,12 +77,46 @@
     Eg: `ansicon -m30 -t file.ans' will display `file.ans' using black on
     cyan as the default color.
 
+    The attribute may start with "-" to permanently reverse the foreground
+    and background colors (but not when using `-p').  Eg: `ansicon -m-f0 -t
+    file.log' will use reversed black on white as the default (i.e. white on
+    black, with foreground sequences changing the background).
+
+    If you experience trouble with certain programs, the log may help in
+    finding the cause; it  can be found at "%TEMP%\ansicon.log".  A number
+    should follow the `l':
+
+	0	No logging
+	1	Log process start and end
+	2	Above, plus log modules used by the process
+	3	Above, plus log functions that are hooked
+	4	Log console output (add to any of the above)
+	8	Append to the existing file (add to any of the above)
+
+    The log option will not work with `-p'; set the environment variable
+    ANSICON_LOG instead.  The variable is only read once when a new process
+    is started; changing it won't affect running processes.  If you identify
+    a module that causes problems (one known is "nvd3d9wrap.dll") add it to
+    the ANSICON_EXC environment variable (see ANSICON_API below, but the
+    extension is required).
+
     Once installed, the ANSICON environment variable will be created.  This
     variable is of the form "WxH (wxh)", where W & H are the width and
     height of the buffer and w & h are the width and height of the window.
     The variable is updated whenever a program reads it directly (i.e. as
     an individual request, not as part of the entire environment block).
     For example, "set an" will not update it, but "echo %ansicon%" will.
+    Also created is ANSICON_VER, which contains the version without the
+    point (1.50 becomes "150").  This variable does not exist as part of the
+    environment block ("set an" will not show it).
+
+    If installed, GUI programs will not be hooked.  Either start the program
+    directly with `ansicon', or add it to the ANSICON_GUI variable (see
+    ANSICON_API below).
+
+    Using `ansicon' after install will always start with the default attrib-
+    utes, restoring the originals on exit; all other programs will use the
+    current attributes.  The shift state is always reset for a new process.
 
     The Windows API WriteFile and WriteConsoleA functions will set the num-
     ber of characters written, not the number of bytes.  When using a multi-
@@ -142,7 +179,10 @@
     I make a distinction between "\e[m" and "\e[0;...m".  Both will restore
     the original foreground/background colors (and so "0" should be the
     first parameter); the former will also restore the original bold and
-    underline attributes, whilst the latter will explicitly reset them.
+    underline attributes, whilst the latter will explicitly reset them.  The
+    environment variable ANSICON_DEF can be used to change the default col-
+    ors (same value as `-m'; setting the variable does not change the cur-
+    rent colors).
 
 
     =================
@@ -217,8 +257,6 @@
 
     The entire console buffer is used, not just the visible window.
 
-    If running CMD.EXE, its own COLOR will be the initial color.
-
     The 64-bit version can inject into a 32-bit process, but the 32-bit
     version will not inject into a 64-bit process.
 
@@ -230,6 +268,19 @@
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.50 - 14 December, 2011:
+    - -u does not imply -p;
+    - return the program's exit code;
+    - -p by itself will not restore original color;
+    - output error messages to stderr;
+    * logging is always available, with various levels; include the pid;
+    * don't automatically hook GUI programs, use `ansicon' or ANSICON_GUI;
+    * always place first in AutoRun; don't run if already installed;
+    + global reverse video capability;
+    + added ANSICON_VER to provide version/install test;
+    + added ANSICON_EXC to exclude selected modules;
+    + added ANSICON_DEF to explicitly set the default SGM.
 
     1.40 - 1 March, 2011:
     - hook GetProcAddress (now PowerShell works);
@@ -364,5 +415,5 @@
     in the version text and a source diff is included.
 
 
-    ==========================
-    Jason Hood, 3 March, 2011.
+    ==============================
+    Jason Hood, 14 December, 2011.

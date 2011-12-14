@@ -5,10 +5,11 @@
 */
 
 #include <winver.h>
+#include "version.h"
 
 1 VERSIONINFO
-FILEVERSION	1,4,0,0
-PRODUCTVERSION	1,4,0,0
+FILEVERSION	PVERB
+PRODUCTVERSION	PVERB
 FILEOS		VOS_NT
 FILETYPE	VFT_APP
 {
@@ -19,12 +20,12 @@ FILETYPE	VFT_APP
       VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
       VALUE "CompanyName",      "Jason Hood"
       VALUE "FileDescription",  "ANSI Console"
-      VALUE "FileVersion",      "1.40"
+      VALUE "FileVersion",      PVERSA
       VALUE "InternalName",     "ansicon"
       VALUE "LegalCopyright",   "Freeware"
       VALUE "OriginalFilename", "ansicon.exe"
       VALUE "ProductName",      "ANSICON"
-      VALUE "ProductVersion",   "1.40"
+      VALUE "ProductVersion",   PVERSA
     }
   }
 

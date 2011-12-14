@@ -8,67 +8,75 @@
   hardly seems worth it.  There's GetModuleInformation, but passing in NULL just
   returns a base of NULL, so that's no help.  Since 64/32 is sufficient, let
   ansicon.exe handle the difference between console/GUI.
+
+  Update: ignore images characterised as DLL.
 */
 
 #include "ansicon.h"
 
 
-int ProcessType( LPPROCESS_INFORMATION pinfo )
+int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 {
+  char* ptr;
   MEMORY_BASIC_INFORMATION minfo;
-  char* ptr = 0;
+  IMAGE_DOS_HEADER dos_header;
+  IMAGE_NT_HEADERS nt_header;
+  SIZE_T read;
 
-  while (VirtualQueryEx( pinfo->hProcess, ptr, &minfo, sizeof(minfo) ))
+  *gui = FALSE;
+  for (ptr = NULL;
+       VirtualQueryEx( pinfo->hProcess, ptr, &minfo, sizeof(minfo) );
+       ptr += minfo.RegionSize)
   {
-    IMAGE_DOS_HEADER dos_header;
-    SIZE_T read;
     if (minfo.BaseAddress == minfo.AllocationBase &&
 	ReadProcessMemory( pinfo->hProcess, minfo.AllocationBase,
 			   &dos_header, sizeof(dos_header), &read ))
     {
       if (dos_header.e_magic == IMAGE_DOS_SIGNATURE)
       {
-	IMAGE_NT_HEADERS nt_header;
 	if (ReadProcessMemory( pinfo->hProcess, (char*)minfo.AllocationBase +
 			       dos_header.e_lfanew, &nt_header,
 			       sizeof(nt_header), &read ))
 	{
-	  if (nt_header.Signature == IMAGE_NT_SIGNATURE)
+	  if (nt_header.Signature == IMAGE_NT_SIGNATURE &&
+	      (nt_header.FileHeader.Characteristics &
+			 (IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_DLL))
+			 == IMAGE_FILE_EXECUTABLE_IMAGE)
 	  {
-	    BOOL gui = (nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI);
-	    if (nt_header.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI ||
-		gui )
+	    *gui = (nt_header.OptionalHeader.Subsystem
+			      == IMAGE_SUBSYSTEM_WINDOWS_GUI);
+	    if (nt_header.OptionalHeader.Subsystem ==
+		IMAGE_SUBSYSTEM_WINDOWS_CUI || *gui)
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
 	      {
-		DEBUGSTR( L"  %p: 32-bit %s",
-			  minfo.AllocationBase, (gui) ? L"GUI" : L"console" );
+		DEBUGSTR( 1, L"  32-bit %s (base = %p)",
+			  (*gui) ? L"GUI" : L"console", minfo.AllocationBase );
 		return 32;
 	      }
 #ifdef _WIN64
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 	      {
-		DEBUGSTR( L"  %p: 64-bit %s",
-			  minfo.AllocationBase, (gui) ? L"GUI" : L"console" );
+		DEBUGSTR( 1, L"  64-bit %s (base = %p)",
+			  (*gui) ? L"GUI" : L"console", minfo.AllocationBase );
 		return 64;
 	      }
 #endif
-	      DEBUGSTR( L"  Ignoring unsupported machine (0x%X)",
+	      DEBUGSTR( 1, L"  Ignoring unsupported machine (0x%X)",
 			nt_header.FileHeader.Machine );
 	    }
 	    else
 	    {
-	      DEBUGSTR( L"  Ignoring non-Windows subsystem (%u)",
+	      DEBUGSTR( 1, L"  Ignoring unsupported subsystem (%u)",
 			nt_header.OptionalHeader.Subsystem );
 	    }
+	    return 0;
 	  }
 	}
-	return 0;
       }
     }
-    ptr += minfo.RegionSize;
   }
 
-  DEBUGSTR( L"  Ignoring non-Windows process" );
+  DEBUGSTR( 1, L"  Ignoring non-Windows process" );
   return 0;
 }

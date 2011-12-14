@@ -43,17 +43,16 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   LPVOID  mem;
   DWORD   mem32;
   #define CODESIZE 20
-  BYTE	  code[CODESIZE+MAX_PATH*sizeof(TCHAR)];
+  BYTE	  code[CODESIZE+TSIZE(MAX_PATH)];
   union
   {
     PBYTE  pB;
     PDWORD pL;
   } ip;
 
-  len = lstrlen( dll ) + 1;
-  if (len > MAX_PATH)
+  len = TSIZE(lstrlen( dll ) + 1);
+  if (len > TSIZE(MAX_PATH))
     return;
-  len *= sizeof(TCHAR);
 
   if (LLW == 0)
   {
@@ -66,7 +65,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     // Assume if one is defined, so is the other.
     if (Wow64GetThreadContext == 0)
     {
-      DEBUGSTR( L"Failed to get pointer to Wow64GetThreadContext.\n" );
+      DEBUGSTR( 1, L"Failed to get pointer to Wow64GetThreadContext.\n" );
       return;
     }
 #endif
@@ -76,13 +75,13 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
     // ...ANSI32.dll\0
-    CopyMemory( code, dll, len - 7*sizeof(TCHAR) );
+    CopyMemory( code, dll, len - TSIZE(7) );
     // ...ANSI-LLW.exe\0
-    CopyMemory( code + len - 7*sizeof(TCHAR), L"-LLW.exe", 9*sizeof(TCHAR) );
+    CopyMemory( code + len - TSIZE(7), L"-LLW.exe", TSIZE(9) );
     if (!CreateProcess( (LPCTSTR)code, NULL, NULL, NULL, FALSE, 0, NULL, NULL,
 			&si, &pi ))
     {
-      DEBUGSTR( L"Failed to execute \"%s\".\n", (LPCTSTR)code );
+      DEBUGSTR( 1, L"Failed to execute \"%s\".\n", (LPCTSTR)code );
       return;
     }
     WaitForSingleObject( pi.hProcess, INFINITE );

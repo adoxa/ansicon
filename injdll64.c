@@ -29,7 +29,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     PDWORD64 pL;
   } ip;
   #define CODESIZE 92
-  static BYTE code[CODESIZE+MAX_PATH*sizeof(TCHAR)] = {
+  static BYTE code[CODESIZE+TSIZE(MAX_PATH)] = {
 	0,0,0,0,0,0,0,0,	   // original rip
 	0,0,0,0,0,0,0,0,	   // LoadLibraryW
 	0x9C,			   // pushfq
@@ -72,10 +72,9 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 	0,			   // dword alignment for LLW, fwiw
   };
 
-  len = lstrlen( dll ) + 1;
-  if (len > MAX_PATH)
+  len = TSIZE(lstrlen( dll ) + 1);
+  if (len > TSIZE(MAX_PATH))
     return;
-  len *= sizeof(TCHAR);
   CopyMemory( code + CODESIZE, dll, len );
   len += CODESIZE;
 

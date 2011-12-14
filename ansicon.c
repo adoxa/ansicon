@@ -47,18 +47,24 @@
     make -p more robust;
     inject into GUI processes;
     -i implies -p.
+
+  v1.50, 7 to 14 December, 2011:
+    -u does not imply -p;
+    add the PID to the debugging output;
+    use ANSICON_VER to test if already installed;
+    always place first in AutoRun;
+    logging is always available, controlled by ANSICON_LOG environment variable;
+    only restore the original color after program/echo/type;
+    return program's exit code.
 */
 
-#define PVERS L"1.40"
-#define PDATE L"1 March, 2011"
+#define PDATE L"14 December, 2011"
 
 #include "ansicon.h"
-#include <shellapi.h>
+#include "version.h"
 #include <tlhelp32.h>
 #include <ctype.h>
 #include <io.h>
-#include <objbase.h>
-#include <psapi.h>
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
@@ -79,33 +85,33 @@ int _CRT_glob = 0;
 void   help( void );
 
 void   display( LPCTSTR, BOOL );
+void   print_error( LPCTSTR, ... );
 LPTSTR skip_spaces( LPTSTR );
-LPTSTR skip_arg( LPTSTR );
+void   get_arg( LPTSTR, LPTSTR*, LPTSTR* );
 
 void   process_autorun( TCHAR );
 
 BOOL   find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe );
-BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi );
+BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR );
 
 
 // Find the name of the DLL and inject it.
-BOOL Inject( LPPROCESS_INFORMATION ppi )
+BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
 {
   DWORD len;
   WCHAR dll[MAX_PATH];
   int	type;
 
-#if (MYDEBUG > 0)
-  if (GetModuleFileNameEx( ppi->hProcess, NULL, dll, lenof(dll) ))
-    DEBUGSTR( L"%s", dll );
-#endif
-  type = ProcessType( ppi );
+  DEBUGSTR( 1, L"%s", app );
+  type = ProcessType( ppi, gui );
   if (type == 0)
+  {
+    fwprintf( stderr, L"ANSICON: %s: unsupported process.\n", app );
     return FALSE;
+  }
 
-  len = GetModuleFileName( NULL, dll, lenof(dll) );
-  while (dll[len-1] != '\\')
-    --len;
+  len = (DWORD)(prog - prog_path);
+  memcpy( dll, prog_path, TSIZE(len) );
 #ifdef _WIN64
   wsprintf( dll + len, L"ANSI%d.dll", type );
   if (type == 32)
@@ -145,288 +151,302 @@ DWORD CtrlHandler( DWORD event )
 }
 
 
-//int _tmain( int argc, TCHAR* argv[] )
 int main( void )
 {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
-  TCHAR*  cmd;
-  BOOL	  option;
-  BOOL	  opt_m;
+  LPTSTR  argv, arg, cmd;
+  TCHAR   logstr[4];
   BOOL	  installed;
+  BOOL	  shell, run, gui;
   HMODULE ansi;
+  DWORD   len;
   int	  rc = 0;
 
-  int argc;
-  LPWSTR* argv = CommandLineToArgvW( GetCommandLine(), &argc );
+  argv = GetCommandLine();
+  len = (DWORD)wcslen( argv ) + 1;
+  if (len < MAX_PATH)
+    len = MAX_PATH;
+  arg = malloc( TSIZE(len) );
+  get_arg( arg, &argv, &cmd );	// skip the program name
+  get_arg( arg, &argv, &cmd );
 
-  if (argc > 1)
+  if (*arg)
   {
-    if (lstrcmp( argv[1], L"--help" ) == 0 ||
-	(argv[1][0] == '-' && (argv[1][1] == '?' || argv[1][1] == 'h')) ||
-	(argv[1][0] == '/' && argv[1][1] == '?'))
+    if (wcscmp( arg, L"/?" ) == 0 ||
+	wcscmp( arg, L"--help" ) == 0)
     {
       help();
       return rc;
     }
-    if (lstrcmp( argv[1], L"--version" ) == 0)
+    if (wcscmp( arg, L"--version" ) == 0)
     {
       _putws( L"ANSICON (" BITS L"-bit) version " PVERS L" (" PDATE L")." );
       return rc;
     }
   }
 
-#if (MYDEBUG > 1)
-  DEBUGSTR( NULL ); // create a new file
-#endif
+  prog = get_program_name( NULL );
+  *logstr = '\0';
+  GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
+  log_level = _wtoi( logstr );
+  if (log_level && !(log_level & 8))
+    DEBUGSTR( 1, NULL );	// create a new file
 
-  option = (argc > 1 && argv[1][0] == '-');
-  if (option && (towlower( argv[1][1] ) == 'i' ||
-		 towlower( argv[1][1] ) == 'u'))
+  installed = (GetEnvironmentVariable( L"ANSICON_VER", NULL, 0 ) != 0);
+  // If it's already installed, remove it.  This serves two purposes: preserves
+  // the parent's GRM; and unconditionally injects into GUI, without having to
+  // worry about ANSICON_GUI.
+  if (installed)
   {
-    process_autorun( argv[1][1] );
-    argv[1][1] = 'p';
+    fputws( L"\33[m", stdout );
+    FreeLibrary( GetModuleHandle( L"ANSI" BITS L".dll" ) );
   }
 
+  shell = run = TRUE;
   get_original_attr();
 
-  opt_m = FALSE;
-  if (option && argv[1][1] == 'm')
+  while (*arg == '-')
   {
-    WORD attr = 7;
-    if (iswxdigit( argv[1][2] ))
+    switch (arg[1])
     {
-      attr = iswdigit( argv[1][2] ) ? argv[1][2] - '0'
-				    : (argv[1][2] | 0x20) - 'a' + 10;
-      if (iswxdigit( argv[1][3]))
-      {
-	attr <<= 4;
-	attr |= iswdigit( argv[1][3] ) ? argv[1][3] - '0'
-				       : (argv[1][3] | 0x20) - 'a' + 10;
-      }
-    }
-    SetConsoleTextAttribute( hConOut, attr );
+      case 'l':
+	SetEnvironmentVariable( L"ANSICON_LOG", arg + 2 );
+	log_level = _wtoi( arg + 2 );
+	if (!(log_level & 8))		// unless told otherwise
+	  DEBUGSTR( 1, NULL );		// create a new file
+	break;
 
-    opt_m = TRUE;
-    ++argv;
-    --argc;
-    option = (argc > 1 && argv[1][0] == '-');
-  }
+      case 'i':
+      case 'I':
+      case 'u':
+      case 'U':
+	shell = FALSE;
+	process_autorun( arg[1] );
+	if (arg[1] == 'u' || arg[1] == 'U')
+	  break;
+	// else fall through
 
-  installed = (GetEnvironmentVariable( L"ANSICON", NULL, 0 ) != 0);
-
-  if (option && argv[1][1] == 'p')
-  {
-    // If it's already installed, there's no need to do anything.
-    if (installed)
-      ;
-    else if (GetParentProcessInfo( &pi ))
-    {
-      pi.hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId );
-      pi.hThread  = OpenThread(  THREAD_ALL_ACCESS,  FALSE, pi.dwThreadId  );
-      SuspendThread( pi.hThread );
-      if (!Inject( &pi ))
-      {
-	_putws( L"ANSICON: parent process type is not supported." );
-	rc = 1;
-      }
-      ResumeThread( pi.hThread );
-      CloseHandle( pi.hThread );
-      CloseHandle( pi.hProcess );
-    }
-    else
-    {
-      _putws( L"ANSICON: could not obtain the parent process." );
-      rc = 1;
-    }
-  }
-  else
-  {
-    ansi = 0;
-    if (!installed)
-    {
-      ansi = LoadLibrary( L"ANSI" BITS L".dll" );
-      if (!ansi)
-      {
-	fputws( L"ANSICON: failed to load ANSI" BITS L".dll.\n", stderr );
-	rc = 1;
-      }
-    }
-
-    if (option && (argv[1][1] == 't' || argv[1][1] == 'T'))
-    {
-      BOOL title = (argv[1][1] == 'T');
-      if (argc == 2)
-      {
-	argv[2] = L"-";
-	++argc;
-      }
-      for (; argc > 2; ++argv, --argc)
-      {
-	if (title)
-	  wprintf( L"==> %s <==\n", argv[2] );
-	display( argv[2], title );
-	if (title)
-	  putwchar( '\n' );
-      }
-    }
-    else
-    {
-      // Retrieve the original command line, skipping our name and the option.
-      cmd = skip_spaces( skip_arg( skip_spaces( GetCommandLine() ) ) );
-      if (opt_m)
-	cmd = skip_spaces( skip_arg( cmd ) );
-
-      if (cmd[0] == '-' && (cmd[1] == 'e' || cmd[1] == 'E'))
-      {
-	fputws( cmd + 3, stdout );
-	if (cmd[1] == 'e')
-	  putwchar( '\n' );
-      }
-      else if (!_isatty( 0 ) && *cmd == '\0')
-      {
-	display( L"-", FALSE );
-      }
-      else
-      {
-	if (*cmd == '\0')
+      case 'p':
+	shell = FALSE;
+	// If it's already installed, there's no need to do anything.
+	if (installed)
 	{
-	  cmd = _wgetenv( L"ComSpec" );
-	  if (cmd == NULL)
-	    cmd = L"cmd";
+	  DEBUGSTR( 1, L"Already installed" );
 	}
-
-	ZeroMemory( &si, sizeof(si) );
-	si.cb = sizeof(si);
-	if (CreateProcess( NULL, cmd, NULL,NULL, TRUE, 0, NULL,NULL, &si, &pi ))
+	else if (GetParentProcessInfo( &pi, arg ))
 	{
-	  BOOL	console = FALSE;
-	  TCHAR name[MAX_PATH];
-	  DWORD rc;
-	  CoInitialize( NULL );
-	  do
-	  {
-	    // When I first tried doing this, it took a little while to
-	    // succeed.  Testing again shows it works immediately - perhaps the
-	    // CoInitialize introduces enough of a delay.  Still, play it safe
-	    // and keep trying.  And if you're wondering why I do it at all,
-	    // ProcessType may detect GUI, even for a console process.	That's
-	    // fine after injection (including -p), but not here.  We *need* to
-	    // suspend our own execution whilst running the child, otherwise
-	    // bad things happen (besides which, I want to restore the original
-	    // attributes when the child exits).
-	    if (GetModuleFileNameEx( pi.hProcess, NULL, name, lenof(name) ))
-	    {
-	      DWORD_PTR info;
-	      info = SHGetFileInfo( name, 0, NULL, 0, SHGFI_EXETYPE );
-	      if (info == 0x00004550) // console PE
-		console = TRUE;
-	      DEBUGSTR( L"%s", name );
-	      DEBUGSTR( L"  %s (%p)", (console) ? L"Console" : L"Not console",
-				      info );
-	      break;
-	    }
-	    Sleep( 10 );
-	  } while (GetExitCodeProcess( pi.hProcess, &rc ) &&
-		   rc == STILL_ACTIVE);
-	  CoUninitialize();
-	  if (console)
-	  {
-	    SetConsoleCtrlHandler( (PHANDLER_ROUTINE)CtrlHandler, TRUE );
-	    WaitForSingleObject( pi.hProcess, INFINITE );
-	  }
-	  CloseHandle( pi.hProcess );
+	  pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
+	  pi.hThread  = OpenThread( THREAD_ALL_ACCESS,	FALSE, pi.dwThreadId );
+	  SuspendThread( pi.hThread );
+	  if (!Inject( &pi, &gui, arg ))
+	    rc = 1;
+	  ResumeThread( pi.hThread );
 	  CloseHandle( pi.hThread );
+	  CloseHandle( pi.hProcess );
 	}
 	else
 	{
-	  *skip_arg( cmd ) = '\0';
-	  wprintf( L"ANSICON: '%s' could not be executed.\n", cmd );
+	  fputws( L"ANSICON: could not obtain the parent process.\n", stderr );
 	  rc = 1;
 	}
-      }
-    }
+	break;
 
-    if (ansi)
-      FreeLibrary( ansi );
+      case 'm':
+      {
+	int a = wcstol( arg + 2, NULL, 16 );
+	if (a == 0)
+	  a = (arg[2] == '-') ? -7 : 7;
+	if (a < 0)
+	{
+	  SetEnvironmentVariable( L"ANSICON_REVERSE", L"1" );
+	  a = -a;
+	  a = ((a >> 4) & 15) | ((a & 15) << 4);
+	}
+	SetConsoleTextAttribute( hConOut, a );
+	SetEnvironmentVariable( L"ANSICON_DEF", NULL );
+	break;
+      }
+
+      case 'e':
+      case 'E':
+      case 't':
+      case 'T':
+	run = FALSE;
+	++arg;
+	goto arg_out;
+    }
+    get_arg( arg, &argv, &cmd );
+  }
+arg_out:
+  if (run && *cmd == '\0')
+  {
+    if (!_isatty( 0 ))
+    {
+      *arg = 't';
+      run = FALSE;
+    }
+    else if (!shell)
+      run = FALSE;
   }
 
-  set_original_attr();
+  if (run)
+  {
+    if (*cmd == '\0')
+    {
+      cmd = _wgetenv( L"ComSpec" );
+      if (cmd == NULL)
+	cmd = L"cmd";
+      arg = cmd;
+    }
+
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    if (CreateProcess( NULL, cmd, NULL, NULL, TRUE, CREATE_SUSPENDED,
+		       NULL, NULL, &si, &pi ))
+    {
+      Inject( &pi, &gui, arg );
+      ResumeThread( pi.hThread );
+      if (!gui)
+      {
+	SetConsoleCtrlHandler( (PHANDLER_ROUTINE)CtrlHandler, TRUE );
+	WaitForSingleObject( pi.hProcess, INFINITE );
+	GetExitCodeProcess( pi.hProcess, (LPDWORD)(LPVOID)&rc );
+      }
+      CloseHandle( pi.hProcess );
+      CloseHandle( pi.hThread );
+    }
+    else
+    {
+      print_error( arg, arg );
+      rc = 1;
+    }
+  }
+  else if (*arg)
+  {
+    ansi = LoadLibrary( L"ANSI" BITS L".dll" );
+    if (ansi == NULL)
+    {
+      print_error( L"ANSI" BITS L".dll" );
+      rc = 1;
+    }
+
+    if (*arg == 'e' || *arg == 'E')
+    {
+      cmd += 2;
+      if (*cmd == ' ' || *cmd == '\t')
+	++cmd;
+      fputws( cmd, stdout );
+      if (*arg == 'e')
+	putwchar( '\n' );
+    }
+    else // (*arg == 't' || *arg == 'T')
+    {
+      BOOL title = (*arg == 'T');
+      get_arg( arg, &argv, &cmd );
+      if (*arg == '\0')
+	wcscpy( arg, L"-" );
+      do
+      {
+	if (title)
+	{
+	  wprintf( L"==> %s <==\n", arg );
+	  display( arg, title );
+	  putwchar( '\n' );
+	}
+	else
+	  display( arg, title );
+	get_arg( arg, &argv, &cmd );
+      } while (*arg);
+    }
+
+    FreeLibrary( ansi );
+  }
+
+  if (run || *arg)
+    set_original_attr();
+  else
+    CloseHandle( hConOut );
+
   return rc;
-}
-
-
-void print_error( LPCTSTR name, BOOL title )
-{
-  LPTSTR errmsg;
-
-  FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
-		 NULL, GetLastError(), 0, (LPTSTR)(LPVOID)&errmsg, 0, NULL );
-  if (!title)
-    wprintf( L"ANSICON: %s: ", name );
-  fputws( errmsg, stdout );
-  LocalFree( errmsg );
 }
 
 
 // Display a file.
 void display( LPCTSTR name, BOOL title )
 {
-  HANDLE file;
-  int	 c;
-  LARGE_INTEGER size, offset;
+  HANDLE in, out;
+  BOOL	 pipe;
+  char	 buf[8192];
+  DWORD  len;
 
-  // Handle the pipe differently.
   if (*name == '-' && name[1] == '\0')
   {
-    if (title)
-      putwchar( '\n' );
-    while ((c = getchar()) != EOF)
-      putchar( c );
-    return;
+    pipe = TRUE;
+    in = GetStdHandle( STD_INPUT_HANDLE );
   }
-
-  file = CreateFile( name, GENERIC_READ, FILE_SHARE_READ, NULL,
-		     OPEN_EXISTING, 0, NULL );
-  if (file == INVALID_HANDLE_VALUE)
+  else
   {
-    print_error( name, title );
-    return;
-  }
-
-  GetFileSizeEx( file, &size );
-  if (size.QuadPart != 0)
-  {
-    HANDLE map = CreateFileMapping( file, NULL, PAGE_READONLY, 0, 0, NULL );
-    if (map)
+    pipe = FALSE;
+    in = CreateFile( name, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		     NULL, OPEN_EXISTING, 0, NULL );
+    if (in == INVALID_HANDLE_VALUE)
     {
-      if (title)
-	putwchar( '\n' );
-      offset.QuadPart = 0;
-      do
-      {
-	DWORD len = (size.QuadPart > 65536) ? 65536 : size.LowPart;
-	LPVOID mem = MapViewOfFile( map, FILE_MAP_READ, offset.HighPart,
-				    offset.LowPart, len );
-	if (mem)
-	{
-	  fwrite( mem, 1, len, stdout );
-	  UnmapViewOfFile( mem );
-	}
-	else
-	{
-	  print_error( name, title );
-	  break;
-	}
-	offset.QuadPart += len;
-	size.QuadPart -= len;
-      } while (size.QuadPart);
-      CloseHandle( map );
+      print_error( name );
+      return;
     }
-    else
-      print_error( name, title );
   }
-  CloseHandle( file );
+  if (title)
+  {
+    putwchar( '\n' );
+    // Need to flush, otherwise it's written *after* STD_OUTPUT_HANDLE should
+    // it be redirected.
+    fflush( stdout );
+  }
+  out = GetStdHandle( STD_OUTPUT_HANDLE );
+  for (;;)
+  {
+    if (!ReadFile( in, buf, sizeof(buf), &len, NULL ))
+    {
+      if (GetLastError() != ERROR_BROKEN_PIPE)
+	print_error( name );
+      break;
+    }
+    if (len == 0)
+      break;
+    WriteFile( out, buf, len, &len, NULL );
+  }
+  if (!pipe)
+    CloseHandle( in );
+}
+
+
+void print_error( LPCTSTR name, ... )
+{
+  LPTSTR errmsg = NULL;
+  DWORD err = GetLastError();
+  va_list arg;
+
+  if (err == ERROR_BAD_EXE_FORMAT)
+  {
+    // This error requires an argument, which is a duplicate of name.
+    va_start( arg, name );
+    FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+		   NULL, err, 0, (LPTSTR)(LPVOID)&errmsg, 0, &arg );
+    va_end( arg );
+    fwprintf( stderr, L"ANSICON: %s", errmsg );
+  }
+  else
+  {
+    FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+		   NULL, err, 0, (LPTSTR)(LPVOID)&errmsg, 0, NULL );
+    // Just in case there are other messages requiring args...
+    if (errmsg == NULL)
+      fwprintf( stderr, L"ANSICON: %s: Error %lu.\n", name, err );
+    else
+      fwprintf( stderr, L"ANSICON: %s: %s", name, errmsg );
+  }
+  LocalFree( errmsg );
 }
 
 
@@ -434,16 +454,19 @@ void display( LPCTSTR name, BOOL title )
 void process_autorun( TCHAR cmd )
 {
   HKEY	 cmdkey;
-  TCHAR  ansicon[MAX_PATH+8];
+  TCHAR  ansicon[MAX_PATH+80];
+  TCHAR  logstr[80];
   LPTSTR autorun, ansirun;
   DWORD  len, type, exist;
   BOOL	 inst;
 
-  len = GetModuleFileName( NULL, ansicon+2, MAX_PATH );
-  ansicon[0] = '&';
-  ansicon[1] = ansicon[2+len] = '"';
-  wcscpy( ansicon + 3+len, L" -p" );
-  len += 6;
+  if (log_level)
+    _snwprintf( logstr, lenof(logstr), L"set ANSICON_LOG=%d&", log_level );
+  else
+    *logstr = '\0';
+  len = TSIZE(_snwprintf( ansicon, lenof(ansicon),
+		L"(if %%ANSICON_VER%%==^%%ANSICON_VER^%% %s\"%s\" -p)",
+		logstr, prog_path ) + 1);
 
   inst = (towlower( cmd ) == 'i');
   RegCreateKeyEx( (iswlower( cmd )) ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
@@ -452,48 +475,58 @@ void process_autorun( TCHAR cmd )
 		  &cmdkey, &exist );
   exist = 0;
   RegQueryValueEx( cmdkey, AUTORUN, NULL, NULL, NULL, &exist );
-  autorun = malloc( exist + len * sizeof(TCHAR) + sizeof(TCHAR) );
-  // Let's assume there's sufficient memory.
-  if (exist > sizeof(TCHAR))
+  if (exist == 0)
   {
-    exist += sizeof(TCHAR);
+    if (inst)
+      RegSetValueEx( cmdkey, AUTORUN, 0, REG_SZ, (PBYTE)ansicon, len );
+  }
+  else
+  {
+    // Let's assume there's sufficient memory.
+    autorun = malloc( exist + len );
     RegQueryValueEx( cmdkey, AUTORUN, NULL, &type, (PBYTE)autorun, &exist );
-    ansirun = wcsstr( autorun, ansicon+1 );
+    // Remove the existing command, if present.
+    ansirun = wcsstr( autorun, L"(if %ANSICON_VER%" );
+    if (ansirun != NULL)
+    {
+      LPTSTR tmp = wcschr( ansirun, '"' );      // opening quote
+      tmp = wcschr( tmp + 1, '"' );             // closing quote
+      tmp = wcschr( tmp + 1, ')' );             // closing bracket
+      if (*++tmp == '&')
+	++tmp;
+      if (*tmp == '&')
+	++tmp;
+      if (*tmp == '\0')
+      {
+	if (ansirun > autorun && ansirun[-1] == '&')
+	  --ansirun;
+	if (ansirun > autorun && ansirun[-1] == '&')
+	  --ansirun;
+      }
+      wcscpy( ansirun, tmp );
+      exist = TSIZE((DWORD)wcslen( autorun ) + 1);
+    }
     if (inst)
     {
-      if (!ansirun)
+      if (exist == sizeof(TCHAR))
+	RegSetValueEx( cmdkey, AUTORUN, 0, REG_SZ, (PBYTE)ansicon, len );
+      else
       {
-	wcscpy( (LPTSTR)((PBYTE)autorun + exist - sizeof(TCHAR)), ansicon );
-	RegSetValueEx( cmdkey, AUTORUN, 0, type, (PBYTE)autorun,
-		       exist + len*sizeof(TCHAR) );
+	memmove( (PBYTE)autorun + len, autorun, exist );
+	memcpy( autorun, ansicon, len );
+	((PBYTE)autorun)[len-sizeof(TCHAR)] = '&';
+	RegSetValueEx( cmdkey, AUTORUN, 0, type, (PBYTE)autorun, exist+len );
       }
     }
     else
     {
-      if (ansirun)
-      {
-	if (ansirun == autorun && exist == len*sizeof(TCHAR))
-	  RegDeleteValue( cmdkey, AUTORUN );
-	else
-	{
-	  if (ansirun > autorun && ansirun[-1] == '&')
-	    --ansirun;
-	  else if (autorun[len-1] != '&')
-	    --len;
-	  memcpy( ansirun, ansirun + len, exist - len*sizeof(TCHAR) );
-	  RegSetValueEx( cmdkey, AUTORUN, 0, type, (PBYTE)autorun,
-			 exist - len*sizeof(TCHAR) );
-	}
-      }
+      if (exist == sizeof(TCHAR))
+	RegDeleteValue( cmdkey, AUTORUN );
+      else
+	RegSetValueEx( cmdkey, AUTORUN, 0, type, (PBYTE)autorun, exist );
     }
+    free( autorun );
   }
-  else if (inst)
-  {
-    RegSetValueEx( cmdkey, AUTORUN, 0, REG_SZ, (PBYTE)(ansicon+1),
-		   len*sizeof(TCHAR) );
-  }
-
-  free( autorun );
   RegCloseKey( cmdkey );
 }
 
@@ -513,20 +546,19 @@ BOOL find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe )
 
 
 // Obtain the process and thread identifiers of the parent process.
-BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi )
+BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR name )
 {
   HANDLE hSnap;
   PROCESSENTRY32 pe;
   THREADENTRY32  te;
-  DWORD  id = GetCurrentProcessId();
   BOOL	 fOk;
 
-  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS|TH32CS_SNAPTHREAD, id );
+  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS|TH32CS_SNAPTHREAD, 0 );
 
   if (hSnap == INVALID_HANDLE_VALUE)
     return FALSE;
 
-  find_proc_id( hSnap, id, &pe );
+  find_proc_id( hSnap, GetCurrentProcessId(), &pe );
   if (!find_proc_id( hSnap, pe.th32ParentProcessID, &pe ))
   {
     CloseHandle( hSnap );
@@ -542,38 +574,53 @@ BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi )
 
   ppi->dwProcessId = pe.th32ProcessID;
   ppi->dwThreadId  = te.th32ThreadID;
+  wcscpy( name, pe.szExeFile );
 
   return fOk;
 }
 
 
-// Return the first non-space character from cmd.
-LPTSTR skip_spaces( LPTSTR cmd )
+// Return the first non-space character from arg.
+LPTSTR skip_spaces( LPTSTR arg )
 {
-  while ((*cmd == ' ' || *cmd == '\t') && *cmd != '\0')
-    ++cmd;
+  while (*arg == ' ' || *arg == '\t')
+    ++arg;
 
-  return cmd;
+  return arg;
 }
 
 
-// Return the end of the argument at cmd.
-LPTSTR skip_arg( LPTSTR cmd )
+// Retrieve an argument from the command line.	cmd gets the existing argv; argv
+// is ready for the next argument.
+void get_arg( LPTSTR arg, LPTSTR* argv, LPTSTR* cmd )
 {
-  while (*cmd != ' ' && *cmd != '\t' && *cmd != '\0')
-  {
-    if (*cmd == '"')
-    {
-      do
-	++cmd;
-      while (*cmd != '"' && *cmd != '\0');
-      if (*cmd == '\0')
-	--cmd;
-    }
-    ++cmd;
-  }
+  LPTSTR line;
 
-  return cmd;
+  line = *cmd = skip_spaces( *argv );
+  while (*line != '\0')
+  {
+    if (*line == ' ' || *line == '\t')
+    {
+      ++line;
+      break;
+    }
+    if (*line == '"')
+    {
+      while (*++line != '\0')
+      {
+	if (*line == '"')
+	{
+	  ++line;
+	  break;
+	}
+	*arg++ = *line;
+      }
+    }
+    else
+      *arg++ = *line++;
+  }
+  *arg = '\0';
+  *argv = line;
 }
 
 
@@ -590,10 +637,12 @@ L"Process ANSI escape sequences in Windows console programs.\n"
 L"Process ANSI escape sequences in Win32 console programs.\n"
 #endif
 L"\n"
-L"ansicon -i|I | -u|U\n"
-L"ansicon [-m[<attr>]] [-p | -e|E string | -t|T [file(s)] | program [args]]\n"
+L"ansicon [-l<level>] [-i] [-I] [-u] [-U] [-m[<attr>]] [-p]\n"
+L"        [-e|E string | -t|T [file(s)] | program [args]]\n"
 L"\n"
-L"  -i\t\tinstall - add ANSICON to the AutoRun entry (implies -p)\n"
+L"  -l\t\tset the logging level (1=process, 2=module, 3=function,\n"
+L"    \t\t +4=output, +8=append) for program (-p is unaffected)\n"
+L"  -i\t\tinstall - add ANSICON to the AutoRun entry (also implies -p)\n"
 L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
 L"  -I -U\t\tuse local machine instead of current user\n"
 L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"
@@ -605,6 +654,7 @@ L"  -T\t\tdisplay files, name first, blank line before and after\n"
 L"  program\trun the specified program\n"
 L"  nothing\trun a new command processor, or display stdin if redirected\n"
 L"\n"
-L"<attr> is one or two hexadecimal digits; please use \"COLOR /?\" for details."
-	      );
+L"<attr> is one or two hexadecimal digits; please use \"COLOR /?\" for details.\n"
+L"It may start with '-' to reverse foreground and background (but not for -p)."
+	);
 }

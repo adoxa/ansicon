@@ -5,6 +5,7 @@
 */
 
 #include <winver.h>
+#include "version.h"
 
 #ifdef _WIN64
 # define BITS "64"
@@ -13,8 +14,8 @@
 #endif
 
 1 VERSIONINFO
-FILEVERSION	1,4,0,0
-PRODUCTVERSION	1,4,0,0
+FILEVERSION	PVERB
+PRODUCTVERSION	PVERB
 FILEOS		VOS_NT
 FILETYPE	VFT_DLL
 {
@@ -25,12 +26,12 @@ FILETYPE	VFT_DLL
       VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
       VALUE "CompanyName",      "Jason Hood"
       VALUE "FileDescription",  "ANSI Console"
-      VALUE "FileVersion",      "1.40"
+      VALUE "FileVersion",      PVERSA
       VALUE "InternalName",     "ANSI" BITS
       VALUE "LegalCopyright",   "Freeware"
       VALUE "OriginalFilename", "ANSI" BITS ".dll"
       VALUE "ProductName",      "ANSICON"
-      VALUE "ProductVersion",   "1.40"
+      VALUE "ProductVersion",   PVERSA
     }
   }
 

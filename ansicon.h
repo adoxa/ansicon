@@ -18,29 +18,30 @@
 #include <stdlib.h>
 
 #define lenof(array) (sizeof(array)/sizeof(*(array)))
+#define TSIZE(size)  ((size) * sizeof(TCHAR))
 
 
-int  ProcessType( LPPROCESS_INFORMATION );
+typedef struct
+{
+  BYTE foreground;	// ANSI base color (0 to 7; add 30)
+  BYTE background;	// ANSI base color (0 to 7; add 40)
+  BYTE bold;		// console FOREGROUND_INTENSITY bit
+  BYTE underline;	// console BACKGROUND_INTENSITY bit
+  BYTE rvideo;		// swap foreground/bold & background/underline
+  BYTE concealed;	// set foreground/bold to background/underline
+  BYTE reverse; 	// swap console foreground & background attributes
+} GRM, *PGRM;		// Graphic Rendition Mode
+
+
+int  ProcessType( LPPROCESS_INFORMATION, BOOL* );
 void InjectDLL32( LPPROCESS_INFORMATION, LPCTSTR );
 void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
 
+extern TCHAR  prog_path[MAX_PATH];
+extern LPTSTR prog;
+LPTSTR get_program_name( LPTSTR );
 
-// ========== Auxiliary debug function
-
-#ifndef MYDEBUG
-#  define MYDEBUG 0	// 0 - no debugging
-			// 1 - use OutputDebugString
-			// 2 - use %temp%\ansicon.log
-#endif
-
-#if (MYDEBUG > 0)
-    void DEBUGSTR( LPTSTR szFormat, ... );
-#else
-#   if defined(_MSC_VER) && _MSC_VER <= 1400
-      #define DEBUGSTR (void)
-#   else
-#     define DEBUGSTR(...)
-#   endif
-#endif
+extern int log_level;
+void DEBUGSTR( int level, LPTSTR szFormat, ... );
 
 #endif

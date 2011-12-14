@@ -26,10 +26,13 @@ DIR = x64
 
 CC = cl
 CFLAGS = /nologo /W3 /Ox /GF /D_CRT_SECURE_NO_WARNINGS
-LIBS = advapi32.lib shell32.lib user32.lib psapi.lib ole32.lib
+LIBS = advapi32.lib user32.lib
 
-X86OBJS = x86\proctype.obj x86\injdll32.obj x86\debugstr.obj
-X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\debugstr.obj
+# This is required for the 2003 Platform SDK, but not for Visual Studio 2010.
+#LIBS64 = bufferoverflowu.lib
+
+X86OBJS = x86\proctype.obj x86\injdll32.obj x86\util.obj
+X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\util.obj
 
 {}.c{$(DIR)}.obj:
 	$(CC) /c $(CFLAGS) /Fo$@ $<
@@ -58,20 +61,22 @@ x64:
 	mkdir x64
 
 x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\ansicon.res
-	$(CC) /nologo /Fe$@ $** $(LIBS) bufferoverflowu.lib
+	$(CC) /nologo /Fe$@ $** $(LIBS) $(LIBS64)
 
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
-	$(CC) /nologo /LD /Fe$@ $** $(LIBS) bufferoverflowu.lib
+	$(CC) /nologo /LD /Fe$@ $** $(LIBS) $(LIBS64)
 
 x64\ANSI32.dll: x86\ANSI32.dll
 	copy x86\ANSI32.dll x64\ANSI32.dll
 
 x64\ANSI-LLW.exe: ANSI-LLW.c
-	$(CC) $(CFLAGS) /Fe$@ /Fo$*.obj $? bufferoverflowu.lib
+	$(CC) $(CFLAGS) /Fe$@ /Fo$*.obj $? $(LIBS64)
 
-ansicon.c:  ansicon.h
-ANSI.c:     ansicon.h
-debugstr.c: ansicon.h
+ansicon.c:  ansicon.h version.h
+ansicon.rc: version.h
+ANSI.c:     ansicon.h version.h
+ANSI.rc:    version.h
+util.c:     ansicon.h
 injdll32.c: ansicon.h
 injdll64.c: ansicon.h
 proctype.c: ansicon.h
