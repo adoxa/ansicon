@@ -281,13 +281,13 @@ int main( void )
 arg_out:
   if (run && *cmd == '\0')
   {
-    if (!_isatty( 0 ))
+    if (!shell)
+      run = FALSE;
+    else if (!_isatty( 0 ))
     {
       *arg = 't';
       run = FALSE;
     }
-    else if (!shell)
-      run = FALSE;
   }
 
   if (run)

@@ -1089,6 +1089,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
     }
   }
   CloseHandle( hModuleSnap );
+  DEBUGSTR( 2, L"%s completed", (restore) ? zUnhooking : zHooking );
   return TRUE;
 }
 
