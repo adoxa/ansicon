@@ -880,21 +880,27 @@ ParseAndPrintString( HANDLE hDev,
 
 
 const char APIKernel[]		   = "kernel32.dll";
-const char APIConsole[] 	   = "API-MS-Win-Core-Console-L1-1-0.dll";
-const char APIProcessThreads[]	   = "API-MS-Win-Core-ProcessThreads-L1-1-0.dll";
-const char APIProcessEnvironment[] = "API-MS-Win-Core-ProcessEnvironment-L1-1-0.dll";
-const char APILibraryLoader[]	   = "API-MS-Win-Core-LibraryLoader-L1-1-0.dll";
-const char APIFile[]		   = "API-MS-Win-Core-File-L1-1-0.dll";
+const char APIConsole[] 	   = "API-MS-Win-Core-Console-";
+const char APIProcessThreads[]	   = "API-MS-Win-Core-ProcessThreads-";
+const char APIProcessEnvironment[] = "API-MS-Win-Core-ProcessEnvironment-";
+const char APILibraryLoader[]	   = "API-MS-Win-Core-LibraryLoader-";
+const char APIFile[]		   = "API-MS-Win-Core-File-";
 
-PCSTR APIs[] =
+typedef struct
 {
-  APIKernel,
-  APIConsole,
-  APIProcessThreads,
-  APIProcessEnvironment,
-  APILibraryLoader,
-  APIFile,
-  NULL
+  PCSTR   name;
+  DWORD   len;
+  HMODULE base;
+} API_DATA, *PAPI_DATA;
+
+API_DATA APIs[] =
+{
+  { APIConsole, 	   sizeof(APIConsole) - 1,	      NULL },
+  { APIProcessThreads,	   sizeof(APIProcessThreads) - 1,     NULL },
+  { APIProcessEnvironment, sizeof(APIProcessEnvironment) - 1, NULL },
+  { APILibraryLoader,	   sizeof(APILibraryLoader) - 1,      NULL },
+  { APIFile,		   sizeof(APIFile) - 1, 	      NULL },
+  { NULL,		   0,				      NULL }
 };
 
 
@@ -973,13 +979,35 @@ BOOL HookAPIOneMod(
   // for the module whose name matches the pszFunctionModule parameter.
   for (; pImportDesc->Name; pImportDesc++)
   {
-    PCSTR* lib;
+    BOOL kernel = TRUE;
     PSTR pszModName = MakeVA( PSTR, pImportDesc->Name );
-    for (lib = APIs; *lib; ++lib)
-      if (_stricmp( pszModName, *lib ) == 0)
-	break;
-    if (*lib == NULL)
-      continue;
+    if (_stricmp( pszModName, APIKernel ) != 0)
+    {
+      PAPI_DATA lib;
+      for (lib = APIs; lib->name; ++lib)
+      {
+	if (_strnicmp( pszModName, lib->name, lib->len ) == 0)
+	{
+	  if (lib->base == NULL)
+	  {
+	    lib->base = GetModuleHandleA( pszModName );
+	    for (hook = Hooks; hook->name; ++hook)
+	      if (hook->lib == lib->name)
+		hook->apifunc = GetProcAddress( lib->base, hook->name );
+	  }
+	  break;
+	}
+      }
+      if (lib->name == NULL)
+      {
+	if (log_level & 16)
+	  DEBUGSTR( 2, L" %s %S", zIgnoring, pszModName );
+	continue;
+      }
+      kernel = FALSE;
+    }
+    if (log_level & 16)
+      DEBUGSTR( 2, L" Scanning %S", pszModName );
 
     // Get a pointer to the found module's import address table (IAT).
     pThunk = MakeVA( PIMAGE_THUNK_DATA, pImportDesc->FirstThunk );
@@ -994,7 +1022,7 @@ BOOL HookAPIOneMod(
 	if (restore)
 	{
 	  if ((PROC)pThunk->u1.Function == hook->newfunc)
-	    patch = (lib == APIs) ? hook->oldfunc : hook->apifunc;
+	    patch = (kernel) ? hook->oldfunc : hook->apifunc;
 	}
 	else if ((PROC)pThunk->u1.Function == hook->oldfunc ||
 		 (PROC)pThunk->u1.Function == hook->apifunc)
@@ -1288,7 +1316,7 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 	DEBUGSTR( 3, L"GetProcAddress: %S (ignoring)", lpProcName );
 	return proc;
       }
-      for (hook = Hooks+2; hook->name; ++hook)
+      for (hook = Hooks + 2; hook->name; ++hook)
       {
 	if (proc == hook->oldfunc)
 	{
@@ -1297,19 +1325,27 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 	}
       }
     }
-    else if (Hooks[0].apifunc) // assume if one is defined, all are
+    else
     {
-      if (proc == Hooks[0].apifunc || proc == Hooks[1].apifunc)
+      PAPI_DATA api;
+      for (api = APIs; api->name; ++api)
       {
-	DEBUGSTR( 3, L"GetProcAddress: %S (ignoring)", lpProcName );
-	return proc;
-      }
-      for (hook = Hooks+2; hook->name; ++hook)
-      {
-	if (proc == hook->apifunc)
+	if (hModule == api->base)
 	{
-	  DEBUGSTR( 3, L"GetProcAddress: %S", lpProcName );
-	  return hook->newfunc;
+	  if (proc == Hooks[0].apifunc || proc == Hooks[1].apifunc)
+	  {
+	    DEBUGSTR( 3, L"GetProcAddress: %S (ignoring)", lpProcName );
+	    return proc;
+	  }
+	  for (hook = Hooks + 2; hook->name; ++hook)
+	  {
+	    if (proc == hook->apifunc)
+	    {
+	      DEBUGSTR( 3, L"GetProcAddress: %S", lpProcName );
+	      return hook->newfunc;
+	    }
+	  }
+	  break;
 	}
       }
     }
@@ -1556,7 +1592,7 @@ HookFn Hooks[] = {
   { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL },
   { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL },
   { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL },
-  { NULL, NULL, NULL, NULL }
+  { NULL, NULL, NULL, NULL, NULL }
 };
 
 //-----------------------------------------------------------------------------
@@ -1626,7 +1662,6 @@ __declspec(dllexport) // to stop MinGW exporting everything
 BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 {
   BOOL	  bResult = TRUE;
-  HMODULE api;
   PHookFn hook;
   TCHAR   logstr[4];
 
@@ -1647,12 +1682,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     // Get the entry points to the original functions.
     hKernel = GetModuleHandleA( APIKernel );
     for (hook = Hooks; hook->name; ++hook)
-    {
       hook->oldfunc = GetProcAddress( hKernel, hook->name );
-      api = GetModuleHandleA( hook->lib );
-      if (api)
-	hook->apifunc = GetProcAddress( api, hook->name );
-    }
 
     bResult = HookAPIAllMod( Hooks, FALSE );
     OriginalAttr();
