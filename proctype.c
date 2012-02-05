@@ -75,6 +75,15 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 	}
       }
     }
+#ifdef _WIN32
+    // If a 32-bit process manages to load a 64-bit one, we may miss the base
+    // address.  If the pointer overflows, assume 64-bit and abort.
+    if (ptr > ptr + minfo.RegionSize)
+    {
+      DEBUGSTR( 1, L"  Ignoring apparent 64-bit process." );
+      return 0;
+    }
+#endif
   }
 
   DEBUGSTR( 1, L"  Ignoring non-Windows process" );
