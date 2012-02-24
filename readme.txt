@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2011 Jason Hood
+			 Copyright 2005-2012 Jason Hood
 
-			    Version 1.50.  Freeware
+			    Version 1.51.  Freeware
 
 
     ===========
@@ -40,7 +40,7 @@
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
     Delete ANSI-LLA.dll, it has been replaced with ANSI-LLW.dll.
-    Uninstall with your current version and install with this version.
+    Uninstall a pre-1.50 version and reinstall with this version.
 
 
     =====
@@ -92,6 +92,7 @@
 	3	Above, plus log functions that are hooked
 	4	Log console output (add to any of the above)
 	8	Append to the existing file (add to any of the above)
+       16	Log all imported modules (add to any of the above)
 
     The log option will not work with `-p'; set the environment variable
     ANSICON_LOG instead.  The variable is only read once when a new process
@@ -269,6 +270,12 @@
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.51 - 24 February, 2012:
+    - fixed installing into a piped/redirected CMD.EXE;
+    - fixed 32-bit process trying to identify a 64-bit process;
+    - ignore version within core API DLL names (now Win8 works);
+    + hook _lwrite & _hwrite (now Silverfrost FTN95 v6.20 works).
+
     1.50 - 14 December, 2011:
     - -u does not imply -p;
     - return the program's exit code;
@@ -416,4 +423,4 @@
 
 
     ==============================
-    Jason Hood, 14 December, 2011.
+    Jason Hood, 24 February, 2012.

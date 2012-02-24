@@ -56,9 +56,13 @@
     logging is always available, controlled by ANSICON_LOG environment variable;
     only restore the original color after program/echo/type;
     return program's exit code.
+
+  7 January, 2012:
+    fixed installing into a piped CMD.EXE;
+    added a log message indicating all imports have been processed.
 */
 
-#define PDATE L"14 December, 2011"
+#define PDATE L"24 February, 2012"
 
 #include "ansicon.h"
 #include "version.h"

@@ -75,6 +75,12 @@
     read ANSICON_GUI environment variable to hook selected GUI programs;
     read ANSICON_DEF environment variable to set the default GR;
     transfer current GR to child, read it on exit.
+
+  v1.51, 15 January, 5, 22 & 24 February, 2012:
+    added log mask 16 to log all the imported modules of imported modules;
+    ignore the version within the core API DLL names;
+    fix 32-bit process trying to identify 64-bit process;
+    hook _lwrite & _hwrite.
 */
 
 #include "ansicon.h"
@@ -1465,13 +1471,10 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
     }
     return rc;
   }
-  else
-  {
-    return WriteConsoleA( hCon, lpBuffer,
-			  nNumberOfCharsToWrite,
-			  lpNumberOfCharsWritten,
-			  lpReserved );
-  }
+
+  return WriteConsoleA( hCon, lpBuffer, nNumberOfCharsToWrite,
+			lpNumberOfCharsWritten, lpReserved );
+
 }
 
 BOOL
@@ -1488,13 +1491,9 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
 				nNumberOfCharsToWrite,
 				lpNumberOfCharsWritten );
   }
-  else
-  {
-    return WriteConsoleW( hCon, lpBuffer,
-			  nNumberOfCharsToWrite,
-			  lpNumberOfCharsWritten,
-			  lpReserved );
-  }
+
+  return WriteConsoleW( hCon, lpBuffer, nNumberOfCharsToWrite,
+			lpNumberOfCharsWritten, lpReserved );
 }
 
 BOOL
@@ -1510,13 +1509,41 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 			    lpNumberOfBytesWritten,
 			    lpOverlapped );
   }
-  else	    // here, WriteFile is the old function (this module is not hooked)
+
+  // here, WriteFile is the old function (this module is not hooked)
+  return WriteFile( hFile, lpBuffer, nNumberOfBytesToWrite,
+		    lpNumberOfBytesWritten, lpOverlapped );
+}
+
+
+#define HHFILE (HANDLE)(DWORD_PTR)
+
+UINT
+WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
+{
+  DWORD Mode, written;
+  if (GetConsoleMode( HHFILE hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
   {
-    return WriteFile( hFile, lpBuffer,
-		      nNumberOfBytesToWrite,
-		      lpNumberOfBytesWritten,
-		      lpOverlapped );
+    DEBUGSTR( 4, L"_lwrite->" );
+    MyWriteConsoleA( HHFILE hFile, lpBuffer, uBytes, &written, NULL );
+    return written;
   }
+
+  return _lwrite( hFile, lpBuffer, uBytes );
+}
+
+long
+WINAPI My_hwrite( HFILE hFile, LPCSTR lpBuffer, long lBytes )
+{
+  DWORD Mode, written;
+  if (GetConsoleMode( HHFILE hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  {
+    DEBUGSTR( 4, L"_hwrite->" );
+    MyWriteConsoleA( HHFILE hFile, lpBuffer, lBytes, &written, NULL );
+    return written;
+  }
+
+  return _hwrite( hFile, lpBuffer, lBytes );
 }
 
 
@@ -1555,8 +1582,10 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
     memcpy( lpBuffer, PVEREA, sizeof(PVEREA) );
     return sizeof(PVEREA) - 1;
   }
+
   if (lstrcmpiA( lpName, "ANSICON" ) == 0)
     set_ansicon( NULL );
+
   return GetEnvironmentVariableA( lpName, lpBuffer, nSize );
 }
 
@@ -1570,8 +1599,10 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
     memcpy( lpBuffer, PVERE, sizeof(PVERE) );
     return lenof(PVERE) - 1;
   }
+
   if (lstrcmpi( lpName, L"ANSICON" ) == 0)
     set_ansicon( NULL );
+
   return GetEnvironmentVariableW( lpName, lpBuffer, nSize );
 }
 
@@ -1592,6 +1623,8 @@ HookFn Hooks[] = {
   { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL },
   { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL },
   { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL },
+  { APIKernel,		   "_lwrite",                 (PROC)My_lwrite,                 NULL, NULL },
+  { APIKernel,		   "_hwrite",                 (PROC)My_hwrite,                 NULL, NULL },
   { NULL, NULL, NULL, NULL, NULL }
 };
 
