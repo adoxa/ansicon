@@ -42,9 +42,9 @@ X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\util.obj
 
 all: ansicon$(BITS)
 
-ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll
+ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll x64\ANSI32.dll
 
-ansicon64: x64 x64\ansicon.exe x64\ANSI64.dll x64\ANSI32.dll x64\ANSI-LLW.exe
+ansicon64: x64 x64\ansicon.exe x64\ANSI64.dll x64\ANSI-LLW.exe
 
 x86:
 	mkdir x86
@@ -53,9 +53,7 @@ x86\ansicon.exe: x86\ansicon.obj $(X86OBJS) x86\ansicon.res
 	$(CC) /nologo /Fe$@ $** $(LIBS)
 
 x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
-!IF $(BITS) == 32
 	$(CC) /nologo /LD /Fe$@ $** $(LIBS)
-!ENDIF
 
 x64:
 	mkdir x64
@@ -66,8 +64,8 @@ x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\ansicon.res
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
 	$(CC) /nologo /LD /Fe$@ $** $(LIBS) $(LIBS64)
 
-x64\ANSI32.dll: x86\ANSI32.dll
-	copy x86\ANSI32.dll x64\ANSI32.dll
+x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll32.obj x86\util.obj x86\ansi.res
+	$(CC) /nologo /LD /Fe$@ $** $(LIBS)
 
 x64\ANSI-LLW.exe: ANSI-LLW.c
 	$(CC) $(CFLAGS) /Fe$@ /Fo$*.obj $? $(LIBS64)
@@ -80,6 +78,11 @@ util.c:     ansicon.h
 injdll32.c: ansicon.h
 injdll64.c: ansicon.h
 proctype.c: ansicon.h
+
+x64\ANSI32.obj: ANSI.c
+	$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
+x64\proctype32.obj: proctype.c
+	$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
 
 clean:
 	-del $(DIR)\*.obj $(DIR)\*.res $(DIR)\*.lib $(DIR)\*.exp

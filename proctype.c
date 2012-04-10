@@ -50,7 +50,7 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
 	      {
-		DEBUGSTR( 1, L"  32-bit %s (base = %p)",
+		DEBUGSTR( 1, L"  32-bit %s (base = %.8p)",
 			  (*gui) ? L"GUI" : L"console", minfo.AllocationBase );
 		return 32;
 	      }
@@ -59,6 +59,13 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 	      {
 		DEBUGSTR( 1, L"  64-bit %s (base = %p)",
 			  (*gui) ? L"GUI" : L"console", minfo.AllocationBase );
+		return 64;
+	      }
+#elif defined(W32ON64)
+	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
+	      {
+		DEBUGSTR( 1, L"  64-bit %s",
+			  (*gui) ? L"GUI" : L"console" );
 		return 64;
 	      }
 #endif
@@ -80,8 +87,13 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
     // address.  If the pointer overflows, assume 64-bit and abort.
     if (ptr > ptr + minfo.RegionSize)
     {
-      DEBUGSTR( 1, L"  Ignoring apparent 64-bit process." );
+#ifdef W32ON64
+      DEBUGSTR( 1, L"  Pointer overflow: assuming 64-bit console" );
+      return 64;
+#else
+      DEBUGSTR( 1, L"  Ignoring apparent 64-bit process" );
       return 0;
+#endif
     }
 #endif
   }

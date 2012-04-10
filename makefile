@@ -53,8 +53,8 @@ x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
 x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o
 	$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared
 
-x64/ANSI32.dll: x86/ANSI32.dll
-	cmd /c "copy/y x86\ANSI32.dll x64\ANSI32.dll >nul"
+x64/ANSI32.dll: x64/ANSI32.o x64/proctype32.o x86/injdll32.o x86/util.o x86/ansiv.o
+	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared
 
 x64/ANSI-LLW.exe: ANSI-LLW.c
 	$(CC) -m32 $(CFLAGS) $< -s -o $@
@@ -67,6 +67,11 @@ x86/ansiconv.o: ansicon.rc
 x86/ansiv.o:	ansi.rc
 x64/ansiconv.o: ansicon.rc
 x64/ansiv.o:	ansi.rc
+
+x64/ANSI32.o: ANSI.c
+	$(CC) -m32 -DW32ON64 $(CFLAGS) $< -c -o $@
+x64/proctype32.o: proctype.c
+	$(CC) -m32 -DW32ON64 $(CFLAGS) $< -c -o $@
 
 # Need two commands, because if the directory doesn't exist, it won't delete
 # anything at all.

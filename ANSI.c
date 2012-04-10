@@ -81,6 +81,9 @@
     ignore the version within the core API DLL names;
     fix 32-bit process trying to identify 64-bit process;
     hook _lwrite & _hwrite.
+
+  v1.52, 10 April, 2012:
+    use ansicon.exe to enable 32-bit to inject into 64-bit.
 */
 
 #include "ansicon.h"
@@ -913,7 +916,7 @@ API_DATA APIs[] =
 HMODULE   hKernel;		// Kernel32 module handle
 HINSTANCE hDllInstance; 	// Dll instance handle
 TCHAR	  hDllName[MAX_PATH];	// Dll file name
-#ifdef _WIN64
+#if defined(_WIN64) || defined(W32ON64)
 LPTSTR	  hDllNameType; 	// pointer to process type within above
 #endif
 
@@ -1212,6 +1215,30 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       InjectDLL64( &child_pi, hDllName );
     }
 #else
+#ifdef W32ON64
+    if (type == 64)
+    {
+      TCHAR args[64];
+      STARTUPINFO si;
+      PROCESS_INFORMATION pi;
+      wcscpy( hDllNameType, L"CON.exe" );
+      wsprintf( args, L"ansicon -P%lu:%lu",
+		      child_pi.dwProcessId, child_pi.dwThreadId );
+      ZeroMemory( &si, sizeof(si) );
+      si.cb = sizeof(si);
+      if (CreateProcess( hDllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
+			 &si, &pi ))
+      {
+	WaitForSingleObject( pi.hProcess, INFINITE );
+	CloseHandle( pi.hProcess );
+	CloseHandle( pi.hThread );
+      }
+      else
+	DEBUGSTR( 1, L"Could not execute \"%s\"", hDllName );
+      wcscpy( hDllNameType, L"32.dll" );
+    }
+    else
+#endif
     InjectDLL32( &child_pi, hDllName );
 #endif
     if (!gui && !(dwCreationFlags & (CREATE_NEW_CONSOLE | DETACHED_PROCESS)))
@@ -1704,7 +1731,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
     log_level = _wtoi( logstr );
     prog = get_program_name( NULL );
-#ifdef _WIN64
+#if defined(_WIN64) || defined(W32ON64)
     hDllNameType = hDllName - 6 +
 #endif
     GetModuleFileName( hInstance, hDllName, lenof(hDllName) );

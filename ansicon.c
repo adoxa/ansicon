@@ -60,9 +60,13 @@
   7 January, 2012:
     fixed installing into a piped CMD.EXE;
     added a log message indicating all imports have been processed.
+
+  v1.52, 10 April, 2012:
+    fixed running "cmd" if "ComSpec" is not defined;
+    pass process & thread identifiers on the command line (for x86->x64).
 */
 
-#define PDATE L"24 February, 2012"
+#define PDATE L"10 April, 2012"
 
 #include "ansicon.h"
 #include "version.h"
@@ -194,6 +198,20 @@ int main( void )
   *logstr = '\0';
   GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
   log_level = _wtoi( logstr );
+
+#ifdef _WIN64
+  if (*arg == '-' && arg[1] == 'P')
+  {
+    swscanf( arg + 2, L"%u:%u", &pi.dwProcessId, &pi.dwThreadId );
+    pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
+    pi.hThread	= OpenThread( THREAD_ALL_ACCESS, FALSE, pi.dwThreadId );
+    Inject( &pi, &gui, arg );
+    CloseHandle( pi.hThread );
+    CloseHandle( pi.hProcess );
+    return 0;
+  }
+#endif
+
   if (log_level && !(log_level & 8))
     DEBUGSTR( 1, NULL );	// create a new file
 
@@ -300,7 +318,11 @@ arg_out:
     {
       cmd = _wgetenv( L"ComSpec" );
       if (cmd == NULL)
-	cmd = L"cmd";
+      {
+	// CreateProcessW writes to the string, so can't simply point to "cmd".
+	static TCHAR cmdstr[] = L"cmd";
+	cmd = cmdstr;
+      }
       arg = cmd;
     }
 
