@@ -82,8 +82,9 @@
     fix 32-bit process trying to identify 64-bit process;
     hook _lwrite & _hwrite.
 
-  v1.52, 10 April, 2012:
-    use ansicon.exe to enable 32-bit to inject into 64-bit.
+  v1.52, 10 April & 1 June, 2012:
+    use ansicon.exe to enable 32-bit to inject into 64-bit;
+    implement \e[39m & \e[49m (only setting color, nothing else).
 */
 
 #include "ansicon.h"
@@ -387,6 +388,8 @@ void InterpretEscSeq( void )
 	  else switch (es_argv[i])
 	  {
 	    case 0:
+	    case 39:
+	    case 49:
 	    {
 	      TCHAR def[4];
 	      int   a;
@@ -399,20 +402,25 @@ void InterpretEscSeq( void )
 		grm.reverse = TRUE;
 		a = -a;
 	      }
-	      grm.foreground = attr2ansi[a & 7];
-	      grm.background = attr2ansi[(a >> 4) & 7];
-	      if (es_argc == 1)
+	      if (es_argv[i] != 49)
+		grm.foreground = attr2ansi[a & 7];
+	      if (es_argv[i] != 39)
+		grm.background = attr2ansi[(a >> 4) & 7];
+	      if (es_argv[i] == 0)
 	      {
-		grm.bold      = a & FOREGROUND_INTENSITY;
-		grm.underline = a & BACKGROUND_INTENSITY;
+		if (es_argc == 1)
+		{
+		  grm.bold	= a & FOREGROUND_INTENSITY;
+		  grm.underline = a & BACKGROUND_INTENSITY;
+		}
+		else
+		{
+		  grm.bold	= 0;
+		  grm.underline = 0;
+		}
+		grm.rvideo    = 0;
+		grm.concealed = 0;
 	      }
-	      else
-	      {
-		grm.bold      = 0;
-		grm.underline = 0;
-	      }
-	      grm.rvideo    = 0;
-	      grm.concealed = 0;
 	    }
 	    break;
 
