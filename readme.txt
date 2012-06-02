@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2012 Jason Hood
 
-			    Version 1.51.  Freeware
+			    Version 1.52.  Freeware
 
 
     ===========
@@ -145,35 +145,42 @@
 
     The following escape sequences are recognised.
 
-	\e[#A		CUU	CUrsor Up
-	\e[#B		CUD	CUrsor Down
-	\e[#C		CUF	CUrsor Forward
-	\e[#D		CUB	CUrsor Backward
+	\e]0;titleBEL		Set (xterm) window's title (and icon)
+	\e[21t			Report (xterm) window's title
+	\e[s			Save Cursor
+	\e[u			Restore Cursor
+	\e[#G		CHA	Cursor Character Absolute
 	\e[#E		CNL	Cursor Next Line
 	\e[#F		CPL	Cursor Preceding Line
-	\e[#G		CHA	Cursor Horizontal Absolute
-	\e[#;#H 	CUP	CUrsor Position
-	\e[#;#f 	HVP	Horizontal and Vertical Position
-	\e[s		SCP	Save Cursor Position
-	\e[u		RCP	Restore Cursor Position
-	\e[#J		ED	Erase Display
-	\e[#K		EL	Erase Line
-	\e[#L		IL	Insert Lines
-	\e[#M		DL	Delete Lines
-	\e[#@		ICH	Insert CHaracter
-	\e[#P		DCH	Delete CHaracter
-	\e[#;#;#m	SGM	Set Graphics Mode
-	\e[#n		DSR	Device Status Report
-	\e[21t			Report (xterm) window's title
-	\e]0;titleBEL		Set (xterm) window's title (and icon)
+	\e[#D		CUB	Cursor Left
+	\e[#B		CUD	Cursor Down
+	\e[#C		CUF	Cursor Right
+	\e[#;#H 	CUP	Cursor Position
+	\e[#A		CUU	Cursor Up
+	\e[#P		DCH	Delete Character
 	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
-	SO		LS1	Lock shift G1 (see below)
-	SI		LS0	Lock shift G0
+	\e[#M		DL	Delete Line
+	\e[#n		DSR	Device Status Report
+	\e[#X		ECH	Erase Character
+	\e[#J		ED	Erase In Page
+	\e[#K		EL	Erase In Line
+	\e[#`		HPA	Character Position Absolute
+	\e[#j		HPB	Character Position Backward
+	\e[#a		HPR	Character Position Forward
+	\e[#;#f 	HVP	Character And Line Position
+	\e[#@		ICH	Insert Character
+	\e[#L		IL	Insert Line
+	SI		LS0	Locking-shift Zero (see below)
+	SO		LS1	Locking-shift One
+	\e[#;#;#m	SGR	Select Graphic Rendition
+	\e[#d		VPA	Line Position Absolute
+	\e[#k		VPB	Line Position Backward
+	\e[#e		VPR	Line Position Forward
 
     `\e' represents the escape character (ASCII 27); `#' represents a
     decimal number (optional, in most cases defaulting to 1); BEL, SO and
-    SI are ASCII 7, 14 and 15.	Regarding SGM: bold will set the foreground
+    SI are ASCII 7, 14 and 15.	Regarding SGR: bold will set the foreground
     intensity; underline and blink will set the background intensity;
     conceal uses background as foreground.
 
@@ -258,9 +265,6 @@
 
     The entire console buffer is used, not just the visible window.
 
-    The 64-bit version can inject into a 32-bit process, but the 32-bit
-    version will not inject into a 64-bit process.
-
     Building rubyinstaller on Win7 crashes (XP is fine).
 
 
@@ -269,6 +273,12 @@
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.52 - 2 June, 2012:
+    + 32-bit processes can inject into 64-bit processes;
+    + implemented \e[39m & \e[49m (set default foreground/background color);
+    + added \e[#X, \e[#`, \e[#a, \e[#d, \e[#e, \[e#j and \e[#k;
+    * changed sequence descriptions to those in ECMA-48, ordered by acronym.
 
     1.51 - 24 February, 2012:
     - fixed installing into a piped/redirected CMD.EXE;
@@ -422,5 +432,5 @@
     in the version text and a source diff is included.
 
 
-    ==============================
-    Jason Hood, 24 February, 2012.
+    =========================
+    Jason Hood, 2 June, 2012.

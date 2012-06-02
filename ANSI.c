@@ -82,9 +82,12 @@
     fix 32-bit process trying to identify 64-bit process;
     hook _lwrite & _hwrite.
 
-  v1.52, 10 April & 1 June, 2012:
+  v1.52, 10 April, 1 & 2 June, 2012:
     use ansicon.exe to enable 32-bit to inject into 64-bit;
-    implement \e[39m & \e[49m (only setting color, nothing else).
+    implement \e[39m & \e[49m (only setting color, nothing else);
+    added the character/line equivalents (keaj`) of the cursor movement
+     sequences (ABCDG), as well as vertical absolute (d) and erase characters
+     (X).
 */
 
 #include "ansicon.h"
@@ -553,6 +556,17 @@ void InterpretEscSeq( void )
 	  return;
 	}
 
+      case 'X':                 // ESC[#X Erase # characters.
+	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[X == ESC[1X
+	if (es_argc != 1) return;
+	FillConsoleOutputCharacter( hConOut, ' ', es_argv[0],
+				    Info.dwCursorPosition,
+				    &NumberOfCharsWritten );
+	FillConsoleOutputAttribute( hConOut, Info.wAttributes, es_argv[0],
+				    Info.dwCursorPosition,
+				    &NumberOfCharsWritten );
+      return;
+
       case 'L':                 // ESC[#L Insert # blank lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[L == ESC[1L
 	if (es_argc != 1) return;
@@ -614,6 +628,7 @@ void InterpretEscSeq( void )
 	ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
       return;
 
+      case 'k':                 // ESC[#k
       case 'A':                 // ESC[#A Moves cursor up # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[A == ESC[1A
 	if (es_argc != 1) return;
@@ -623,6 +638,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case 'e':                 // ESC[#e
       case 'B':                 // ESC[#B Moves cursor down # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[B == ESC[1B
 	if (es_argc != 1) return;
@@ -632,6 +648,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case 'a':                 // ESC[#a
       case 'C':                 // ESC[#C Moves cursor forward # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[C == ESC[1C
 	if (es_argc != 1) return;
@@ -641,6 +658,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case 'j':                 // ESC[#j
       case 'D':                 // ESC[#D Moves cursor back # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[D == ESC[1D
 	if (es_argc != 1) return;
@@ -668,6 +686,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case '`':                 // ESC[#`
       case 'G':                 // ESC[#G Moves cursor column # in current row.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[G == ESC[1G
 	if (es_argc != 1) return;
@@ -675,6 +694,15 @@ void InterpretEscSeq( void )
 	if (Pos.X >= Info.dwSize.X) Pos.X = Info.dwSize.X - 1;
 	if (Pos.X < 0) Pos.X = 0;
 	Pos.Y = Info.dwCursorPosition.Y;
+	SetConsoleCursorPosition( hConOut, Pos );
+      return;
+
+      case 'd':                 // ESC[#d Moves cursor row #, current column.
+	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[d == ESC[1d
+	if (es_argc != 1) return;
+	Pos.Y = es_argv[0] - 1;
+	if (Pos.Y < 0) Pos.Y = 0;
+	if (Pos.Y >= Info.dwSize.Y) Pos.Y = Info.dwSize.Y - 1;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 

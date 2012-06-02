@@ -66,7 +66,7 @@
     pass process & thread identifiers on the command line (for x86->x64).
 */
 
-#define PDATE L"1 June, 2012"
+#define PDATE L"2 June, 2012"
 
 #include "ansicon.h"
 #include "version.h"
