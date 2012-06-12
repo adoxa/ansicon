@@ -74,7 +74,7 @@ ansicon.c:  ansicon.h version.h
 ansicon.rc: version.h
 ANSI.c:     ansicon.h version.h
 ANSI.rc:    version.h
-util.c:     ansicon.h
+util.c:     ansicon.h version.h
 injdll32.c: ansicon.h
 injdll64.c: ansicon.h
 proctype.c: ansicon.h

@@ -50,8 +50,10 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 	    {
 	      if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
 	      {
-		DEBUGSTR( 1, L"  32-bit %s (base = %.8p)",
-			  (*gui) ? L"GUI" : L"console", minfo.AllocationBase );
+		// Microsoft ignores precision on %p.
+		DEBUGSTR( 1, L"  32-bit %s (base = %.8X)",
+			  (*gui) ? L"GUI" : L"console",
+			  (DWORD)(DWORD_PTR)minfo.AllocationBase );
 		return 32;
 	      }
 #ifdef _WIN64

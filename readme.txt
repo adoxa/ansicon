@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2012 Jason Hood
 
-			    Version 1.52.  Freeware
+			    Version 1.53.  Freeware
 
 
     ===========
@@ -274,6 +274,9 @@
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.53 - 12 June, 2012:
+    - fix for multiple simultaneous process creation (e.g. "cl /MP ...").
+
     1.52 - 2 June, 2012:
     + 32-bit processes can inject into 64-bit processes;
     + implemented \e[39m & \e[49m (set default foreground/background color);
@@ -432,5 +435,5 @@
     in the version text and a source diff is included.
 
 
-    =========================
-    Jason Hood, 2 June, 2012.
+    ==========================
+    Jason Hood, 12 June, 2012.

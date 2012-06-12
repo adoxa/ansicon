@@ -3,6 +3,7 @@
 */
 
 #include "ansicon.h"
+#include "version.h"
 
 
 TCHAR	prog_path[MAX_PATH];
@@ -59,7 +60,9 @@ void DEBUGSTR( int level, LPTSTR szFormat, ... )
     {
       SYSTEMTIME now;
       GetLocalTime( &now );
-      fprintf( file, "Logging started %d-%.2d-%.2d %d:%.2d:%.2d\n",
+      fprintf( file, "ANSICON v" PVERSA " log (%d) started "
+		      "%d-%.2d-%.2d %d:%.2d:%.2d\n",
+		     log_level,
 		     now.wYear, now.wMonth, now.wDay,
 		     now.wHour, now.wMinute, now.wSecond );
       fclose( file );

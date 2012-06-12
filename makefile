@@ -63,6 +63,8 @@ x86/ansicon.o:	version.h
 x86/ANSI.o:	version.h
 x64/ansicon.o:	version.h
 x64/ANSI.o:	version.h
+x86/util.o:	version.h
+x64/util.o:	version.h
 x86/ansiconv.o: ansicon.rc
 x86/ansiv.o:	ansi.rc
 x64/ansiconv.o: ansicon.rc

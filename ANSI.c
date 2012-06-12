@@ -88,6 +88,9 @@
     added the character/line equivalents (keaj`) of the cursor movement
      sequences (ABCDG), as well as vertical absolute (d) and erase characters
      (X).
+
+  v1.53, 12 June, 2012:
+    fixed Update_GRM when running multiple processes (e.g. "cl /MP").
 */
 
 #include "ansicon.h"
@@ -225,14 +228,19 @@ SHARED DWORD s_flag;
 #define GRM_INIT 1
 #define GRM_EXIT 2
 
-PROCESS_INFORMATION child_pi;
 
 
 // Wait for the child process to finish, then update our GRM to the child's.
-DWORD WINAPI UpdateGRM( LPVOID lpParameter )
+DWORD WINAPI UpdateGRM( LPVOID child_pi )
 {
-  WaitForSingleObject( child_pi.hProcess, INFINITE );
-  if (s_flag == GRM_EXIT && s_pid == child_pi.dwProcessId)
+  DWORD  pid  = ((LPPROCESS_INFORMATION)child_pi)->dwProcessId;
+  HANDLE proc = ((LPPROCESS_INFORMATION)child_pi)->hProcess;
+  free( child_pi );
+
+  WaitForSingleObject( proc, INFINITE );
+  CloseHandle( proc );
+
+  if (s_flag == GRM_EXIT && s_pid == pid)
   {
     s_flag = 0;
     grm = s_grm;
@@ -1171,12 +1179,13 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
 // Inject code into the target process to load our DLL.
 void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
+	     LPPROCESS_INFORMATION child_pi,
 	     BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
 {
   int	 type;
   BOOL	 gui;
 
-  type = ProcessType( &child_pi, &gui );
+  type = ProcessType( child_pi, &gui );
   if (gui)
   {
     TCHAR   app[MAX_PATH];
@@ -1242,13 +1251,13 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
     {
       hDllNameType[0] = '3';
       hDllNameType[1] = '2';
-      InjectDLL32( &child_pi, hDllName );
+      InjectDLL32( child_pi, hDllName );
     }
     else
     {
       hDllNameType[0] = '6';
       hDllNameType[1] = '4';
-      InjectDLL64( &child_pi, hDllName );
+      InjectDLL64( child_pi, hDllName );
     }
 #else
 #ifdef W32ON64
@@ -1259,7 +1268,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       PROCESS_INFORMATION pi;
       wcscpy( hDllNameType, L"CON.exe" );
       wsprintf( args, L"ansicon -P%lu:%lu",
-		      child_pi.dwProcessId, child_pi.dwThreadId );
+		      child_pi->dwProcessId, child_pi->dwThreadId );
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
       if (CreateProcess( hDllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
@@ -1275,28 +1284,34 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
     }
     else
 #endif
-    InjectDLL32( &child_pi, hDllName );
+    InjectDLL32( child_pi, hDllName );
 #endif
     if (!gui && !(dwCreationFlags & (CREATE_NEW_CONSOLE | DETACHED_PROCESS)))
     {
-      s_pid = child_pi.dwProcessId;
+      LPPROCESS_INFORMATION cpi;
+      s_pid = child_pi->dwProcessId;
       s_grm = grm;
       s_flag = GRM_INIT;
-      CloseHandle( CreateThread( NULL, 4096, UpdateGRM, NULL, 0, NULL ) );
+      cpi = malloc( sizeof(*cpi) );
+      cpi->dwProcessId = child_pi->dwProcessId;
+      DuplicateHandle( GetCurrentProcess(), child_pi->hProcess,
+		       GetCurrentProcess(), &cpi->hProcess, 0, FALSE,
+		       DUPLICATE_SAME_ACCESS );
+      CloseHandle( CreateThread( NULL, 4096, UpdateGRM, cpi, 0, NULL ) );
     }
   }
 
   if (!(dwCreationFlags & CREATE_SUSPENDED))
-    ResumeThread( child_pi.hThread );
+    ResumeThread( child_pi->hThread );
 
   if (lpi)
   {
-    memcpy( lpi, &child_pi, sizeof(PROCESS_INFORMATION) );
+    memcpy( lpi, child_pi, sizeof(PROCESS_INFORMATION) );
   }
   else
   {
-    CloseHandle( child_pi.hThread );
-    CloseHandle( child_pi.hProcess );
+    CloseHandle( child_pi->hThread );
+    CloseHandle( child_pi->hProcess );
   }
 }
 
@@ -1312,6 +1327,8 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 			      LPSTARTUPINFOA lpStartupInfo,
 			      LPPROCESS_INFORMATION lpProcessInformation )
 {
+  PROCESS_INFORMATION child_pi;
+
   if (!CreateProcessA( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1324,10 +1341,11 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       &child_pi ))
     return FALSE;
 
-  DEBUGSTR( 1, L"CreateProcessA: \"%S\", \"%S\"",
+  DEBUGSTR( 1, L"CreateProcessA: (%lu) \"%S\", \"%S\"",
+	    child_pi.dwProcessId,
 	    (lpApplicationName == NULL) ? "" : lpApplicationName,
 	    (lpCommandLine == NULL) ? "" : lpCommandLine );
-  Inject( dwCreationFlags, lpProcessInformation,
+  Inject( dwCreationFlags, lpProcessInformation, &child_pi,
 	  FALSE, lpApplicationName, lpCommandLine );
 
   return TRUE;
@@ -1345,6 +1363,8 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 			      LPSTARTUPINFOW lpStartupInfo,
 			      LPPROCESS_INFORMATION lpProcessInformation )
 {
+  PROCESS_INFORMATION child_pi;
+
   if (!CreateProcessW( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1357,10 +1377,11 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       &child_pi ))
     return FALSE;
 
-  DEBUGSTR( 1, L"CreateProcessW: \"%s\", \"%s\"",
+  DEBUGSTR( 1, L"CreateProcessW: (%lu) \"%s\", \"%s\"",
+	    child_pi.dwProcessId,
 	    (lpApplicationName == NULL) ? L"" : lpApplicationName,
 	    (lpCommandLine == NULL) ? L"" : lpCommandLine );
-  Inject( dwCreationFlags, lpProcessInformation,
+  Inject( dwCreationFlags, lpProcessInformation, &child_pi,
 	  TRUE, lpApplicationName, lpCommandLine );
 
   return TRUE;

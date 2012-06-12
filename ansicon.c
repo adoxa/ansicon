@@ -66,7 +66,7 @@
     pass process & thread identifiers on the command line (for x86->x64).
 */
 
-#define PDATE L"2 June, 2012"
+#define PDATE L"12 June, 2012"
 
 #include "ansicon.h"
 #include "version.h"
@@ -110,7 +110,7 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
   WCHAR dll[MAX_PATH];
   int	type;
 
-  DEBUGSTR( 1, L"%s", app );
+  DEBUGSTR( 1, L"%s (%lu)", app, ppi->dwProcessId );
   type = ProcessType( ppi, gui );
   if (type == 0)
   {
