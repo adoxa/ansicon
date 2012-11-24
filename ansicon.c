@@ -64,15 +64,21 @@
   v1.52, 10 April, 2012:
     fixed running "cmd" if "ComSpec" is not defined;
     pass process & thread identifiers on the command line (for x86->x64).
+
+  v1.60, 22 & 24 November, 2012:
+    set the code page to convert strings correctly;
+    expand wildcards for -t;
+    write the date if appending to the log.
 */
 
-#define PDATE L"12 June, 2012"
+#define PDATE L"24 November, 2012"
 
 #include "ansicon.h"
 #include "version.h"
 #include <tlhelp32.h>
 #include <ctype.h>
 #include <io.h>
+#include <locale.h>
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
@@ -96,11 +102,18 @@ void   display( LPCTSTR, BOOL );
 void   print_error( LPCTSTR, ... );
 LPTSTR skip_spaces( LPTSTR );
 void   get_arg( LPTSTR, LPTSTR*, LPTSTR* );
+void   get_file( LPTSTR, LPTSTR*, LPTSTR* );
 
 void   process_autorun( TCHAR );
 
 BOOL   find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe );
 BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR );
+
+
+// The DLL shares this variable, so injection requires it here.
+#ifdef _WIN64
+DWORD  LLW32;
+#endif
 
 
 // Find the name of the DLL and inject it.
@@ -199,6 +212,10 @@ int main( void )
   GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
   log_level = _wtoi( logstr );
 
+  // Using "" for setlocale uses the system ANSI code page.
+  sprintf( (LPSTR)logstr, ".%u", GetConsoleOutputCP() );
+  setlocale( LC_CTYPE, (LPSTR)logstr );
+
 #ifdef _WIN64
   if (*arg == '-' && arg[1] == 'P')
   {
@@ -212,8 +229,8 @@ int main( void )
   }
 #endif
 
-  if (log_level && !(log_level & 8))
-    DEBUGSTR( 1, NULL );	// create a new file
+  if (log_level)
+    DEBUGSTR( 1, NULL );	// start a new session
 
   installed = (GetEnvironmentVariable( L"ANSICON_VER", NULL, 0 ) != 0);
   // If it's already installed, remove it.  This serves two purposes: preserves
@@ -235,8 +252,7 @@ int main( void )
       case 'l':
 	SetEnvironmentVariable( L"ANSICON_LOG", arg + 2 );
 	log_level = _wtoi( arg + 2 );
-	if (!(log_level & 8))		// unless told otherwise
-	  DEBUGSTR( 1, NULL );		// create a new file
+	DEBUGSTR( 1, NULL );		// create a session
 	break;
 
       case 'i':
@@ -285,7 +301,7 @@ int main( void )
 	  a = -a;
 	  a = ((a >> 4) & 15) | ((a & 15) << 4);
 	}
-	SetConsoleTextAttribute( hConOut, a );
+	SetConsoleTextAttribute( hConOut, (WORD)a );
 	SetEnvironmentVariable( L"ANSICON_DEF", NULL );
 	break;
       }
@@ -316,14 +332,14 @@ arg_out:
   {
     if (*cmd == '\0')
     {
-      cmd = _wgetenv( L"ComSpec" );
-      if (cmd == NULL)
+      if (GetEnvironmentVariable( L"ComSpec", arg, MAX_PATH ))
+	cmd = arg;
+      else
       {
 	// CreateProcessW writes to the string, so can't simply point to "cmd".
 	static TCHAR cmdstr[] = L"cmd";
 	cmd = cmdstr;
       }
-      arg = cmd;
     }
 
     ZeroMemory( &si, sizeof(si) );
@@ -369,7 +385,7 @@ arg_out:
     else // (*arg == 't' || *arg == 'T')
     {
       BOOL title = (*arg == 'T');
-      get_arg( arg, &argv, &cmd );
+      get_file( arg, &argv, &cmd );
       if (*arg == '\0')
 	wcscpy( arg, L"-" );
       do
@@ -382,7 +398,7 @@ arg_out:
 	}
 	else
 	  display( arg, title );
-	get_arg( arg, &argv, &cmd );
+	get_file( arg, &argv, &cmd );
       } while (*arg);
     }
 
@@ -647,6 +663,101 @@ void get_arg( LPTSTR arg, LPTSTR* argv, LPTSTR* cmd )
   }
   *arg = '\0';
   *argv = line;
+}
+
+
+int glob_sort( const void* a, const void* b )
+{
+  return lstrcmpi( *(LPCTSTR*)a, *(LPCTSTR*)b );
+}
+
+
+// As get_arg, but expand wildcards.
+void get_file( LPTSTR arg, LPTSTR* argv, LPTSTR* cmd )
+{
+  HANDLE  fh, in;
+  WIN32_FIND_DATA fd;
+  LPTSTR  path;
+  int	  size;
+  char	  buf[1024];
+  static LPTSTR  name;
+  static LPTSTR* glob;
+  static int	 globbed;
+
+  if (globbed != 0)
+  {
+    if (glob[globbed] == NULL)
+    {
+      free( glob );
+      globbed = 0;
+    }
+    else
+    {
+      wcscpy( name, glob[globbed++] );
+      return;
+    }
+  }
+
+  get_arg( arg, argv, cmd );
+  if (wcspbrk( arg, L"*?" ) != NULL)
+  {
+    fh = FindFirstFile( arg, &fd );
+    if (fh != INVALID_HANDLE_VALUE)
+    {
+      size = 0;
+      do
+      {
+	if (! (fd.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY |
+				      FILE_ATTRIBUTE_HIDDEN)))
+	{
+	  ++globbed;
+	  size += (int)wcslen( fd.cFileName ) + 1;
+	}
+      } while (FindNextFile( fh, &fd ));
+      FindClose( fh );
+
+      if (globbed != 0)
+      {
+	for (path = name = arg; *path != '\0'; ++path)
+	  if (*path == '\\' || *path == '/')
+	    name = path + 1;
+	glob = malloc( (globbed + 1) * sizeof(LPTSTR) + TSIZE(size) );
+	path = (LPTSTR)(glob + globbed + 1);
+	globbed = 0;
+	fh = FindFirstFile( arg, &fd );
+	do
+	{
+	  if (! (fd.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY |
+					FILE_ATTRIBUTE_HIDDEN)))
+	  {
+	    // Ignore apparent binary files.
+	    wcscpy( name, fd.cFileName );
+	    in = CreateFile( arg, GENERIC_READ,
+			     FILE_SHARE_READ|FILE_SHARE_WRITE,
+			     NULL, OPEN_EXISTING, 0, NULL );
+	    if (in != INVALID_HANDLE_VALUE)
+	    {
+	      ReadFile( in, buf, sizeof(buf), (LPVOID)&size, NULL );
+	      CloseHandle( in );
+	      if (memchr( buf, 0, size ) != NULL)
+		continue;
+	    }
+	    size = (int)wcslen( fd.cFileName ) + 1;
+	    memcpy( path, fd.cFileName, TSIZE(size) );
+	    glob[globbed++] = path;
+	    path += size;
+	  }
+	} while (FindNextFile( fh, &fd ));
+	FindClose( fh );
+	glob[globbed] = NULL;
+
+	qsort( glob, globbed, sizeof(LPTSTR), glob_sort );
+
+	wcscpy( name, glob[0] );
+	globbed = 1;
+      }
+    }
+  }
 }
 
 

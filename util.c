@@ -55,7 +55,7 @@ void DEBUGSTR( int level, LPTSTR szFormat, ... )
   }
   if (szFormat == NULL)
   {
-    file = fopen( tempfile, "wt" );
+    file = fopen( tempfile, (log_level & 8) ? "at" : "wt" );
     if (file != NULL)
     {
       SYSTEMTIME now;

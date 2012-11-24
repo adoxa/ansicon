@@ -10,6 +10,9 @@
 #
 # 13 December, 2011:
 #   use CMD for file operations, not programs from fileutils.
+#
+# 23 November, 2012:
+#   set the base address of the DLLs to AC0000[00] (AnsiCon).
 
 CC = gcc
 CFLAGS = -O2 -Wall
@@ -33,7 +36,7 @@ all: ansicon32 ansicon64
 
 ansicon32: x86 x86/ansicon.exe x86/ANSI32.dll
 
-ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll x64/ANSI32.dll x64/ANSI-LLW.exe
+ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll x64/ANSI32.dll
 
 x86:
 	cmd /c "mkdir x86"
@@ -42,7 +45,7 @@ x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/ansiconv.o
 	$(CC) -m32 $+ -s -o $@
 
 x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
-	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared
+	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
 
 x64:
 	cmd /c "mkdir x64"
@@ -51,13 +54,10 @@ x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
 	$(CC) -m64 $+ -s -o $@
 
 x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o
-	$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared
+	$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC000000
 
 x64/ANSI32.dll: x64/ANSI32.o x64/proctype32.o x86/injdll32.o x86/util.o x86/ansiv.o
-	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared
-
-x64/ANSI-LLW.exe: ANSI-LLW.c
-	$(CC) -m32 $(CFLAGS) $< -s -o $@
+	$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
 
 x86/ansicon.o:	version.h
 x86/ANSI.o:	version.h

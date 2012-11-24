@@ -1,0 +1,118 @@
+
+				    ANSICON
+				  Version 1.60
+
+This is a complete list of the ANSI escape sequences recognised by ANSICON,
+roughly ordered by function.  The initial escape character is assumed.
+
+
+[m	restore default color (and intensity)
+[0m	as above
+[...m	set attributes (any of these numbers, separated by semicolons):
+		 0	all attributes off
+		 1	bold (foreground is intense)
+		 4	underline (background is intense)
+		 5	blink (background is intense)
+		 7	reverse video
+		 8	concealed (foreground becomes background)
+		22	bold off (foreground is not intense)
+		24	underline off (background is not intense)
+		25	blink off (background is not intense)
+		27	normal video
+		28	concealed off
+		30	foreground black
+		31	foreground red
+		32	foreground green
+		33	foreground yellow
+		34	foreground blue
+		35	foreground magenta
+		36	foreground cyan
+		37	foreground white
+		39	default foreground (using current intensity)
+		40	background black
+		41	background red
+		42	background green
+		43	background yellow
+		44	background blue
+		45	background magenta
+		46	background cyan
+		47	background white
+		49	default background (using current intensity)
+
+[J	erase from cursor to the end of display
+[0J	as above
+[1J	erase from the start of diplay to cursor (inclusive)
+[2J	erase display and move cursor to the top-left
+
+[K	erase from cursor to the end of line
+[0K	as above
+[1K	erase from the start of line to cursor (inclusive)
+[2K	erase line
+
+[X	erase one character
+[#X	erase # characters
+
+[L	insert one blank line
+[#L	insert # blank lines
+
+[M	delete one line
+[#M	delete # lines
+
+[P	delete one character
+[#P	delete # characters
+
+[@	insert one blank character
+[#@	insert # blank characters
+
+[A	move cursor up one line
+[#A	move cursor up # lines
+[B	move cursor down one line
+[#B	move cursor down # lines
+[C	move cursor right one character
+[#C	move cursor right # characters
+[D	move cursor left one character
+[#D	move cursor left # characters
+
+[k	move cursor up one line
+[#k	move cursor up # lines
+[e	move cursor down one line
+[#e	move cursor down # lines
+[a	move cursor right one character
+[#a	move cursor right # characters
+[j	move cursor left one character
+[#j	move cursor left # characters
+
+[E	move cursor down one line and to first column
+[#E	move cursor down # lines and to first column
+[F	move cursor up one line and to first column
+[#F	move cursor up # lines and to first column
+
+[G	move cursor to first column
+[#G	move cursor to column #
+
+[`	move cursor to first column
+[#`	move cursor to column #
+
+[d	move cursor to first line
+[#d	move cursor to line #
+
+[H	move cursor to top-left
+[#H	move cursor to line # and first column
+[#;#H	move cursor to line #, column #
+
+[f	move cursor to top-left
+[#f	move cursor to line # and first column
+[#;#f	move cursor to line #, column #
+
+[s	save cursor position
+[u	move cursor to saved position
+
+[?25h	show cursor
+[?25l	hide cursor
+
+[5n	sends "\e[0n" to console input (where \e is escape)
+[6n	sends "\e[#;#R" (line & column) to console input
+[21t	sends "\e]lTitle\e\" (the console's window title) to console input
+]0;TitleST
+	sets the console title to "Title"; ST (string terminator) is either
+	 character 7 (BEL) or escape and backslash

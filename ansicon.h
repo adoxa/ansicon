@@ -12,7 +12,11 @@
 #endif
 
 #define WIN32_LEAN_AND_MEAN
+#ifdef _WIN64
+#define _WIN32_WINNT 0x0600	// MinGW-w64 wants this defined for Wow64 stuff
+#else
 #define _WIN32_WINNT 0x0500	// MinGW wants this defined for OpenThread
+#endif
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,7 +1,7 @@
 /*
   wow64.h - Definitions for Wow64.
 
-  Mingw64/TDM does not include these Wow64 definitions.
+  The 2003 Platform SDK does not include these Wow64 definitions.
 */
 
 #ifndef WOW64_H

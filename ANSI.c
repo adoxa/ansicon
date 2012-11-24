@@ -91,18 +91,23 @@
 
   v1.53, 12 June, 2012:
     fixed Update_GRM when running multiple processes (e.g. "cl /MP").
+
+  v1.60, 22 to 24 November, 2012:
+    alternative method to obtain LLW for 64->32 injection;
+    support for VC6 (remove section pragma, rename isdigit to is_digit).
 */
 
 #include "ansicon.h"
 #include "version.h"
 #include <tlhelp32.h>
 
-#define isdigit(c) ('0' <= (c) && (c) <= '9')
+#define is_digit(c) ('0' <= (c) && (c) <= '9')
 
 #ifdef __GNUC__
-#define SHARED __attribute__((shared, section(".share")))
+#define SHARED __attribute__((shared, section(".shared")))
 #else
-#pragma section(".shared", read,write,shared)
+#pragma data_seg(".shared", "read,write,shared")
+#pragma data_seg()
 #define SHARED __declspec(allocate(".shared"))
 #endif
 
@@ -228,6 +233,9 @@ SHARED DWORD s_flag;
 #define GRM_INIT 1
 #define GRM_EXIT 2
 
+#ifdef _WIN64
+SHARED DWORD LLW32;
+#endif
 
 
 // Wait for the child process to finish, then update our GRM to the child's.
@@ -846,7 +854,7 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 3)
     {
-      if (isdigit( *s ))
+      if (is_digit( *s ))
       {
         es_argc = 0;
 	es_argv[0] = *s - '0';
@@ -873,7 +881,7 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 4)
     {
-      if (isdigit( *s ))
+      if (is_digit( *s ))
       {
 	es_argv[es_argc] = 10 * es_argv[es_argc] + (*s - '0');
       }
@@ -1775,7 +1783,7 @@ void OriginalAttr( void )
 // and terminated.
 //-----------------------------------------------------------------------------
 
-__declspec(dllexport) // to stop MinGW exporting everything
+__declspec(dllexport) // just to stop MinGW exporting everything
 BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 {
   BOOL	  bResult = TRUE;

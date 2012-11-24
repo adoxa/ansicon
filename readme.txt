@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2012 Jason Hood
 
-			    Version 1.53.  Freeware
+			    Version 1.60.  Freeware
 
 
     ===========
@@ -18,7 +18,8 @@
     Requirements
     ============
 
-    Windows 2000 Professional and later (it won't work with NT or 9X).
+    32-bit: Windows 2000 Professional and later (it won't work with NT or 9X).
+    64-bit: Vista and later (it won't work with XP64).
 
 
     ============
@@ -39,7 +40,7 @@
     ---------
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
-    Delete ANSI-LLA.dll, it has been replaced with ANSI-LLW.dll.
+    Delete ANSI-LLA.exe/ANSI-LLW.exe, they are no longer needed.
     Uninstall a pre-1.50 version and reinstall with this version.
 
 
@@ -182,7 +183,8 @@
     decimal number (optional, in most cases defaulting to 1); BEL, SO and
     SI are ASCII 7, 14 and 15.	Regarding SGR: bold will set the foreground
     intensity; underline and blink will set the background intensity;
-    conceal uses background as foreground.
+    conceal uses background as foreground.  See `sequences.txt' for a more
+    complete description.
 
     I make a distinction between "\e[m" and "\e[0;...m".  Both will restore
     the original foreground/background colors (and so "0" should be the
@@ -273,6 +275,13 @@
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.60 - 24 November, 2012:
+    * new method to get the 32-bit LoadLibraryW address from 64-bit code.
+      This removes the need for ANSI-LLW.exe, which caused lots of virus
+      warnings, for some reason.
+    - set the code page to display some file names properly;
+    + expand wildcards for -t (ignoring directories and hidden/binary files).
 
     1.53 - 12 June, 2012:
     - fix for multiple simultaneous process creation (e.g. "cl /MP ...").
@@ -432,8 +441,10 @@
     I would like to be informed if it is placed on a CD-ROM (other than an
     archive compilation; permission is granted, I'd just like to know).
     Modified versions may be distributed, provided it is indicated as such
-    in the version text and a source diff is included.
+    in the version text and a source diff is made available.  In particular,
+    the supplied binaries are freely redistributable, but the x64 binaries
+    must also include COPYING.MinGW-w64-runtime.txt.
 
 
-    ==========================
-    Jason Hood, 12 June, 2012.
+    ==============================
+    Jason Hood, 24 November, 2012.
