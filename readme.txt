@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2012 Jason Hood
 
-			    Version 1.60.  Freeware
+			    Version 1.61.  Freeware
 
 
     ===========
@@ -40,7 +40,7 @@
     ---------
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
-    Delete ANSI-LLA.exe/ANSI-LLW.exe, they are no longer needed.
+    Delete ANSI-LLA.exe, it has been replaced with ANSI-LLW.exe.
     Uninstall a pre-1.50 version and reinstall with this version.
 
 
@@ -98,9 +98,8 @@
     The log option will not work with `-p'; set the environment variable
     ANSICON_LOG instead.  The variable is only read once when a new process
     is started; changing it won't affect running processes.  If you identify
-    a module that causes problems (one known is "nvd3d9wrap.dll") add it to
-    the ANSICON_EXC environment variable (see ANSICON_API below, but the
-    extension is required).
+    a module that causes problems, add it to the ANSICON_EXC environment
+    variable (see ANSICON_API below, but the extension is required).
 
     Once installed, the ANSICON environment variable will be created.  This
     variable is of the form "WxH (wxh)", where W & H are the width and
@@ -269,12 +268,19 @@
 
     Building rubyinstaller on Win7 crashes (XP is fine).
 
+    There's a conflict with NVIDIA's 64-bit drivers, requiring:
+
+	set ANSICON_EXC=nvd3d9wrap.dll,nvd3d9wrapx.dll
+
 
     ===============
     Version History
     ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.61 - 14 February, 2013:
+    * revert back to using ANSI-LLW.exe, as the new method was unreliable.
 
     1.60 - 24 November, 2012:
     * new method to get the 32-bit LoadLibraryW address from 64-bit code.
@@ -443,8 +449,9 @@
     Modified versions may be distributed, provided it is indicated as such
     in the version text and a source diff is made available.  In particular,
     the supplied binaries are freely redistributable, but the x64 binaries
-    must also include COPYING.MinGW-w64-runtime.txt.
+    must also include COPYING.MinGW-w64-runtime.txt.  A formal license (zlib)
+    is available in LICENSE.txt.
 
 
     ==============================
-    Jason Hood, 24 November, 2012.
+    Jason Hood, 14 February, 2013.
