@@ -63,7 +63,7 @@ X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\util.obj
 
 all: ansicon$(BITS)
 
-ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll x64\ANSI32.dll
+ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll x64 x64\ANSI32.dll x64\ANSI-LLW.exe
 
 ansicon64: x64 x64\ansicon.exe x64\ANSI64.dll
 
@@ -87,6 +87,9 @@ x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
 
 x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll32.obj x86\util.obj x86\ansi.res
 	$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+
+x64\ANSI-LLW.exe: ANSI-LLW.c
+	$(CC) $(CFLAGS) /Fe$@ /Fo$*.obj $? $(LIBS64)
 
 ansicon.c:  ansicon.h version.h
 ansicon.rc: version.h

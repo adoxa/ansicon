@@ -95,6 +95,9 @@
   v1.60, 22 to 24 November, 2012:
     alternative method to obtain LLW for 64->32 injection;
     support for VC6 (remove section pragma, rename isdigit to is_digit).
+
+  v1.61, 14 February, 2013:
+    go back to using ANSI-LLW.exe for 64->32 injection.
 */
 
 #include "ansicon.h"

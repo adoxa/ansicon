@@ -71,7 +71,7 @@
     write the date if appending to the log.
 */
 
-#define PDATE L"24 November, 2012"
+#define PDATE L"14 February, 2013"
 
 #include "ansicon.h"
 #include "version.h"
