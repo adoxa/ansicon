@@ -268,9 +268,10 @@
 
     Building rubyinstaller on Win7 crashes (XP is fine).
 
-    There's a conflict with NVIDIA's 64-bit drivers, requiring:
+    There's a conflict with NVIDIA's 64-bit drivers, requiring the setting
+    of the Environment Variable:
 
-	set ANSICON_EXC=nvd3d9wrap.dll,nvd3d9wrapx.dll
+	ANSICON_EXC=nvd3d9wrap.dll,nvd3d9wrapx.dll
 
 
     ===============
