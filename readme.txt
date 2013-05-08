@@ -1,4 +1,3 @@
-
 				    ANSICON
 
 			 Copyright 2005-2012 Jason Hood
@@ -25,6 +24,8 @@
     ============
     Installation
     ============
+
+    Download from http://adoxa.3eeweb.com/ansicon/
 
     Add x86 (if your OS is 32-bit) or x64 (if 64-bit) to your PATH, or copy
     the relevant files to a directory already on the PATH.  Alternatively,
