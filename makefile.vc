@@ -1,17 +1,23 @@
 # VC makefile for ANSICON.
 # Jason Hood, 15 November, 2010.
-
-# I've used Visual C++ 2008 Express for the 32-bit version and the 2003 R2
-# Platform SDK for the 64-bit version.	Since these are entirely separate
-# environments, define BITS to decide which should be built.  Note that the
-# 64-bit version still requires the 32-bit ANSI32.dll, so both environments
-# are required and you should build the 32-bit version before the 64-bit.
-
+#
+# Tested with:
+# * Visual Studio 6.0 (VC6);
+# * Visual C++ 2003 Toolkit (VC7);
+# * Platform SDK for Windows Server 2003 R2 (VC8 64-bit);
+# * Visual Studio 2008 Express SP1 (VC9);
+# * Visual Studio 2010 Professional (VC10).
+#
+# Note that the 64-bit version still requires a 32-bit compiler.
+#
 # 22 & 23 November, 2012:
 #   determine if the PSDK is used automatically;
 #   use AC0000[00] (AnsiCon) as the base address;
 #   twiddle stuff around to support VC6 (with 2003 PSDK) for the 32-bit version;
 #   determine BITS automatically.
+#
+# 18 July, 2013:
+#   hide the commands (use V=1 to show them).
 
 #BITS = 32
 #BITS = 64
@@ -29,6 +35,7 @@ DIR = x86
 !ELSE
 !IF $(BITS) == 64
 DIR = x64
+RFLAGS = /D_WIN64
 !ELSE
 !ERROR BITS should be defined to 32 or 64.
 !ENDIF
@@ -36,9 +43,10 @@ DIR = x64
 
 # This is required for the 2003 Platform SDK, but not for Visual Studio 2010.
 !IF "$(_NMAKE_VER)" == "7.00.8882"
+!IF $(BITS) == 64
 LIBS64 = bufferoverflowu.lib
-# The 2003 Toolkit doesn't have MSVCRT.LIB (but VC98 does).
-!IF $(BITS) == 32 && !DEFINED(SHARE) && !DEFINED(MSVCDIR)
+# The 2003 Toolkit doesn't have MSVCRT.LIB, but VC98 does.
+!ELSEIF !DEFINED(SHARE) && !DEFINED(MSVCDIR)
 SHARE =
 !ENDIF
 !ENDIF
@@ -48,22 +56,34 @@ SHARE =
 SHARE = /MD
 !ENDIF
 
-CC = cl
-CFLAGS = /nologo /W3 /Ox /GF $(SHARE) /D_CRT_SECURE_NO_WARNINGS
-LIBS = advapi32.lib user32.lib
+# Manifest tool to embed the manifest required by 2008.
+MT = mt.exe
+
+CFLAGS = /nologo /W3 /O2 $(SHARE) /D_CRT_SECURE_NO_WARNINGS
+LIBS = advapi32.lib user32.lib $(LIBS64)
 
 X86OBJS = x86\proctype.obj x86\injdll32.obj x86\util.obj
 X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\util.obj
 
+!IF !DEFINED(V)
+V = 0
+!ENDIF
+!IF $(V) == 0
+CCmsg = @
+RCmsg = @echo $<&
+LDmsg = @echo $@&
+MTmsg = @echo Embedding manifest&
+!ENDIF
+
 {}.c{$(DIR)}.obj:
-	$(CC) /c $(CFLAGS) /Fo$@ $<
+	$(CCmsg)$(CC) /c $(CFLAGS) /Fo$@ $<
 
 {}.rc{$(DIR)}.res:
-	rc /fo$@ $<
+	$(RCmsg)$(RC) $(RFLAGS) /fo$@ $<
 
 all: ansicon$(BITS)
 
-ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll x64 x64\ANSI32.dll x64\ANSI-LLW.exe
+ansicon32: x86 x86\ansicon.exe x86\ANSI32.dll x64 x64\ANSI32.dll
 
 ansicon64: x64 x64\ansicon.exe x64\ANSI64.dll
 
@@ -71,25 +91,34 @@ x86:
 	mkdir x86
 
 x86\ansicon.exe: x86\ansicon.obj $(X86OBJS) x86\ansicon.res
-	$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) /link /filealign:512
+	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) /link /filealign:512
+!IF "$(_NMAKE_VER)" == "9.00.30729.01"
+	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;1
+	@del $@.manifest
+!ENDIF
 
 x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
-	$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+!IF "$(_NMAKE_VER)" == "9.00.30729.01"
+	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
+	@del $@.manifest
+!ENDIF
 
 x64:
 	mkdir x64
 
 x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\ansicon.res
-	$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) $(LIBS64)
+	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS)
 
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
-	$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) $(LIBS64) /link /base:0xAC000000 /section:.shared,s
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC000000 /section:.shared,s
 
 x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll32.obj x86\util.obj x86\ansi.res
-	$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
-
-x64\ANSI-LLW.exe: ANSI-LLW.c
-	$(CC) $(CFLAGS) /Fe$@ /Fo$*.obj $? $(LIBS64)
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+!IF "$(_NMAKE_VER)" == "9.00.30729.01"
+	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
+	@del $@.manifest
+!ENDIF
 
 ansicon.c:  ansicon.h version.h
 ansicon.rc: version.h
@@ -101,9 +130,9 @@ injdll64.c: ansicon.h
 proctype.c: ansicon.h
 
 x64\ANSI32.obj: ANSI.c
-	$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
+	$(CCmsg)$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
 x64\proctype32.obj: proctype.c
-	$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
+	$(CCmsg)$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
 
 clean:
 	-del $(DIR)\*.obj $(DIR)\*.res $(DIR)\*.lib $(DIR)\*.exp

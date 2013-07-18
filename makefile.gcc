@@ -1,0 +1,112 @@
+# MinGW/MinGW-w64 makefile for ANSICON.
+# Jason Hood, 11 March, 2006.  Updated 20 June, 2009.
+#
+# 19 November, 2010:
+#   explicitly use 64-bit flags, in case the compiler isn't.
+#
+# 13 December, 2011:
+#   use CMD for file operations, not programs from fileutils.
+#
+# 23 November, 2012:
+#   set the base address of the DLLs to AC0000[00] (AnsiCon).
+#
+# 17 & 18 July, 2013:
+#   work with 32-bit only, 64-bit only or multilib compilers;
+#   hide the commands (use V=1 to show them).
+#
+# Tested with:
+# * MinGW/gcc 4.7.2;
+# * tdm-gcc-4.7.1-2;
+# * tdm64-gcc-4.7.1-3;
+# * MinGW-builds x64-4.8.1-release-posix-seh-rev1.
+
+CC = gcc
+CFLAGS = -O2 -Wall
+
+#ARCH = 32
+#ARCH = 64
+#ARCH = multi
+
+ifndef ARCH
+# Use the machine to distinguish between MinGW and MinGW-w64.
+ifeq (,$(findstring 64,$(shell gcc -dumpmachine)))
+ARCH = 32
+else
+# It's 64-bit, if it's multi the lib name will be different.
+ifeq ($(shell gcc -m32 -print-libgcc-file-name),$(shell gcc -m64 -print-libgcc-file-name))
+ARCH = 64
+else
+ARCH = multi
+endif
+endif
+endif
+
+X86OBJS = x86/proctype.o x86/injdll32.o x86/util.o
+X64OBJS = x64/proctype.o x64/injdll64.o x64/injdll32.o x64/util.o
+
+V ?= 0
+ifeq ($(V),0)
+CCmsg = @echo $<;
+RCmsg = $(CCmsg)
+LDmsg = @echo $@;
+endif
+
+x86/%.o: %.c ansicon.h
+	$(CCmsg)$(CC) -m32 -c $(CFLAGS) $< -o $@
+
+x86/%v.o: %.rc version.h
+	$(RCmsg)windres -U _WIN64 -F pe-i386 $< $@
+
+x64/%.o: %.c ansicon.h
+	$(CCmsg) $(CC) -m64 -c $(CFLAGS) $< -o $@
+
+x64/%v.o: %.rc version.h
+	$(RCmsg)windres -F pe-x86-64 $< $@
+
+x64/%32.o: %.c
+	$(CCmsg)$(CC) -m32 -DW32ON64 $(CFLAGS) $< -c -o $@
+
+
+ifeq ($(ARCH),multi)
+all: ansicon32 ansicon64
+else
+all: ansicon$(ARCH)
+endif
+
+ansicon32: x86 x86/ansicon.exe x86/ANSI32.dll x64 x64/ANSI32.dll
+
+ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll
+
+x86:
+	cmd /c "mkdir x86"
+
+x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/ansiconv.o
+	$(LDmsg)$(CC) -m32 $+ -s -o $@
+
+x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
+	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
+
+x64:
+	cmd /c "mkdir x64"
+
+x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
+	$(LDmsg)$(CC) -m64 $+ -s -o $@
+
+x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o
+	$(LDmsg)$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC000000
+
+x64/ANSI32.dll: x64/ANSI32.o x64/proctype32.o x86/injdll32.o x86/util.o x86/ansiv.o
+	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
+
+x86/ansicon.o:	version.h
+x86/ANSI.o:	version.h
+x86/util.o:	version.h
+x64/ansicon.o:	version.h
+x64/ANSI.o:	version.h
+x64/util.o:	version.h
+
+# Need two commands, because if the directory doesn't exist, it won't delete
+# anything at all.
+clean:
+	-cmd /c "del x86\*.o 2>nul"
+	-cmd /c "del x64\*.o 2>nul"

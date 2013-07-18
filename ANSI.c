@@ -98,6 +98,9 @@
 
   v1.61, 14 February, 2013:
     go back to using ANSI-LLW.exe for 64->32 injection.
+
+  v1.62, 17 & 18 July, 2013:
+    another method to obtain LLW for 64->32 injection.
 */
 
 #include "ansicon.h"

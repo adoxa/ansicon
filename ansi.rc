@@ -7,13 +7,7 @@
 #include <winver.h>
 #include "version.h"
 
-#ifdef _WIN64
-# define BITS "64"
-#else
-# define BITS "32"
-#endif
-
-1 VERSIONINFO
+VS_VERSION_INFO VERSIONINFO
 FILEVERSION	PVERB
 PRODUCTVERSION	PVERB
 FILEOS		VOS_NT
@@ -23,13 +17,13 @@ FILETYPE	VFT_DLL
   {
     BLOCK "040904B0"
     {
-      VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
+      VALUE "Comments",         "http://ansicon.adoxa.vze.com/"
       VALUE "CompanyName",      "Jason Hood"
       VALUE "FileDescription",  "ANSI Console"
       VALUE "FileVersion",      PVERSA
       VALUE "InternalName",     "ANSI" BITS
       VALUE "LegalCopyright",   "Freeware"
-      VALUE "OriginalFilename", "ANSI" BITS ".dll"
+      VALUE "OriginalFilename", ANSIDLL
       VALUE "ProductName",      "ANSICON"
       VALUE "ProductVersion",   PVERSA
     }

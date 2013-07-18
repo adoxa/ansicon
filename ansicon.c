@@ -69,9 +69,13 @@
     set the code page to convert strings correctly;
     expand wildcards for -t;
     write the date if appending to the log.
+
+  v1.62, 18 July, 2013:
+    write the bits to the log;
+    test if creating the registry key fails (HKLM requires admin privileges).
 */
 
-#define PDATE L"14 February, 2013"
+#define PDATE L"18 July, 2013"
 
 #include "ansicon.h"
 #include "version.h"
@@ -82,13 +86,6 @@
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
-#endif
-
-
-#ifdef _WIN64
-# define BITS L"64"
-#else
-# define BITS L"32"
 #endif
 
 
@@ -113,6 +110,7 @@ BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR );
 // The DLL shares this variable, so injection requires it here.
 #ifdef _WIN64
 DWORD  LLW32;
+extern LPVOID base;
 #endif
 
 
@@ -239,7 +237,7 @@ int main( void )
   if (installed)
   {
     fputws( L"\33[m", stdout );
-    FreeLibrary( GetModuleHandle( L"ANSI" BITS L".dll" ) );
+    FreeLibrary( GetModuleHandle( ANSIDLL ) );
   }
 
   shell = run = TRUE;
@@ -277,6 +275,34 @@ int main( void )
 	  pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
 	  pi.hThread  = OpenThread( THREAD_ALL_ACCESS,	FALSE, pi.dwThreadId );
 	  SuspendThread( pi.hThread );
+#ifdef _WIN64
+	  // Find the base address of kernel32.dll if the 64-bit version is
+	  // injecting into a 32-bit parent.
+	  if (IsWow64Process( pi.hProcess, &gui ) && gui)
+	  {
+	    HANDLE hSnap;
+	    MODULEENTRY32 me;
+	    BOOL fOk;
+
+	    hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE |
+					      TH32CS_SNAPMODULE32,
+					      pi.dwProcessId );
+	    if (hSnap != INVALID_HANDLE_VALUE)
+	    {
+	      me.dwSize = sizeof(MODULEENTRY32);
+	      for (fOk = Module32First( hSnap, &me ); fOk;
+		   fOk = Module32Next( hSnap, &me ))
+	      {
+		if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
+		{
+		  base = me.modBaseAddr;
+		  break;
+		}
+	      }
+	      CloseHandle( hSnap );
+	    }
+	  }
+#endif
 	  if (!Inject( &pi, &gui, arg ))
 	    rc = 1;
 	  ResumeThread( pi.hThread );
@@ -366,10 +392,10 @@ arg_out:
   }
   else if (*arg)
   {
-    ansi = LoadLibrary( L"ANSI" BITS L".dll" );
+    ansi = LoadLibrary( ANSIDLL );
     if (ansi == NULL)
     {
-      print_error( L"ANSI" BITS L".dll" );
+      print_error( ANSIDLL );
       rc = 1;
     }
 
@@ -511,10 +537,16 @@ void process_autorun( TCHAR cmd )
 		logstr, prog_path ) + 1);
 
   inst = (towlower( cmd ) == 'i');
-  RegCreateKeyEx( (iswlower( cmd )) ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
-		  CMDKEY, 0, NULL,
-		  REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL,
-		  &cmdkey, &exist );
+  if (RegCreateKeyEx( (iswlower(cmd)) ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
+		      CMDKEY, 0, NULL,
+		      REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL,
+		      &cmdkey, &exist ) != ERROR_SUCCESS)
+  {
+    fputws( L"ANSICON: could not update AutoRun", stderr );
+    if (iswupper( cmd ))
+      fwprintf( stderr, L" (perhaps use -%c, or run as admin)", towlower(cmd) );
+    fputws( L".\n", stderr );
+  }
   exist = 0;
   RegQueryValueEx( cmdkey, AUTORUN, NULL, NULL, NULL, &exist );
   if (exist == 0)
@@ -766,7 +798,7 @@ void help( void )
   _putws(
 L"ANSICON by Jason Hood <jadoxa@yahoo.com.au>.\n"
 L"Version " PVERS L" (" PDATE L").  Freeware.\n"
-L"http://ansicon.adoxa.cjb.net/\n"
+L"http://ansicon.adoxa.vze.com/\n"
 L"\n"
 #ifdef _WIN64
 L"Process ANSI escape sequences in Windows console programs.\n"

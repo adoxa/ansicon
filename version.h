@@ -2,8 +2,18 @@
   version.h - Version defines.
 */
 
-#define PVERS	L"1.61"         // wide string
-#define PVERSA	 "1.61"         // ANSI string (windres 2.16.91 didn't like L)
-#define PVERE	L"161"          // wide environment string
-#define PVEREA	 "161"          // ANSI environment string
-#define PVERB	1,6,1,0 	// binary (resource)
+#define PVERS	L"1.62"         // wide string
+#define PVERSA	 "1.62"         // ANSI string (windres 2.16.91 didn't like L)
+#define PVERE	L"162"          // wide environment string
+#define PVEREA	 "162"          // ANSI environment string
+#define PVERB	1,6,2,0 	// binary (resource)
+
+#ifdef _WIN64
+# define BITS L"64"
+# define BITSA "64"
+#else
+# define BITS L"32"
+# define BITSA "32"
+#endif
+
+#define ANSIDLL L"ANSI" BITS L".dll"

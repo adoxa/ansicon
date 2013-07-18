@@ -1,65 +1,62 @@
 
 				    ANSICON
 
-			 Copyright 2005-2012 Jason Hood
+			 Copyright 2005-2013 Jason Hood
 
-			    Version 1.61.  Freeware
+			    Version 1.62.  Freeware
 
 
-    ===========
-    Description
-    ===========
+Description
+===========
 
     ANSICON provides ANSI escape sequences for Windows console programs.  It
-    provides much the same functionality as `ANSI.SYS' does for MS-DOS.
+    provides much the same functionality as 'ANSI.SYS' does for MS-DOS.
 
 
-    ============
-    Requirements
-    ============
+Requirements
+============
 
     32-bit: Windows 2000 Professional and later (it won't work with NT or 9X).
     64-bit: Vista and later (it won't work with XP64).
 
 
-    ============
-    Installation
-    ============
+Installation
+============
 
-    Add x86 (if your OS is 32-bit) or x64 (if 64-bit) to your PATH, or copy
-    the relevant files to a directory already on the PATH.  Alternatively,
-    use option `-i' (or `-I') to install it permanently, by adding an entry
-    to CMD.EXE's AutoRun registry value (current user or local machine,
-    respectively).  Uninstall simply involves closing any programs that are
-    currently using it, running with `-u' (and/or `-U') to remove the Auto-
-    Run entry/ies, then removing the directory from PATH or deleting the
-    files.  No other changes are made.
+    Add "x86" (if your OS is 32-bit) or "x64" (if 64-bit) to your PATH, or copy
+    the relevant files to a directory already on the PATH.  Alternatively, use
+    option '-i' (or '-I', if permitted) to install it permanently, by adding an
+    entry to CMD.EXE's AutoRun registry value (current user or local machine,
+    respectively).
 
-    ---------
-    Upgrading
-    ---------
+    Uninstall simply involves closing any programs that are currently using it;
+    running with '-u' (and/or '-U') to remove it from AutoRun; removing the
+    directory from PATH; and deleting the files.  No other changes are made
+    (although you may have also created environment variables).
+
+Upgrading
+---------
 
     Delete ANSI.dll, it has been replaced with ANSI32.dll.
-    Delete ANSI-LLA.exe, it has been replaced with ANSI-LLW.exe.
+    Delete ANSI-LLA.exe and ANSI-LLW.exe, they are no longer used.
     Uninstall a pre-1.50 version and reinstall with this version.
 
 
-    =====
-    Usage
-    =====
+Usage
+=====
 
     Options (case sensitive):
 
-	-l	Log to %temp%\ansicon.log.
+	-l	Log to "%TEMP%\ansicon.log".
 
-	-p	Enable the parent process (i.e. the command shell used to
-		run ANSICON) to recognise escapes.
+	-p	Enable the parent process (i.e. the command shell used to run
+		ANSICON) to recognise escapes.
 
 	-m	Set the current (and default) attribute to grey on black
-		("monochrome"), or the attribute following the `m' (please
-		use `COLOR /?' for attribute values).
+		("monochrome"), or the attribute following the 'm' (please
+		use 'COLOR /?' for attribute values).
 
-	-e	Echo the command line - a space or tab after the `e' is
+	-e	Echo the command line - a space or tab after the 'e' is
 		ignored, the remainder is displayed verbatim.
 
 	-E	As above, but no newline is added.
@@ -70,22 +67,22 @@
 	-T	Display "==> FILE NAME <==", a blank line (or an error
 		message), the file and another blank line.
 
-    Running ANSICON with no arguments will start a new instance of the com-
-    mand processor (the program defined by the `ComSpec' environment var-
-    iable, typically `CMD.EXE'), or display standard input if it is redir-
-    ected.  Any argument will be treated as a program and its arguments.
+    Running ANSICON with no arguments will start a new instance of the command
+    processor (the program defined by the 'ComSpec' environment variable, typ-
+    ically 'CMD.EXE'), or display standard input if it is redirected.  Any arg-
+    ument will be treated as a program and its arguments.
     
-    Eg: `ansicon -m30 -t file.ans' will display `file.ans' using black on
+    E.g.: 'ansicon -m30 -t file.ans' will display "file.ans" using black on
     cyan as the default color.
 
-    The attribute may start with "-" to permanently reverse the foreground
-    and background colors (but not when using `-p').  Eg: `ansicon -m-f0 -t
+    The attribute may start with '-' to permanently reverse the foreground and
+    background colors (but not when using '-p').  E.g.: 'ansicon -m-f0 -t
     file.log' will use reversed black on white as the default (i.e. white on
     black, with foreground sequences changing the background).
 
-    If you experience trouble with certain programs, the log may help in
-    finding the cause; it  can be found at "%TEMP%\ansicon.log".  A number
-    should follow the `l':
+    If you experience trouble with certain programs, the log may help in find-
+    ing the cause; it can be found at "%TEMP%\ansicon.log".  A number should
+    follow the 'l':
 
 	0	No logging
 	1	Log process start and end
@@ -95,53 +92,55 @@
 	8	Append to the existing file (add to any of the above)
        16	Log all imported modules (add to any of the above)
 
-    The log option will not work with `-p'; set the environment variable
-    ANSICON_LOG instead.  The variable is only read once when a new process
-    is started; changing it won't affect running processes.  If you identify
-    a module that causes problems, add it to the ANSICON_EXC environment
-    variable (see ANSICON_API below, but the extension is required).
+    The log option will not work with '-p'; set the environment variable
+    ANSICON_LOG instead.  The variable is only read once when a new process is
+    started; changing it won't affect running processes.  If you identify a
+    module that causes problems, add it to the ANSICON_EXC environment variable
+    (see ANSICON_API below, but the extension is required).
+
+    E.g.: 'ansicon -l5' will start a new command processor, logging every pro-
+    cess it starts along with their output.
 
     Once installed, the ANSICON environment variable will be created.  This
-    variable is of the form "WxH (wxh)", where W & H are the width and
-    height of the buffer and w & h are the width and height of the window.
-    The variable is updated whenever a program reads it directly (i.e. as
-    an individual request, not as part of the entire environment block).
-    For example, "set an" will not update it, but "echo %ansicon%" will.
-    Also created is ANSICON_VER, which contains the version without the
-    point (1.50 becomes "150").  This variable does not exist as part of the
-    environment block ("set an" will not show it).
+    variable is of the form "WxH (wxh)", where 'W' & 'H' are the width and
+    height of the buffer and 'w' & 'h' are the width and height of the window.
+    The variable is updated whenever a program reads it directly (i.e. as an
+    individual request, not as part of the entire environment block).  For
+    example, 'set an' will not update it, but 'echo %ansicon%' will.  Also
+    created is ANSICON_VER, which contains the version without the point (1.50
+    becomes "150").  This variable does not exist as part of the environment
+    block ('set an' will not show it).
 
     If installed, GUI programs will not be hooked.  Either start the program
-    directly with `ansicon', or add it to the ANSICON_GUI variable (see
+    directly with 'ansicon', or add it to the ANSICON_GUI variable (see
     ANSICON_API below).
 
-    Using `ansicon' after install will always start with the default attrib-
-    utes, restoring the originals on exit; all other programs will use the
-    current attributes.  The shift state is always reset for a new process.
+    Using 'ansicon' after install will always start with the default attrib-
+    utes, restoring the originals on exit; all other programs will use the cur-
+    rent attributes.  The shift state is always reset for a new process.
 
-    The Windows API WriteFile and WriteConsoleA functions will set the num-
-    ber of characters written, not the number of bytes.  When using a multi-
-    byte character set, this results in a smaller number (since multiple
-    bytes are used to represent a single character).  Some programs recog-
-    nise this as a reduced write and will inadvertently repeat previous
-    characters.  If you discover such a program, use the ANSICON_API envir-
-    onment variable to record it and override the API, returning the origin-
-    al byte count.  Ruby is an example of such a program (at least, up till
-    1.9.2p0), so use "set ANSICON_API=ruby" to avoid the repitition.  The
-    full syntax of the variable is:
+    The Windows API WriteFile and WriteConsoleA functions will set the number
+    of characters written, not the number of bytes.  When using a multibyte
+    character set, this results in a smaller number (since multiple bytes are
+    used to represent a single character).  Some programs recognise this as a
+    reduced write and will inadvertently repeat previous characters.  If you
+    discover such a program, use the ANSICON_API environment variable to record
+    it and override the API, returning the original byte count.  Ruby (prior to
+    1.9.3) is an example of such a program, so use 'set ANSICON_API=ruby' to
+    avoid the repitition.  The full syntax is:
 
 	ANSICON_API=[!]program;program;program...
 
-    PROGRAM is the name of the program, with no path and extension.  The
-    leading exclamation inverts the usage, meaning the API will always be
-    overridden, unless the program is in the list.  The variable can be made
-    permanent by going to System Properties, selecting the Advanced tab and
-    clicking Environment Variables (using XP; Vista/7 may be different).
+    PROGRAM is the name of the program, with no path and extension.  The lead-
+    ing exclamation inverts the usage, meaning the API will always be over-
+    ridden, unless the program is in the list.	The variable can be made perm-
+    anent by going to System Properties, selecting the Advanced tab (with Vista
+    onwards, this can be done by running "SystemPropertiesAdvanced") and click-
+    ing Environment Variables.
 
 
-    ====================
-    Sequences Recognised
-    ====================
+Sequences Recognised
+====================
 
     The following escape sequences are recognised.
 
@@ -178,40 +177,36 @@
 	\e[#k		VPB	Line Position Backward
 	\e[#e		VPR	Line Position Forward
 
-    `\e' represents the escape character (ASCII 27); `#' represents a
-    decimal number (optional, in most cases defaulting to 1); BEL, SO and
-    SI are ASCII 7, 14 and 15.	Regarding SGR: bold will set the foreground
-    intensity; underline and blink will set the background intensity;
-    conceal uses background as foreground.  See `sequences.txt' for a more
-    complete description.
+    '\e' represents the escape character (ASCII 27); '#' represents a decimal
+    number (optional, in most cases defaulting to 1); BEL, SO and SI are ASCII
+    7, 14 and 15.  Regarding SGR: bold will set the foreground intensity; blink
+    and underline will set the background intensity; conceal uses background as
+    foreground.  See "sequences.txt" for a more complete description.
 
-    I make a distinction between "\e[m" and "\e[0;...m".  Both will restore
-    the original foreground/background colors (and so "0" should be the
-    first parameter); the former will also restore the original bold and
-    underline attributes, whilst the latter will explicitly reset them.  The
-    environment variable ANSICON_DEF can be used to change the default col-
-    ors (same value as `-m'; setting the variable does not change the cur-
-    rent colors).
+    I make a distinction between '\e[m' and '\e[0;...m'.  Both will restore the
+    original foreground/background colors (and so '0' should be the first para-
+    meter); the former will also restore the original bold and underline attri-
+    butes, whilst the latter will explicitly reset them.  The environment var-
+    iable ANSICON_DEF can be used to change the default colors (same value as
+    '-m'; setting the variable does not change the current colors).
 
 
-    =================
-    Sequences Ignored
-    =================
+Sequences Ignored
+=================
 
     The following escape sequences are explicitly ignored.
 
-	\e(?		Designate G0 character set (`?' is anything).
-	\e)?		Designate G1 character set (`?' is anything).
+	\e(?		Designate G0 character set ('?' is anything).
+	\e)?		Designate G1 character set ('?' is anything).
 	\e[?... 	Private sequence
 	\e[>... 	Private sequence
 
-    The G0 character set is always ASCII; the G1 character set is always
-    the DEC Special Graphics Character Set.
+    The G0 character set is always ASCII; the G1 character set is always the
+    DEC Special Graphics Character Set.
 
 
-    ==================================
-    DEC Special Graphics Character Set
-    ==================================
+DEC Special Graphics Character Set
+==================================
 
     This is my interpretation of the set, as shown by
     http://vt100.net/docs/vt220-rm/table2-4.html.
@@ -252,33 +247,33 @@
 	}	U+00A3	Pound Sign
 	~	U+00B7	Middle Dot
 
-
     G1.txt is a Unicode file to view the glyphs "externally".  G1.bat is a
-    batch file (using `x86\ansicon') to show the glyphs in the console.  The
+    batch file (using 'x86\ansicon') to show the glyphs in the console.  The
     characters will appear as they should using Lucida (other than the Sym-
-    bols), but code page will influence them when using a raster font (but
-    of particular interest, 437 and 850 both show the Box Drawings).
+    bols), but code page will influence them when using a raster font (but of
+    particular interest, 437 and 850 both show the Box Drawings).
 
 
-    ===========
-    Limitations
-    ===========
+Limitations
+===========
 
     The entire console buffer is used, not just the visible window.
 
-    Building rubyinstaller on Win7 crashes (XP is fine).
+    There's a conflict with NVIDIA's drivers, requiring the setting of the
+    Environment Variable:
 
-    There's a conflict with NVIDIA's 64-bit drivers, requiring the setting
-    of the Environment Variable:
-
-	ANSICON_EXC=nvd3d9wrap.dll,nvd3d9wrapx.dll
+	ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
 
 
-    ===============
-    Version History
-    ===============
+Version History
+===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.62 - 18 July, 2013:
+    - indicate if opening HKLM failed;
+    * removed ANSI-LLW.exe again, properly this time;
+    * add the architecture (32- or 64-bit) to the log.
 
     1.61 - 14 February, 2013:
     * revert back to using ANSI-LLW.exe, as the new method was unreliable.
@@ -311,7 +306,7 @@
     - -p by itself will not restore original color;
     - output error messages to stderr;
     * logging is always available, with various levels; include the pid;
-    * don't automatically hook GUI programs, use `ansicon' or ANSICON_GUI;
+    * don't automatically hook GUI programs, use 'ansicon' or ANSICON_GUI;
     * always place first in AutoRun; don't run if already installed;
     + global reverse video capability;
     + added ANSICON_VER to provide version/install test;
@@ -401,36 +396,34 @@
     + initial release.
 
 
-    ===============
-    Acknowledgments
-    ===============
+Acknowledgments
+===============
 
-    Jean-Louis Morel, for his Perl package Win32::Console::ANSI.  It
-    provided the basis of `ANSI.dll'.
+    Jean-Louis Morel, for his Perl package Win32::Console::ANSI.  It provided
+    the basis of 'ANSI.dll'.
 
-    Sergey Oblomov (hoopoepg), for Console Manager.  It provided the basis
-    of `ansicon.exe'.
+    Sergey Oblomov (hoopoepg), for Console Manager.  It provided the basis of
+    'ansicon.exe'.
 
-    Anton Bassov's article "Process-wide API spying - an ultimate hack" in
-    "The Code Project".
+    Anton Bassov's article "Process-wide API spying - an ultimate hack" in "The
+    Code Project".
 
-    Richard Quadling - his persistence in finding bugs has made ANSICON
-    what it is today.
+    Richard Quadling - his persistence in finding bugs has made ANSICON what it
+    is today.
 
-    Dmitry Menshikov, Marko Bozikovic and Philippe Villiers, for their
-    assistance in making the 64-bit version a reality.
+    Dmitry Menshikov, Marko Bozikovic and Philippe Villiers, for their assis-
+    tance in making the 64-bit version a reality.
 
     Luis Lavena and the Ruby people for additional improvements.
 
     Leigh Hebblethwaite for documentation tweaks.
 
 
-    =======
-    Contact
-    =======
+Contact
+=======
 
     mailto:jadoxa@yahoo.com.au
-    http://ansicon.adoxa.cjb.net/
+    http://ansicon.adoxa.vze.com/
     https://github.com/adoxa/ansicon
 
     Jason Hood
@@ -440,19 +433,17 @@
     Australia
 
 
-    ============
-    Distribution
-    ============
+Distribution
+============
 
-    The original zipfile can be freely distributed, by any means.  However,
-    I would like to be informed if it is placed on a CD-ROM (other than an
-    archive compilation; permission is granted, I'd just like to know).
-    Modified versions may be distributed, provided it is indicated as such
-    in the version text and a source diff is made available.  In particular,
-    the supplied binaries are freely redistributable, but the x64 binaries
-    must also include COPYING.MinGW-w64-runtime.txt.  A formal license (zlib)
-    is available in LICENSE.txt.
+    The original zipfile can be freely distributed, by any means.  However, I
+    would like to be informed if it is placed on a CD-ROM (other than an arch-
+    ive compilation; permission is granted, I'd just like to know).  Modified
+    versions may be distributed, provided it is indicated as such in the ver-
+    sion text and a source diff is made available.  In particular, the supplied
+    binaries are freely redistributable.  A formal license (zlib) is available
+    in LICENSE.txt.
 
 
-    ==============================
-    Jason Hood, 14 February, 2013.
+==========================
+Jason Hood, 18 July, 2013.

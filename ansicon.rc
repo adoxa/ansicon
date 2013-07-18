@@ -7,7 +7,7 @@
 #include <winver.h>
 #include "version.h"
 
-1 VERSIONINFO
+VS_VERSION_INFO VERSIONINFO
 FILEVERSION	PVERB
 PRODUCTVERSION	PVERB
 FILEOS		VOS_NT
@@ -17,7 +17,7 @@ FILETYPE	VFT_APP
   {
     BLOCK "040904B0"
     {
-      VALUE "Comments",         "http://ansicon.adoxa.cjb.net/"
+      VALUE "Comments",         "http://ansicon.adoxa.vze.com/"
       VALUE "CompanyName",      "Jason Hood"
       VALUE "FileDescription",  "ANSI Console"
       VALUE "FileVersion",      PVERSA
@@ -34,3 +34,21 @@ FILETYPE	VFT_APP
     VALUE "Translation", 0x0409, 0x04B0
   }
 }
+
+// Add a manifest for the 32-bit version, to prevent registry redirection when
+// trying to use HKLM.
+#ifndef _WIN64
+1 24
+{
+"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>\
+<assembly xmlns=""urn:schemas-microsoft-com:asm.v1"" manifestVersion=""1.0"">\
+<trustInfo xmlns=""urn:schemas-microsoft-com:asm.v3"">\
+  <security>\
+    <requestedPrivileges>\
+      <requestedExecutionLevel level=""asInvoker"" uiAccess=""false"" />\
+    </requestedPrivileges>\
+  </security>\
+</trustInfo>\
+</assembly>"
+}
+#endif
