@@ -73,9 +73,12 @@
   v1.62, 18 July, 2013:
     write the bits to the log;
     test if creating the registry key fails (HKLM requires admin privileges).
+
+  v1.63, 25 July, 2013:
+    don't write the reset sequence if output is redirected.
 */
 
-#define PDATE L"18 July, 2013"
+#define PDATE L"25 July, 2013"
 
 #include "ansicon.h"
 #include "version.h"
@@ -236,7 +239,8 @@ int main( void )
   // worry about ANSICON_GUI.
   if (installed)
   {
-    fputws( L"\33[m", stdout );
+    if (_isatty( 1 ))
+      fputws( L"\33[m", stdout );
     FreeLibrary( GetModuleHandle( ANSIDLL ) );
   }
 

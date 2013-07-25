@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2013 Jason Hood
 
-			    Version 1.62.  Freeware
+			    Version 1.63.  Freeware
 
 
 Description
@@ -270,6 +270,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.63 - 25 July, 2013:
+    - don't write the reset sequence (when it's already installed) if output is
+      redirected.
+
     1.62 - 18 July, 2013:
     - indicate if opening HKLM failed;
     * removed ANSI-LLW.exe again, properly this time;
@@ -446,4 +450,4 @@ Distribution
 
 
 ==========================
-Jason Hood, 18 July, 2013.
+Jason Hood, 25 July, 2013.
