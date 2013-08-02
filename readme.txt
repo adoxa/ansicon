@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2013 Jason Hood
 
-			    Version 1.63.  Freeware
+			    Version 1.64.  Freeware
 
 
 Description
@@ -196,8 +196,8 @@ Sequences Ignored
 
     The following escape sequences are explicitly ignored.
 
-	\e(?		Designate G0 character set ('?' is anything).
-	\e)?		Designate G1 character set ('?' is anything).
+	\e(?		Designate G0 character set ('?' is any character).
+	\e)?		Designate G1 character set ('?' is any character).
 	\e[?... 	Private sequence
 	\e[>... 	Private sequence
 
@@ -269,6 +269,9 @@ Version History
 ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.64 - 2 August, 2013:
+    - improved detection of console output.
 
     1.63 - 25 July, 2013:
     - don't write the reset sequence (when it's already installed) if output is
@@ -449,5 +452,5 @@ Distribution
     in LICENSE.txt.
 
 
-==========================
-Jason Hood, 25 July, 2013.
+===========================
+Jason Hood, 2 August, 2013.

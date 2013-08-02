@@ -101,6 +101,9 @@
 
   v1.62, 17 & 18 July, 2013:
     another method to obtain LLW for 64->32 injection.
+
+  v1.64, 2 August, 2013:
+    better method of determining a console handle (see IsConsoleHandle).
 */
 
 #include "ansicon.h"
@@ -1525,9 +1528,29 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
 
 
 //-----------------------------------------------------------------------------
+//   IsConsoleHandle
+// Determine if the handle is writing to the console, with processed output.
+//-----------------------------------------------------------------------------
+BOOL IsConsoleHandle( HANDLE h )
+{
+  DWORD mode;
+
+  if (!GetConsoleMode( h, &mode ))
+  {
+    // This fails if the handle isn't opened for reading.  Fortunately, it
+    // seems WriteConsole tests the handle before it tests the length.
+    return WriteConsole( h, NULL, 0, &mode, NULL );
+  }
+
+  return (mode & ENABLE_PROCESSED_OUTPUT);
+}
+
+
+//-----------------------------------------------------------------------------
 //   MyWrite...
-// It is the new function that must replace the original Write... function.
-// This function have exactly the same signature as the original one.
+// The new functions that must replace the original Write... functions.  These
+// functions have exactly the same signature as the original ones.  This
+// module is not hooked, so we can still call the original functions ourselves.
 //-----------------------------------------------------------------------------
 
 BOOL
@@ -1535,13 +1558,11 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
 			DWORD nNumberOfCharsToWrite,
 			LPDWORD lpNumberOfCharsWritten, LPVOID lpReserved )
 {
-  DWORD  Mode;
   LPWSTR buf;
   DWORD  len;
   BOOL	 rc = TRUE;
 
-  // if we write in a console buffer with processed output
-  if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  if (IsConsoleHandle( hCon ))
   {
     UINT cp = GetConsoleOutputCP();
     DEBUGSTR( 4, L"\33WriteConsoleA: %lu \"%.*S\"",
@@ -1580,8 +1601,7 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
 			DWORD nNumberOfCharsToWrite,
 			LPDWORD lpNumberOfCharsWritten, LPVOID lpReserved )
 {
-  DWORD Mode;
-  if (GetConsoleMode( hCon, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  if (IsConsoleHandle( hCon ))
   {
     DEBUGSTR( 4, L"\33WriteConsoleW: %lu \"%.*s\"",
 	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
@@ -1598,8 +1618,7 @@ BOOL
 WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 		    LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped )
 {
-  DWORD Mode;
-  if (GetConsoleMode( hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  if (IsConsoleHandle( hFile ))
   {
     DEBUGSTR( 4, L"WriteFile->" );
     return MyWriteConsoleA( hFile, lpBuffer,
@@ -1608,7 +1627,6 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 			    lpOverlapped );
   }
 
-  // here, WriteFile is the old function (this module is not hooked)
   return WriteFile( hFile, lpBuffer, nNumberOfBytesToWrite,
 		    lpNumberOfBytesWritten, lpOverlapped );
 }
@@ -1619,9 +1637,9 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 UINT
 WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
 {
-  DWORD Mode, written;
-  if (GetConsoleMode( HHFILE hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  if (IsConsoleHandle( HHFILE hFile ))
   {
+    DWORD written;
     DEBUGSTR( 4, L"_lwrite->" );
     MyWriteConsoleA( HHFILE hFile, lpBuffer, uBytes, &written, NULL );
     return written;
@@ -1633,9 +1651,9 @@ WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
 long
 WINAPI My_hwrite( HFILE hFile, LPCSTR lpBuffer, long lBytes )
 {
-  DWORD Mode, written;
-  if (GetConsoleMode( HHFILE hFile, &Mode ) && (Mode & ENABLE_PROCESSED_OUTPUT))
+  if (IsConsoleHandle( HHFILE hFile ))
   {
+    DWORD written;
     DEBUGSTR( 4, L"_hwrite->" );
     MyWriteConsoleA( HHFILE hFile, lpBuffer, lBytes, &written, NULL );
     return written;
