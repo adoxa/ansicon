@@ -32,10 +32,11 @@ TWow64SetThreadContext Wow64SetThreadContext;
 #define GetThreadContext Wow64GetThreadContext
 #define SetThreadContext Wow64SetThreadContext
 
-#define MakeVA( cast, offset ) (cast)((DWORD_PTR)base + (DWORD)(offset))
+#define MakeVA( cast, offset ) (cast)((DWORD_PTR)pDosHeader + (DWORD)(offset))
 
 extern DWORD LLW32;
 LPVOID base;
+static PIMAGE_DOS_HEADER pDosHeader;
 
 int export_cmp( const void* a, const void* b )
 {
@@ -54,7 +55,6 @@ BOOL get_LLW32( void )
   HMODULE kernel32;
   TCHAR   buf[MAX_PATH];
   UINT	  len;
-  PIMAGE_DOS_HEADER	  pDosHeader;
   PIMAGE_NT_HEADERS32	  pNTHeader;
   PIMAGE_EXPORT_DIRECTORY pExportDir;
   PDWORD  fun_table, name_table;
@@ -63,7 +63,7 @@ BOOL get_LLW32( void )
 
   len = GetSystemWow64Directory( buf, MAX_PATH );
   wcscpy( buf + len, L"\\kernel32.dll" );
-  // MinGW-w64 has a typo, calling it LINRARY.
+  // MinGW-w64 had a typo, calling it LINRARY.
   kernel32 = LoadLibraryEx( buf, NULL, 0x20/*LOAD_LIBRARY_AS_IMAGE_RESOURCE*/ );
   if (kernel32 == NULL)
   {
@@ -71,9 +71,7 @@ BOOL get_LLW32( void )
     return FALSE;
   }
   // The handle uses low bits as flags, so strip 'em off.
-  base = (LPVOID)((DWORD_PTR)kernel32 & ~0xFFFF);
-
-  pDosHeader = (PIMAGE_DOS_HEADER)base;
+  pDosHeader = (PIMAGE_DOS_HEADER)((DWORD_PTR)kernel32 & ~0xFFFF);
   pNTHeader  = MakeVA( PIMAGE_NT_HEADERS32, pDosHeader->e_lfanew );
   pExportDir = MakeVA( PIMAGE_EXPORT_DIRECTORY,
 		       pNTHeader->OptionalHeader.

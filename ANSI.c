@@ -104,6 +104,9 @@
 
   v1.64, 2 August, 2013:
     better method of determining a console handle (see IsConsoleHandle).
+
+  v1.65, 28 August, 2013:
+    fix \e[K (was using window, not buffer).
 */
 
 #include "ansicon.h"
@@ -547,7 +550,7 @@ void InterpretEscSeq( void )
 	switch (es_argv[0])
 	{
 	  case 0:		// ESC[0K Clear to end of line
-	    len = Info.srWindow.Right - Info.dwCursorPosition.X + 1;
+	    len = Info.dwSize.X - Info.dwCursorPosition.X + 1;
 	    FillConsoleOutputCharacter( hConOut, ' ', len,
 					Info.dwCursorPosition,
 					&NumberOfCharsWritten );

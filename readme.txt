@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2013 Jason Hood
 
-			    Version 1.64.  Freeware
+			    Version 1.65.  Freeware
 
 
 Description
@@ -270,6 +270,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.65 - 4 September, 2013:
+    - fix finding 32-bit LoadLibraryW address from 64-bit;
+    - fix \e[K (was using window, not buffer).
+
     1.64 - 2 August, 2013:
     - improved detection of console output.
 
@@ -425,6 +429,8 @@ Acknowledgments
 
     Leigh Hebblethwaite for documentation tweaks.
 
+    Vincent Fatica for pointing out \e[K was not right.
+
 
 Contact
 =======
@@ -452,5 +458,5 @@ Distribution
     in LICENSE.txt.
 
 
-===========================
-Jason Hood, 2 August, 2013.
+==============================
+Jason Hood, 4 September, 2013.
