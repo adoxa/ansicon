@@ -85,9 +85,9 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
       }
     }
 #ifdef _WIN32
-    // If a 32-bit process manages to load a 64-bit one, we may miss the base
-    // address.  If the pointer overflows, assume 64-bit and abort.
-    if (ptr > ptr + minfo.RegionSize)
+    // If a 32-bit process loads a 64-bit one, we may miss the base
+    // address.  If the pointer overflows, assume 64-bit.
+    if (((DWORD)ptr >> 12) + ((DWORD)minfo.RegionSize >> 12) > 0x80000)
     {
 #ifdef W32ON64
       DEBUGSTR( 1, L"  Pointer overflow: assuming 64-bit console" );

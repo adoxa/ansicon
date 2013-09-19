@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2013 Jason Hood
 
-			    Version 1.65.  Freeware
+			    Version 1.66.  Freeware
 
 
 Description
@@ -270,6 +270,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.66 - 20 September, 2013:
+    - fix 32-bit process trying to detect 64-bit process.
+
     1.65 - 4 September, 2013:
     - fix finding 32-bit LoadLibraryW address from 64-bit;
     - fix \e[K (was using window, not buffer).
@@ -458,5 +461,5 @@ Distribution
     in LICENSE.txt.
 
 
-==============================
-Jason Hood, 4 September, 2013.
+===============================
+Jason Hood, 20 September, 2013.
