@@ -84,7 +84,7 @@ int ProcessType( LPPROCESS_INFORMATION pinfo, BOOL* gui )
 	}
       }
     }
-#ifdef _WIN32
+#ifndef _WIN64
     // If a 32-bit process loads a 64-bit one, we may miss the base
     // address.  If the pointer overflows, assume 64-bit.
     if (((DWORD)ptr >> 12) + ((DWORD)minfo.RegionSize >> 12) > 0x80000)
