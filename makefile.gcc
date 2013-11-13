@@ -44,11 +44,20 @@ endif
 X86OBJS = x86/proctype.o x86/injdll32.o x86/util.o
 X64OBJS = x64/proctype.o x64/injdll64.o x64/injdll32.o x64/util.o
 
+# Determine the appropriate separator to run multiple commands - ";" for sh.exe
+# and "&" for CMD.EXE.  $(SHELL) is initially defined to "sh.exe" - if it
+# actually exists, it becomes the full path.
+ifneq ($(wildcard $(SHELL)),)
+SEP = ;
+else
+SEP = &
+endif
+
 V ?= 0
 ifeq ($(V),0)
-CCmsg = @echo $<;
+CCmsg = @echo $<$(SEP)
 RCmsg = $(CCmsg)
-LDmsg = @echo $@;
+LDmsg = @echo $@$(SEP)
 endif
 
 x86/%.o: %.c ansicon.h
@@ -58,7 +67,7 @@ x86/%v.o: %.rc version.h
 	$(RCmsg)windres -U _WIN64 -F pe-i386 $< $@
 
 x64/%.o: %.c ansicon.h
-	$(CCmsg) $(CC) -m64 -c $(CFLAGS) $< -o $@
+	$(CCmsg)$(CC) -m64 -c $(CFLAGS) $< -o $@
 
 x64/%v.o: %.rc version.h
 	$(RCmsg)windres -F pe-x86-64 $< $@
