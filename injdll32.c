@@ -63,8 +63,7 @@ BOOL get_LLW32( void )
 
   len = GetSystemWow64Directory( buf, MAX_PATH );
   wcscpy( buf + len, L"\\kernel32.dll" );
-  // MinGW-w64 had a typo, calling it LINRARY.
-  kernel32 = LoadLibraryEx( buf, NULL, 0x20/*LOAD_LIBRARY_AS_IMAGE_RESOURCE*/ );
+  kernel32 = LoadLibraryEx( buf, NULL, LOAD_LIBRARY_AS_IMAGE_RESOURCE );
   if (kernel32 == NULL)
   {
     DEBUGSTR( 1, L"Unable to load 32-bit kernel32.dll!" );

@@ -107,6 +107,13 @@
 
   v1.65, 28 August, 2013:
     fix \e[K (was using window, not buffer).
+
+  v.166, 20 & 21 September, 2013:
+    fix 32-bit process trying to detect 64-bit process.
+
+  v1.67, 25 January, 2014:
+    don't hook ourself from LoadLibrary or LoadLibraryEx;
+    update the LoadLibraryEx flags that should not cause hooking.
 */
 
 #include "ansicon.h"
@@ -1470,7 +1477,7 @@ void HookLibrary( HMODULE hMod, LPCVOID lpFileName, BOOL wide, LPCSTR funcName )
   LPCWSTR name;
   WCHAR   wname[MAX_PATH];
 
-  if (hMod && hMod != hKernel)
+  if (hMod && hMod != hKernel && hMod != hDllInstance)
   {
     if (!wide)
     {
@@ -1514,7 +1521,9 @@ HMODULE WINAPI MyLoadLibraryExA( LPCSTR lpFileName, HANDLE hFile,
 				 DWORD dwFlags )
 {
   HMODULE hMod = LoadLibraryExA( lpFileName, hFile, dwFlags );
-  if (!(dwFlags & LOAD_LIBRARY_AS_DATAFILE))
+  if (!(dwFlags & (LOAD_LIBRARY_AS_DATAFILE |
+		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
+		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
     HookLibrary( hMod, lpFileName, FALSE, "LoadLibraryExA" );
   return hMod;
 }
@@ -1524,7 +1533,9 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
 				 DWORD dwFlags )
 {
   HMODULE hMod = LoadLibraryExW( lpFileName, hFile, dwFlags );
-  if (!(dwFlags & LOAD_LIBRARY_AS_DATAFILE))
+  if (!(dwFlags & (LOAD_LIBRARY_AS_DATAFILE |
+		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
+		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
     HookLibrary( hMod, lpFileName, TRUE, "LoadLibraryExW" );
   return hMod;
 }

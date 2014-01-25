@@ -24,6 +24,13 @@
 #define lenof(array) (sizeof(array)/sizeof(*(array)))
 #define TSIZE(size)  ((size) * sizeof(TCHAR))
 
+#ifndef LOAD_LIBRARY_AS_IMAGE_RESOURCE
+#define LOAD_LIBRARY_AS_IMAGE_RESOURCE 0x20
+#endif
+#ifndef LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE
+#define LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE 0x20
+#endif
+
 
 typedef struct
 {

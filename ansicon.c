@@ -78,7 +78,7 @@
     don't write the reset sequence if output is redirected.
 */
 
-#define PDATE L"21 September, 2013"
+#define PDATE L"25 January, 2014"
 
 #include "ansicon.h"
 #include "version.h"
