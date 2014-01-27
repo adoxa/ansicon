@@ -47,6 +47,8 @@ typedef struct
 int  ProcessType( LPPROCESS_INFORMATION, BOOL* );
 void InjectDLL32( LPPROCESS_INFORMATION, LPCTSTR );
 void InjectDLL64( LPPROCESS_INFORMATION, LPCTSTR );
+BOOL get_LLW32r( void );
+BOOL get_LLW64r( void );
 
 extern TCHAR  prog_path[MAX_PATH];
 extern LPTSTR prog;

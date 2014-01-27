@@ -111,9 +111,10 @@
   v.166, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.67, 25 January, 2014:
+  v1.67, 25 to 27 January, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
-    update the LoadLibraryEx flags that should not cause hooking.
+    update the LoadLibraryEx flags that should not cause hooking;
+    always find the base address of kernel32.dll.
 */
 
 #include "ansicon.h"
@@ -252,8 +253,9 @@ SHARED DWORD s_flag;
 #define GRM_INIT 1
 #define GRM_EXIT 2
 
+SHARED DWORD LLW32r;
 #ifdef _WIN64
-SHARED DWORD LLW32;
+SHARED DWORD LLW64r;
 #endif
 
 
@@ -1841,6 +1843,16 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
     hDllInstance = hInstance; // save Dll instance handle
     DEBUGSTR( 1, L"hDllInstance = %p", hDllInstance );
+
+    if (LLW32r == 0)
+    {
+      if (!get_LLW32r())
+	return FALSE;
+#ifdef _WIN64
+      if (!get_LLW64r())
+	return FALSE;
+#endif
+    }
 
     // Get the entry points to the original functions.
     hKernel = GetModuleHandleA( APIKernel );

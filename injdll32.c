@@ -31,12 +31,13 @@ TWow64SetThreadContext Wow64SetThreadContext;
 #define CONTEXT_CONTROL  WOW64_CONTEXT_CONTROL
 #define GetThreadContext Wow64GetThreadContext
 #define SetThreadContext Wow64SetThreadContext
+#endif
+
+extern DWORD LLW32r;
+LPVOID kernel32_base;
+PIMAGE_DOS_HEADER pDosHeader;
 
 #define MakeVA( cast, offset ) (cast)((DWORD_PTR)pDosHeader + (DWORD)(offset))
-
-extern DWORD LLW32;
-LPVOID base;
-static PIMAGE_DOS_HEADER pDosHeader;
 
 int export_cmp( const void* a, const void* b )
 {
@@ -45,12 +46,9 @@ int export_cmp( const void* a, const void* b )
 
 
 /*
-  Get the relative address of the 32-bit LoadLibraryW function from 64-bit code.
-  This was originally done via executing a helper program (ANSI-LLW.exe), but I
-  never liked doing that, so now I do it the "hard" way - load the 32-bit
-  kernel32.dll directly and search the exports.
+  Get the relative address of LoadLibraryW direct from kernel32.dll.
 */
-BOOL get_LLW32( void )
+BOOL get_LLW32r( void )
 {
   HMODULE kernel32;
   TCHAR   buf[MAX_PATH];
@@ -61,7 +59,11 @@ BOOL get_LLW32( void )
   PWORD   ord_table;
   PDWORD  pLLW;
 
+#ifdef _WIN64
   len = GetSystemWow64Directory( buf, MAX_PATH );
+#else
+  len = GetSystemDirectory( buf, MAX_PATH );
+#endif
   wcscpy( buf + len, L"\\kernel32.dll" );
   kernel32 = LoadLibraryEx( buf, NULL, LOAD_LIBRARY_AS_IMAGE_RESOURCE );
   if (kernel32 == NULL)
@@ -89,24 +91,24 @@ BOOL get_LLW32( void )
     FreeLibrary( kernel32 );
     return FALSE;
   }
-  LLW32 = fun_table[ord_table[pLLW - name_table]];
+  LLW32r = fun_table[ord_table[pLLW - name_table]];
 
   FreeLibrary( kernel32 );
   return TRUE;
 }
-#else
-DWORD LLW32;
-#endif
 
 
 void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 {
   CONTEXT context;
   DWORD   ep;
-  DWORD   len;
+  BOOL	  eip;
   LPVOID  mem;
   DWORD   mem32;
   DWORD   pr;
+  DWORD   LLW;
+
+  DWORD   len;
   #define CODESIZE 20
   BYTE	  code[CODESIZE+TSIZE(MAX_PATH)];
   union
@@ -114,9 +116,23 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
     PBYTE  pB;
     PDWORD pL;
   } ip;
-#ifdef _WIN64
-  BOOL entry = FALSE;
-#endif
+
+  struct unicode_string
+  {
+    USHORT Length;
+    USHORT MaximumLength;
+    DWORD  Buffer;
+  };
+  struct ldr_module		// incomplete definition
+  {
+    DWORD next, prev;
+    DWORD baseAddress;
+    DWORD entryPoint;
+    DWORD sizeOfImage;
+    struct unicode_string fullDllName;
+    struct unicode_string baseDllName;
+  } ldr;
+  WCHAR basename[MAX_PATH];
 
 #ifdef IMPORT_WOW64
   if (Wow64GetThreadContext == 0)
@@ -137,7 +153,6 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   len = TSIZE(lstrlen( dll ) + 1);
   if (len > TSIZE(MAX_PATH))
     return;
-
   CopyMemory( code + CODESIZE, dll, len );
   len += CODESIZE;
 
@@ -149,91 +164,68 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 
   ip.pB = code;
 
-  ep = context.Eip;
-  if (LLW32 == 0)
+  // Determine the base address of kernel32.dll.  If injecting into the parent
+  // process, the base has already been determined.  Otherwise, use the PEB to
+  // walk the loaded modules.
+  if (kernel32_base != 0)
   {
-#ifndef _WIN64
-    LLW32 = (DWORD)GetProcAddress( GetModuleHandle( L"kernel32.dll" ),
-						     "LoadLibraryW" );
-#else
-    struct unicode_string
-    {
-      USHORT Length;
-      USHORT MaximumLength;
-      DWORD  Buffer;
-    };
-    struct ldr_module		// incomplete definition
-    {
-      DWORD next, prev;
-      DWORD baseAddress;
-      DWORD entryPoint;
-      DWORD sizeOfImage;
-      struct unicode_string fullDllName;
-      struct unicode_string baseDllName;
-    } ldr;
-    WCHAR basename[MAX_PATH];
-
-    if (!get_LLW32())
-      return;
-    // Determine the base address of the 32-bit kernel32.dll.  If injecting
-    // into the parent process, base has already been determined.  Otherwise,
-    // use the PEB to walk the loaded modules.
-    if (base == 0)
-    {
-      // When a process is created suspended, EAX has the entry point and EBX
-      // points to the PEB.
-      if (!ReadProcessMemory( ppi->hProcess, UIntToPtr( context.Ebx + 0x0C ),
-			      ip.pL, 4, NULL ))
-      {
-	DEBUGSTR( 1, L"Failed to read Ldr from PEB." );
-	return;
-      }
-      // In case we're a bit slow (which seems to be unlikely), set up an
-      // infinite loop as the entry point.
-      WriteProcessMemory( ppi->hProcess, mem, "\xEB\xFE", 2, NULL );
-      FlushInstructionCache( ppi->hProcess, mem, 2 );
-      ep = context.Eax;
-      context.Eax = mem32;
-      SetThreadContext( ppi->hThread, &context );
-      VirtualProtectEx( ppi->hProcess, mem, len, PAGE_EXECUTE, &pr );
-      // Now resume the thread, as the PEB hasn't even been created yet.
-      ResumeThread( ppi->hThread );
-      while (*ip.pL == 0)
-      {
-	Sleep( 0 );
-	ReadProcessMemory( ppi->hProcess, UIntToPtr( context.Ebx + 0x0C ),
-			   ip.pL, 4, NULL );
-      }
-      // Read PEB_LDR_DATA.InInitializationOrderModuleList.Flink.
-      ReadProcessMemory( ppi->hProcess, UIntToPtr( *ip.pL + 0x1c ),
-			 &ip.pL[1], 4, NULL );
-      // Sometimes we're so quick ntdll.dll is the only one present, so keep
-      // looping until kernel32.dll shows up.
-      for (;;)
-      {
-	ldr.next = ip.pL[1];
-	do
-	{
-	  ReadProcessMemory( ppi->hProcess, UIntToPtr( ldr.next ),
-			     &ldr, sizeof(ldr), NULL );
-	  ReadProcessMemory( ppi->hProcess, UIntToPtr( ldr.baseDllName.Buffer ),
-			     basename, ldr.baseDllName.MaximumLength, NULL );
-	  if (_wcsicmp( basename, L"kernel32.dll" ) == 0)
-	  {
-	    LLW32 += ldr.baseAddress;
-	    goto gotit;
-	  }
-	} while (ldr.next != *ip.pL + 0x1c);
-      }
-    gotit:
-      SuspendThread( ppi->hThread );
-      VirtualProtectEx( ppi->hProcess, mem, len, pr, &pr );
-      entry = TRUE;
-    }
-    else
-      LLW32 += PtrToUint( base );
-#endif
+    ep = context.Eip;
+    eip = TRUE;
   }
+  else
+  {
+    // When a process is created suspended, EAX has the entry point and EBX
+    // points to the PEB.
+    if (!ReadProcessMemory( ppi->hProcess, UIntToPtr( context.Ebx + 0x0C ),
+			    ip.pL, 4, NULL ))
+    {
+      DEBUGSTR( 1, L"Failed to read Ldr from PEB." );
+      return;
+    }
+    ep = context.Eax;
+    eip = FALSE;
+    // In case we're a bit slow (which seems to be unlikely), set up an
+    // infinite loop as the entry point.
+    WriteProcessMemory( ppi->hProcess, mem, "\xEB\xFE", 2, NULL );
+    FlushInstructionCache( ppi->hProcess, mem, 2 );
+    context.Eax = mem32;
+    SetThreadContext( ppi->hThread, &context );
+    VirtualProtectEx( ppi->hProcess, mem, len, PAGE_EXECUTE, &pr );
+    // Now resume the thread, as the PEB hasn't even been created yet.
+    ResumeThread( ppi->hThread );
+    while (*ip.pL == 0)
+    {
+      Sleep( 0 );
+      ReadProcessMemory( ppi->hProcess, UIntToPtr( context.Ebx + 0x0C ),
+			 ip.pL, 4, NULL );
+    }
+    // Read PEB_LDR_DATA.InInitializationOrderModuleList.Flink.
+    ReadProcessMemory( ppi->hProcess, UIntToPtr( *ip.pL + 0x1c ),
+		       &ip.pL[1], 4, NULL );
+    // Sometimes we're so quick ntdll.dll is the only one present, so keep
+    // looping until kernel32.dll shows up.
+    for (;;)
+    {
+      ldr.next = ip.pL[1];
+      do
+      {
+	ReadProcessMemory( ppi->hProcess, UIntToPtr( ldr.next ),
+			   &ldr, sizeof(ldr), NULL );
+	ReadProcessMemory( ppi->hProcess, UIntToPtr( ldr.baseDllName.Buffer ),
+			   basename, ldr.baseDllName.MaximumLength, NULL );
+	if (_wcsicmp( basename, L"kernel32.dll" ) == 0)
+	{
+	  kernel32_base = UIntToPtr( ldr.baseAddress );
+	  goto gotit;
+	}
+      } while (ldr.next != *ip.pL + 0x1c);
+    }
+  gotit:
+    SuspendThread( ppi->hThread );
+    VirtualProtectEx( ppi->hProcess, mem, len, pr, &pr );
+  }
+  LLW = PtrToUint( kernel32_base ) + LLW32r;
+  kernel32_base = 0;
 
   *ip.pB++ = 0x68;			// push  ep
   *ip.pL++ = ep;
@@ -242,7 +234,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   *ip.pB++ = 0x68;			// push  L"path\to\ANSI32.dll"
   *ip.pL++ = mem32 + CODESIZE;
   *ip.pB++ = 0xe8;			// call  LoadLibraryW
-  *ip.pL++ = LLW32 - (mem32 + (DWORD)(ip.pB+4 - code));
+  *ip.pL++ = LLW - (mem32 + (DWORD)(ip.pB+4 - code));
   *ip.pB++ = 0x61;			// popa
   *ip.pB++ = 0x9d;			// popf
   *ip.pB++ = 0xc3;			// ret
@@ -250,10 +242,10 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   WriteProcessMemory( ppi->hProcess, mem, code, len, NULL );
   FlushInstructionCache( ppi->hProcess, mem, len );
   VirtualProtectEx( ppi->hProcess, mem, len, PAGE_EXECUTE, &pr );
-#ifdef _WIN64
-  if (entry)
-    return;
-#endif
-  context.Eip = mem32;
-  SetThreadContext( ppi->hThread, &context );
+
+  if (eip)
+  {
+    context.Eip = mem32;
+    SetThreadContext( ppi->hThread, &context );
+  }
 }

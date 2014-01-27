@@ -17,17 +17,97 @@
 
 #include "ansicon.h"
 
+extern DWORD LLW64r;
+extern LPVOID kernel32_base;
+extern PIMAGE_DOS_HEADER pDosHeader;
+
+#define MakeVA( cast, offset ) (cast)((DWORD_PTR)pDosHeader + (DWORD)(offset))
+
+extern int export_cmp( const void* a, const void* b );
+
+
+/*
+  Get the relative address of LoadLibraryW direct from kernel32.dll.
+*/
+BOOL get_LLW64r( void )
+{
+  HMODULE kernel32;
+  TCHAR   buf[MAX_PATH];
+  UINT	  len;
+  PIMAGE_NT_HEADERS	  pNTHeader;
+  PIMAGE_EXPORT_DIRECTORY pExportDir;
+  PDWORD  fun_table, name_table;
+  PWORD   ord_table;
+  PDWORD  pLLW;
+
+  len = GetSystemDirectory( buf, MAX_PATH );
+  wcscpy( buf + len, L"\\kernel32.dll" );
+  kernel32 = LoadLibraryEx( buf, NULL, LOAD_LIBRARY_AS_IMAGE_RESOURCE );
+  if (kernel32 == NULL)
+  {
+    DEBUGSTR( 1, L"Unable to load 64-bit kernel32.dll!" );
+    return FALSE;
+  }
+  // The handle uses low bits as flags, so strip 'em off.
+  pDosHeader = (PIMAGE_DOS_HEADER)((DWORD_PTR)kernel32 & ~0xFFFF);
+  pNTHeader  = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
+  pExportDir = MakeVA( PIMAGE_EXPORT_DIRECTORY,
+		       pNTHeader->OptionalHeader.
+			DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].
+			 VirtualAddress );
+
+  fun_table  = MakeVA( PDWORD, pExportDir->AddressOfFunctions );
+  name_table = MakeVA( PDWORD, pExportDir->AddressOfNames );
+  ord_table  = MakeVA( PWORD,  pExportDir->AddressOfNameOrdinals );
+
+  pLLW = bsearch( "LoadLibraryW", name_table, pExportDir->NumberOfNames,
+		  sizeof(DWORD), export_cmp );
+  if (pLLW == NULL)
+  {
+    DEBUGSTR( 1, L"Could not find LoadLibraryW!" );
+    FreeLibrary( kernel32 );
+    return FALSE;
+  }
+  LLW64r = fun_table[ord_table[pLLW - name_table]];
+
+  FreeLibrary( kernel32 );
+  return TRUE;
+}
+
+
 void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
 {
   CONTEXT context;
-  DWORD   len;
+  DWORD64 ep;
+  BOOL	  rip;
   LPVOID  mem;
+  DWORD   pr;
   DWORD64 LLW;
+
   union
   {
     PBYTE    pB;
     PDWORD64 pL;
   } ip;
+
+  struct unicode_string
+  {
+    USHORT  Length;
+    USHORT  MaximumLength;
+    DWORD64 Buffer;
+  };
+  struct ldr_module		// incomplete definition
+  {
+    DWORD64 next, prev;
+    DWORD64 baseAddress;
+    DWORD64 entryPoint;
+    DWORD64 sizeOfImage;
+    struct unicode_string fullDllName;
+    struct unicode_string baseDllName;
+  } ldr;
+  WCHAR basename[MAX_PATH];
+
+  DWORD   len;
   #define CODESIZE 92
   static BYTE code[CODESIZE+TSIZE(MAX_PATH)] = {
 	0,0,0,0,0,0,0,0,	   // original rip
@@ -78,19 +158,86 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi, LPCTSTR dll )
   CopyMemory( code + CODESIZE, dll, len );
   len += CODESIZE;
 
-  context.ContextFlags = CONTEXT_CONTROL;
+  context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
   GetThreadContext( ppi->hThread, &context );
   mem = VirtualAllocEx( ppi->hProcess, NULL, len, MEM_COMMIT,
-			PAGE_EXECUTE_READWRITE );
-  LLW = (DWORD64)LoadLibraryW;
+			PAGE_READWRITE );
 
   ip.pB = code;
 
-  *ip.pL++ = context.Rip;
+  // Determine the base address of kernel32.dll.  If injecting into the parent
+  // process, the base has already been determined.  Otherwise, use the PEB to
+  // walk the loaded modules.
+  if (kernel32_base != 0)
+  {
+    ep = context.Rip;
+    rip = TRUE;
+  }
+  else
+  {
+    // When a process is created suspended, RCX has the entry point and RDX
+    // points to the PEB.
+    if (!ReadProcessMemory( ppi->hProcess, (LPVOID)(context.Rdx + 0x18),
+			    ip.pL, 8, NULL ))
+    {
+      DEBUGSTR( 1, L"Failed to read Ldr from PEB." );
+      return;
+    }
+    ep = context.Rcx;
+    rip = FALSE;
+    // In case we're a bit slow (which seems to be unlikely), set up an
+    // infinite loop as the entry point.
+    WriteProcessMemory( ppi->hProcess, (PBYTE)mem + 16, "\xEB\xFE", 2, NULL );
+    FlushInstructionCache( ppi->hProcess, (PBYTE)mem + 16, 2 );
+    context.Rcx = (DWORD64)mem + 16;
+    SetThreadContext( ppi->hThread, &context );
+    VirtualProtectEx( ppi->hProcess, mem, len, PAGE_EXECUTE, &pr );
+    // Now resume the thread, as the PEB hasn't even been created yet.
+    ResumeThread( ppi->hThread );
+    while (*ip.pL == 0)
+    {
+      Sleep( 0 );
+      ReadProcessMemory( ppi->hProcess, (LPVOID)(context.Rdx + 0x18),
+			 ip.pL, 8, NULL );
+    }
+    // Read PEB_LDR_DATA.InInitializationOrderModuleList.Flink.
+    ReadProcessMemory( ppi->hProcess, (LPVOID)(*ip.pL + 0x30),
+		       &ip.pL[1], 8, NULL );
+    // Sometimes we're so quick ntdll.dll is the only one present, so keep
+    // looping until kernel32.dll shows up.
+    for (;;)
+    {
+      ldr.next = ip.pL[1];
+      do
+      {
+	ReadProcessMemory( ppi->hProcess, (LPVOID)ldr.next,
+			   &ldr, sizeof(ldr), NULL );
+	ReadProcessMemory( ppi->hProcess, (LPVOID)ldr.baseDllName.Buffer,
+			   basename, ldr.baseDllName.MaximumLength, NULL );
+	if (_wcsicmp( basename, L"kernel32.dll" ) == 0)
+	{
+	  kernel32_base = (LPVOID)ldr.baseAddress;
+	  goto gotit;
+	}
+      } while (ldr.next != *ip.pL + 0x30);
+    }
+  gotit:
+    SuspendThread( ppi->hThread );
+    VirtualProtectEx( ppi->hProcess, mem, len, pr, &pr );
+  }
+  LLW = (DWORD64)kernel32_base + LLW64r;
+  kernel32_base = 0;
+
+  *ip.pL++ = ep;
   *ip.pL++ = LLW;
 
   WriteProcessMemory( ppi->hProcess, mem, code, len, NULL );
   FlushInstructionCache( ppi->hProcess, mem, len );
-  context.Rip = (DWORD64)mem + 16;
-  SetThreadContext( ppi->hThread, &context );
+  VirtualProtectEx( ppi->hProcess, mem, len, PAGE_EXECUTE, &pr );
+
+  if (rip)
+  {
+    context.Rip = (DWORD64)mem + 16;
+    SetThreadContext( ppi->hThread, &context );
+  }
 }

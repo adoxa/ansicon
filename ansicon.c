@@ -78,7 +78,7 @@
     don't write the reset sequence if output is redirected.
 */
 
-#define PDATE L"25 January, 2014"
+#define PDATE L"27 January, 2014"
 
 #include "ansicon.h"
 #include "version.h"
@@ -111,10 +111,11 @@ BOOL   GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR );
 
 
 // The DLL shares this variable, so injection requires it here.
+DWORD  LLW32r;
 #ifdef _WIN64
-DWORD  LLW32;
-extern LPVOID base;
+DWORD  LLW64r;
 #endif
+extern LPVOID kernel32_base;
 
 
 // Find the name of the DLL and inject it.
@@ -137,11 +138,18 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
 #ifdef _WIN64
   wsprintf( dll + len, L"ANSI%d.dll", type );
   if (type == 32)
+  {
+    get_LLW32r();
     InjectDLL32( ppi, dll );
+  }
   else
+  {
+    get_LLW64r();
     InjectDLL64( ppi, dll );
+  }
 #else
   wcscpy( dll + len, L"ANSI32.dll" );
+  get_LLW32r();
   InjectDLL32( ppi, dll );
 #endif
   return TRUE;
@@ -276,37 +284,31 @@ int main( void )
 	}
 	else if (GetParentProcessInfo( &pi, arg ))
 	{
+	  HANDLE hSnap;
+	  MODULEENTRY32 me;
+	  BOOL fOk;
+
 	  pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
 	  pi.hThread  = OpenThread( THREAD_ALL_ACCESS,	FALSE, pi.dwThreadId );
 	  SuspendThread( pi.hThread );
-#ifdef _WIN64
-	  // Find the base address of kernel32.dll if the 64-bit version is
-	  // injecting into a 32-bit parent.
-	  if (IsWow64Process( pi.hProcess, &gui ) && gui)
+	  // Find the base address of kernel32.dll.
+	  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE |
+					    TH32CS_SNAPMODULE32,
+					    pi.dwProcessId );
+	  if (hSnap != INVALID_HANDLE_VALUE)
 	  {
-	    HANDLE hSnap;
-	    MODULEENTRY32 me;
-	    BOOL fOk;
-
-	    hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE |
-					      TH32CS_SNAPMODULE32,
-					      pi.dwProcessId );
-	    if (hSnap != INVALID_HANDLE_VALUE)
+	    me.dwSize = sizeof(MODULEENTRY32);
+	    for (fOk = Module32First( hSnap, &me ); fOk;
+		 fOk = Module32Next( hSnap, &me ))
 	    {
-	      me.dwSize = sizeof(MODULEENTRY32);
-	      for (fOk = Module32First( hSnap, &me ); fOk;
-		   fOk = Module32Next( hSnap, &me ))
+	      if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
 	      {
-		if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
-		{
-		  base = me.modBaseAddr;
-		  break;
-		}
+		kernel32_base = me.modBaseAddr;
+		break;
 	      }
-	      CloseHandle( hSnap );
 	    }
+	    CloseHandle( hSnap );
 	  }
-#endif
 	  if (!Inject( &pi, &gui, arg ))
 	    rc = 1;
 	  ResumeThread( pi.hThread );
