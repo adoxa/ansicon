@@ -8,9 +8,14 @@
 
 TCHAR	prog_path[MAX_PATH];
 LPTSTR	prog;
+
 int	log_level;
-char	tempfile[MAX_PATH];
-DWORD	pid;
+
+char	ansi_dll[MAX_PATH];
+DWORD	ansi_len;
+#ifdef _WIN64
+char*	ansi_bits;
+#endif
 
 
 // Get just the name of the program: "C:\path\program.exe" -> "program".
@@ -37,13 +42,51 @@ LPTSTR get_program_name( LPTSTR program )
 }
 
 
+// Get the ANSI path of the DLL for the import.  If it can't be converted,
+// just use the name and hope it's on the PATH.  Returns the length of the
+// path/name, including padding to make it dword-aligned.  The 64-bit version
+// expects ansi_bits to point to the size within dll on entry.
+void set_ansi_dll( LPTSTR dll )
+{
+  BOOL bad;
+
+  ansi_len = WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, dll, -1,
+				  NULL, 0, NULL, &bad );
+  if (bad || ansi_len > MAX_PATH)
+  {
+    ansi_len = 12;
+    memcpy( ansi_dll, "ANSI32.dll\0", 12 );
+#ifdef _WIN64
+    if (*ansi_bits == '6')
+    {
+      ansi_dll[4] = '6';
+      ansi_dll[5] = '4';
+    }
+    ansi_bits = ansi_dll + 4;
+#endif
+  }
+  else
+  {
+    WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, dll, -1,
+			 ansi_dll, MAX_PATH, NULL, NULL );
+#ifdef _WIN64
+    ansi_bits = ansi_dll + ansi_len - 7;
+#endif
+    ansi_len = (ansi_len + 3) & ~3;
+  }
+}
+
+
 void DEBUGSTR( int level, LPTSTR szFormat, ... )
 {
-  TCHAR szBuffer[1024], szEscape[1024];
+  static char  tempfile[MAX_PATH];
+  static DWORD pid;
+
+  TCHAR   szBuffer[1024], szEscape[1024];
   va_list pArgList;
-  HANDLE mutex;
-  DWORD wait;
-  FILE* file;
+  HANDLE  mutex;
+  DWORD   wait;
+  FILE*   file;
 
   if ((log_level & 3) < level && !(level & 4 & log_level))
     return;
@@ -55,6 +98,7 @@ void DEBUGSTR( int level, LPTSTR szFormat, ... )
   }
   if (szFormat == NULL)
   {
+    // Explicitly use 't', as _fmode might be binary.
     file = fopen( tempfile, (log_level & 8) ? "at" : "wt" );
     if (file != NULL)
     {
@@ -116,7 +160,7 @@ void DEBUGSTR( int level, LPTSTR szFormat, ... )
 
   mutex = CreateMutex( NULL, FALSE, L"ANSICON_debug_file" );
   wait	= WaitForSingleObject( mutex, 500 );
-  file	= fopen( tempfile, "at" ); // _fmode might be binary
+  file	= fopen( tempfile, "at" );
   if (file != NULL)
   {
     fwprintf( file, L"%s (%lu): %s\n", prog, pid, szFormat );

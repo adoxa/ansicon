@@ -108,13 +108,15 @@
   v1.65, 28 August, 2013:
     fix \e[K (was using window, not buffer).
 
-  v.166, 20 & 21 September, 2013:
+  v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.67, 25 to 27 January, 2014:
+  v1.70, 25 January to 4 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
-    always find the base address of kernel32.dll.
+    inject by manipulating the import directory table;
+    restore original attribute on detach (for LoadLibrary/FreeLibrary usage);
+    log: remove the quotes around the CreateProcess command line string.
 */
 
 #include "ansicon.h"
@@ -135,6 +137,7 @@
 // ========== Global variables and constants
 
 HANDLE	  hConOut;		// handle to CONOUT$
+WORD	  orgattr;		// original attribute
 
 #define ESC	'\x1B'          // ESCape character
 #define BEL	'\x07'
@@ -252,11 +255,6 @@ SHARED GRM   s_grm;
 SHARED DWORD s_flag;
 #define GRM_INIT 1
 #define GRM_EXIT 2
-
-SHARED DWORD LLW32r;
-#ifdef _WIN64
-SHARED DWORD LLW64r;
-#endif
 
 
 // Wait for the child process to finish, then update our GRM to the child's.
@@ -470,6 +468,7 @@ void InterpretEscSeq( void )
 	    case  7: grm.rvideo    = 1; break;
 	    case  8: grm.concealed = 1; break;
 	    case 21: // oops, this actually turns on double underline
+		     // but xterm turns off bold too, so that's alright
 	    case 22: grm.bold	   = 0; break;
 	    case 25:
 	    case 24: grm.underline = 0; break;
@@ -1049,9 +1048,7 @@ BOOL HookAPIOneMod(
   // We now have a valid pointer to the module's PE header.
   // Get a pointer to its imports section.
   pImportDesc = MakeVA( PIMAGE_IMPORT_DESCRIPTOR,
-			pNTHeader->OptionalHeader.
-			 DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].
-			  VirtualAddress );
+			pNTHeader->IMPORTDIR.VirtualAddress );
 
   // Bail out if the RVA of the imports section is 0 (it doesn't exist)
   if (pImportDesc == (PIMAGE_IMPORT_DESCRIPTOR)pDosHeader)
@@ -1113,35 +1110,18 @@ BOOL HookAPIOneMod(
 	}
 	if (patch)
 	{
-	  DWORD flOldProtect, flNewProtect, flDummy;
-	  MEMORY_BASIC_INFORMATION mbi;
+	  DWORD pr;
 
 	  DEBUGSTR( 3, L"  %S", hook->name );
-	  // Get the current protection attributes.
-	  VirtualQuery( &pThunk->u1.Function, &mbi, sizeof(mbi) );
-	  // Take the access protection flags.
-	  flNewProtect = mbi.Protect;
-	  // Remove ReadOnly and ExecuteRead flags.
-	  flNewProtect &= ~(PAGE_READONLY | PAGE_EXECUTE_READ);
-	  // Add on ReadWrite flag
-	  flNewProtect |= (PAGE_READWRITE);
-	  // Change the access protection on the region of committed pages in the
-	  // virtual address space of the current process.
-	  VirtualProtect( &pThunk->u1.Function, sizeof(PVOID),
-			  flNewProtect, &flOldProtect );
+	  // Change the access protection on the region of committed pages in
+	  // the virtual address space of the current process.
+	  VirtualProtect( &pThunk->u1.Function, PTRSZ, PAGE_READWRITE, &pr );
 
 	  // Overwrite the original address with the address of the new function.
-	  if (!WriteProcessMemory( GetCurrentProcess(),
-				   &pThunk->u1.Function,
-				   &patch, sizeof(patch), NULL ))
-	  {
-	    DEBUGSTR( 1, L"Could not patch!" );
-	    return FALSE;
-	  }
+	  pThunk->u1.Function = (DWORD_PTR)patch;
 
 	  // Put the page attributes back the way they were.
-	  VirtualProtect( &pThunk->u1.Function, sizeof(PVOID),
-			  flOldProtect, &flDummy );
+	  VirtualProtect( &pThunk->u1.Function, PTRSZ, pr, &pr );
 	}
       }
       pThunk++; // Advance to next imported function address
@@ -1211,11 +1191,12 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 	     LPPROCESS_INFORMATION child_pi,
 	     BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
 {
-  int	 type;
-  BOOL	 gui;
+  int	type;
+  PBYTE base;
+  BOOL	gui;
 
-  type = ProcessType( child_pi, &gui );
-  if (gui)
+  type = ProcessType( child_pi, &base, &gui );
+  if (gui && type > 0)
   {
     TCHAR   app[MAX_PATH];
     LPTSTR  name;
@@ -1273,20 +1254,20 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       type = 0;
     }
   }
-  if (type != 0)
+  if (type > 0)
   {
 #ifdef _WIN64
     if (type == 32)
     {
-      hDllNameType[0] = '3';
-      hDllNameType[1] = '2';
-      InjectDLL32( child_pi, hDllName );
+      ansi_bits[0] = '3';
+      ansi_bits[1] = '2';
+      InjectDLL32( child_pi, base );
     }
     else
     {
-      hDllNameType[0] = '6';
-      hDllNameType[1] = '4';
-      InjectDLL64( child_pi, hDllName );
+      ansi_bits[0] = '6';
+      ansi_bits[1] = '4';
+      InjectDLL( child_pi, base );
     }
 #else
 #ifdef W32ON64
@@ -1313,7 +1294,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
     }
     else
 #endif
-    InjectDLL32( child_pi, hDllName );
+    InjectDLL( child_pi, base );
 #endif
     if (!gui && !(dwCreationFlags & (CREATE_NEW_CONSOLE | DETACHED_PROCESS)))
     {
@@ -1370,7 +1351,7 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       &child_pi ))
     return FALSE;
 
-  DEBUGSTR( 1, L"CreateProcessA: (%lu) \"%S\", \"%S\"",
+  DEBUGSTR( 1, L"CreateProcessA: (%lu) \"%S\", %S",
 	    child_pi.dwProcessId,
 	    (lpApplicationName == NULL) ? "" : lpApplicationName,
 	    (lpCommandLine == NULL) ? "" : lpCommandLine );
@@ -1406,7 +1387,7 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       &child_pi ))
     return FALSE;
 
-  DEBUGSTR( 1, L"CreateProcessW: (%lu) \"%s\", \"%s\"",
+  DEBUGSTR( 1, L"CreateProcessW: (%lu) \"%s\", %s",
 	    child_pi.dwProcessId,
 	    (lpApplicationName == NULL) ? L"" : lpApplicationName,
 	    (lpCommandLine == NULL) ? L"" : lpCommandLine );
@@ -1609,7 +1590,6 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
 
   return WriteConsoleA( hCon, lpBuffer, nNumberOfCharsToWrite,
 			lpNumberOfCharsWritten, lpReserved );
-
 }
 
 BOOL
@@ -1774,6 +1754,7 @@ void OriginalAttr( void )
 				    NULL, OPEN_EXISTING, 0, 0 );
   if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     csbi.wAttributes = 7;
+  orgattr = csbi.wAttributes;
   CloseHandle( hConOut );
 
   if (s_flag == GRM_INIT && s_pid == GetCurrentProcessId())
@@ -1823,7 +1804,8 @@ void OriginalAttr( void )
 // and terminated.
 //-----------------------------------------------------------------------------
 
-__declspec(dllexport) // just to stop MinGW exporting everything
+// Need to export something for static loading to work, this is as good as any.
+__declspec(dllexport)
 BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 {
   BOOL	  bResult = TRUE;
@@ -1840,19 +1822,19 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     hDllNameType = hDllName - 6 +
 #endif
     GetModuleFileName( hInstance, hDllName, lenof(hDllName) );
+#ifdef _WIN64
+    ansi_bits = (LPSTR)hDllNameType;
+#endif
+    set_ansi_dll( hDllName );
 
     hDllInstance = hInstance; // save Dll instance handle
-    DEBUGSTR( 1, L"hDllInstance = %p", hDllInstance );
-
-    if (LLW32r == 0)
-    {
-      if (!get_LLW32r())
-	return FALSE;
 #ifdef _WIN64
-      if (!get_LLW64r())
-	return FALSE;
+    DEBUGSTR( 1, L"hDllInstance = %.8X_%.8X",
+		 (DWORD)((DWORD_PTR)hDllInstance >> 32),
+		 PtrToUint( hDllInstance ) );
+#else
+    DEBUGSTR( 1, L"hDllInstance = %p", hDllInstance );
 #endif
-    }
 
     // Get the entry points to the original functions.
     hKernel = GetModuleHandleA( APIKernel );
@@ -1869,6 +1851,11 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     {
       DEBUGSTR( 1, L"Unloading" );
       HookAPIAllMod( Hooks, TRUE );
+      hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+					FILE_SHARE_READ | FILE_SHARE_WRITE,
+					NULL, OPEN_EXISTING, 0, 0 );
+      SetConsoleTextAttribute( hConOut, orgattr );
+      CloseHandle( hConOut );
     }
     else
     {

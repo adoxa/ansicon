@@ -62,8 +62,11 @@ MT = mt.exe
 CFLAGS = /nologo /W3 /O2 $(SHARE) /D_CRT_SECURE_NO_WARNINGS
 LIBS = advapi32.lib user32.lib $(LIBS64)
 
-X86OBJS = x86\proctype.obj x86\injdll32.obj x86\util.obj
-X64OBJS = x64\proctype.obj x64\injdll64.obj x64\injdll32.obj x64\util.obj
+# Identify ansicon.exe using "ANSI" as a version number.
+LINK = /link /version:20033.18771
+
+X86OBJS = x86\proctype.obj x86\injdll.obj x86\util.obj
+X64OBJS = x64\proctype.obj x64\injdll.obj x64\util.obj
 
 !IF !DEFINED(V)
 V = 0
@@ -90,15 +93,16 @@ ansicon64: x64 x64\ansicon.exe x64\ANSI64.dll
 x86:
 	mkdir x86
 
-x86\ansicon.exe: x86\ansicon.obj $(X86OBJS) x86\ansicon.res
-	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) /link /filealign:512
+x86\ansicon.exe: x86\ansicon.obj $(X86OBJS) x86\LLW.obj x86\ansicon.res
+	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) $(LINK) /filealign:512
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
 	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;1
 	@del $@.manifest
 !ENDIF
 
 x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
-	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
+		      /base:0xAC0000 /section:.shared,s /filealign:512
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
 	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
 	@del $@.manifest
@@ -107,14 +111,16 @@ x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
 x64:
 	mkdir x64
 
-x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\ansicon.res
-	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS)
+x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\LLW.obj x64\ansicon.res
+	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) $(LINK)
 
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
-	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC000000 /section:.shared,s
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
+		      /base:0xAC000000 /section:.shared,s
 
-x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll32.obj x86\util.obj x86\ansi.res
-	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link /base:0xAC0000 /section:.shared,s /filealign:512
+x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll.obj x86\util.obj x86\ansi.res
+	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
+	    /base:0xAC0000 /section:.shared,s /filealign:512 /largeaddressaware
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
 	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
 	@del $@.manifest
@@ -125,12 +131,13 @@ ansicon.rc: version.h
 ANSI.c:     ansicon.h version.h
 ANSI.rc:    version.h
 util.c:     ansicon.h version.h
-injdll32.c: ansicon.h
-injdll64.c: ansicon.h
+injdll.c:   ansicon.h
 proctype.c: ansicon.h
+LLW.c:	    ansicon.h
 
 x64\ANSI32.obj: ANSI.c
 	$(CCmsg)$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
+
 x64\proctype32.obj: proctype.c
 	$(CCmsg)$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
 

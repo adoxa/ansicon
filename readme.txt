@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2013 Jason Hood
+			 Copyright 2005-2014 Jason Hood
 
-			    Version 1.66.  Freeware
+			    Version 1.70.  Freeware
 
 
 Description
@@ -17,7 +17,7 @@ Requirements
 ============
 
     32-bit: Windows 2000 Professional and later (it won't work with NT or 9X).
-    64-bit: Vista and later (it won't work with XP64).
+    64-bit: AMD64 (IA64 could work with a little modification).
 
 
 Installation
@@ -93,10 +93,10 @@ Usage
        16	Log all imported modules (add to any of the above)
 
     The log option will not work with '-p'; set the environment variable
-    ANSICON_LOG instead.  The variable is only read once when a new process is
-    started; changing it won't affect running processes.  If you identify a
-    module that causes problems, add it to the ANSICON_EXC environment variable
-    (see ANSICON_API below, but the extension is required).
+    ANSICON_LOG (to the number) instead.  The variable is only read once when a
+    process is started; changing it won't affect running processes.  If you
+    identify a module that causes problems, add it to the ANSICON_EXC environ-
+    ment variable (see ANSICON_API below, but the extension is required).
 
     E.g.: 'ansicon -l5' will start a new command processor, logging every pro-
     cess it starts along with their output.
@@ -264,11 +264,25 @@ Limitations
 
 	ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
 
+    An application using multiple screen buffers will not have separate
+    attributes in each buffer.
+
 
 Version History
 ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.70 - 4 February, 2014:
+    - don't hook again if using LoadLibrary or LoadLibraryEx;
+    - update the LoadLibraryEx flags that shouldn't hook;
+    - restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
+    - ansicon.exe will start with ANSICON_DEF (if defined and -m not used);
+    - an installed ansicon.exe will restore current (not default) attributes;
+    * inject into a created process by modifying the import descriptor table
+      (use CreateRemoteThread for -p);
+    * log: remove the quotes around the CreateProcess command line;
+	   add an underscore in 64-bit addresses to distinguish 8-digit groups.
 
     1.66 - 20 September, 2013:
     - fix 32-bit process trying to detect 64-bit process.
@@ -442,12 +456,6 @@ Contact
     http://ansicon.adoxa.vze.com/
     https://github.com/adoxa/ansicon
 
-    Jason Hood
-    11 Buckle Street
-    North Rockhampton
-    Qld 4701
-    Australia
-
 
 Distribution
 ============
@@ -461,5 +469,5 @@ Distribution
     in LICENSE.txt.
 
 
-===============================
-Jason Hood, 20 September, 2013.
+=============================
+Jason Hood, 4 February, 2014.
