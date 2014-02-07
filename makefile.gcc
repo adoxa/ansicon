@@ -44,8 +44,8 @@ endif
 endif
 endif
 
-X86OBJS = x86/proctype.o x86/injdll.o x86/util.o
-X64OBJS = x64/proctype.o x64/injdll.o x64/util.o
+X86OBJS = x86/injdll.o x86/proctype.o x86/util.o
+X64OBJS = x64/injdll.o x64/proctype.o x64/util.o x64/procrva.o
 
 # Determine the appropriate separator to run multiple commands - ";" for sh.exe
 # and "&" for CMD.EXE.  $(SHELL) is initially defined to "sh.exe" - if it
@@ -92,7 +92,7 @@ ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll
 x86:
 	cmd /c "mkdir x86"
 
-x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/LLW.o x86/ansiconv.o
+x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/procrva.o x86/ansiconv.o
 	$(LDmsg)$(CC) -m32 $+ -s -o $@ $(IVER)
 
 x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
@@ -101,7 +101,7 @@ x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
 x64:
 	cmd /c "mkdir x64"
 
-x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/LLW.o x64/ansiconv.o
+x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
 	$(LDmsg)$(CC) -m64 $+ -s -o $@ $(IVER)
 
 x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o

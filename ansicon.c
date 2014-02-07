@@ -77,16 +77,17 @@
   v1.63, 25 July, 2013:
     don't write the reset sequence if output is redirected.
 
-  v1.70, 31 January to 3 February, 2014:
+  v1.70, 31 January to 7 February, 2014:
     restore the original (current, not default) attributes if using ansicon.exe
      when it's already installed;
     use ANSICON_DEF if defined and -m not given;
     -e and -t will not output anything if the DLL could not load;
     use Unicode output (_O_U16TEXT, for compilers/systems that support it);
-    log: 64-bit addresses get an underscore between the 8-digit groups.
+    log: 64-bit addresses get an underscore between the 8-digit groups;
+	 add error codes to some message.
 */
 
-#define PDATE L"4 February, 2014"
+#define PDATE L"7 February, 2014"
 
 #include "ansicon.h"
 #include "version.h"
@@ -168,14 +169,20 @@ int my_fputws( const wchar_t* s, FILE* f )
 #define _putws( s ) my_fputws( s L"\n", stdout )
 
 
+#if defined(_WIN64)
+LPTSTR DllNameType;
+#endif
+
 // Find the name of the DLL and inject it.
 BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
 {
   DWORD len;
-  WCHAR dll[MAX_PATH];
   int	type;
   PBYTE base;
 
+#ifdef _WIN64
+  if (app != NULL)
+#endif
   DEBUGSTR( 1, L"%s (%lu)", app, ppi->dwProcessId );
   type = ProcessType( ppi, &base, gui );
   if (type <= 0)
@@ -186,92 +193,109 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
   }
 
   len = (DWORD)(prog - prog_path);
-  memcpy( dll, prog_path, TSIZE(len) );
+  memcpy( DllName, prog_path, TSIZE(len) );
 #ifdef _WIN64
-  wsprintf( dll + len, L"ANSI%d.dll", type );
-  ansi_bits = (LPSTR)(dll + len + 4);
-  set_ansi_dll( dll );
-  if (type == 32)
-    InjectDLL32( ppi, base );
-  else
+  wsprintf( DllName + len, L"ANSI%d.dll", (type == 48) ? 64 : type );
+  DllNameType = DllName + len + 4;
+  set_ansi_dll();
+  if (type == 64)
     InjectDLL( ppi, base );
+  else if (type == 32)
+    InjectDLL32( ppi, base );
+  else // (type == 48)
+    InjectDLL64( ppi );
 #else
-  wcscpy( dll + len, L"ANSI32.dll" );
-  set_ansi_dll( dll );
+  wcscpy( DllName + len, L"ANSI32.dll" );
+  set_ansi_dll();
   InjectDLL( ppi, base );
 #endif
+
   return TRUE;
 }
 
 
 // Use CreateRemoteThread to load our DLL in the target process.
-void RemoteLoad( LPPROCESS_INFORMATION ppi )
+void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
 {
   HANDLE hSnap;
   MODULEENTRY32 me;
   PBYTE  LLW;
   BOOL	 fOk;
-  WCHAR  dll[MAX_PATH];
   DWORD  len;
   LPVOID mem;
   HANDLE thread;
+  DWORD  ticks;
 #ifdef _WIN64
   BOOL	 WOW64;
+  int	 type;
 #endif
 
+  DEBUGSTR( 1, L"%s (%lu)", app, ppi->dwProcessId );
+
   // Find the base address of kernel32.dll.
-  LLW = NULL;
-  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
-				    ppi->dwProcessId );
-  if (hSnap != INVALID_HANDLE_VALUE)
+  ticks = GetTickCount();
+  while ((hSnap = CreateToolhelp32Snapshot(
+		   TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, ppi->dwProcessId ))
+		== INVALID_HANDLE_VALUE)
   {
-    me.dwSize = sizeof(MODULEENTRY32);
-    for (fOk = Module32First( hSnap, &me ); fOk;
-	 fOk = Module32Next( hSnap, &me ))
-    {
-      if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
-      {
-	LLW = me.modBaseAddr;
-	break;
-      }
-    }
-    CloseHandle( hSnap );
-  }
+    DWORD err = GetLastError();
 #ifndef _WIN64
-  else if (GetLastError() == ERROR_PARTIAL_COPY)
-  {
-    fputws( L"ANSICON: parent is 64-bit (use x64\\ansicon).\n", stderr );
-    return;
-  }
+    if (err == ERROR_PARTIAL_COPY)
+    {
+      DEBUGSTR( 1, L"  Ignoring 64-bit process (use x64\\ansicon)" );
+      fputws( L"ANSICON: parent is 64-bit (use x64\\ansicon).\n", stderr );
+      return;
+    }
 #endif
-  if (LLW == NULL)
-  {
-  no_llw:
+    // I really don't think this would happen, but if it does, give up after
+    // two seconds to avoid a potentially infinite loop.
+    if (err == ERROR_BAD_LENGTH && GetTickCount() - ticks < 2000)
+    {
+      Sleep( 0 );
+      continue;
+    }
+    DEBUGSTR( 1, L"  Unable to create snapshot (%lu)", err );
+  no_go:
     fputws( L"ANSICON: unable to inject into parent.\n", stderr );
     return;
   }
+  LLW = NULL;
+  me.dwSize = sizeof(MODULEENTRY32);
+  for (fOk = Module32First( hSnap, &me ); fOk; fOk = Module32Next( hSnap, &me ))
+  {
+    if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
+    {
+      LLW = me.modBaseAddr;
+      break;
+    }
+  }
+  CloseHandle( hSnap );
+  if (LLW == NULL)
+  {
+    DEBUGSTR( 1, L"  Unable to locate kernel32.dll (%lu)", GetLastError() );
+    goto no_go;
+  }
 
   len = (DWORD)(prog - prog_path);
-  memcpy( dll, prog_path, TSIZE(len) );
+  memcpy( DllName, prog_path, TSIZE(len) );
 #ifdef _WIN64
-  if (IsWow64Process( ppi->hProcess, &WOW64 ) && WOW64)
-  {
-    wcscpy( dll + len, L"ANSI32.dll" );
-    LLW += get_LLW32r();
-  }
-  else
-  {
-    wcscpy( dll + len, L"ANSI64.dll" );
-    LLW += get_LLW64r();
-  }
+  type = (IsWow64Process( ppi->hProcess, &WOW64 ) && WOW64) ? 32 : 64;
+  wsprintf( DllName + len, L"ANSI%d.dll", type );
+  LLW += GetProcRVA( L"kernel32.dll", "LoadLibraryW", type );
 #else
-  wcscpy( dll + len, L"ANSI32.dll" );
-  LLW += get_LLW32r();
+  wcscpy( DllName + len, L"ANSI32.dll" );
+  LLW += GetProcRVA( L"kernel32.dll", "LoadLibraryW" );
 #endif
   if (LLW == me.modBaseAddr)
-    goto no_llw;
+    goto no_go;
+
   mem = VirtualAllocEx( ppi->hProcess, NULL, len, MEM_COMMIT, PAGE_READWRITE );
-  WriteProcMem( mem, dll, TSIZE(len + 11) );
+  if (mem == NULL)
+  {
+    DEBUGSTR( 1, L"  Unable to allocate virtual memory (%lu)", GetLastError() );
+    goto no_go;
+  }
+  WriteProcMem( mem, DllName, TSIZE(len + 11) );
   thread = CreateRemoteThread( ppi->hProcess, NULL, 4096,
 			       (LPTHREAD_START_ROUTINE)LLW, mem, 0, NULL );
   WaitForSingleObject( thread, INFINITE );
@@ -341,12 +365,18 @@ int main( void )
 #ifdef _WIN64
   if (*arg == '-' && arg[1] == 'P')
   {
-    swscanf( arg + 2, L"%u:%u", &pi.dwProcessId, &pi.dwThreadId );
+    pi.dwProcessId = _wtoi( arg + 2 );
     pi.hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId );
-    pi.hThread	= OpenThread(  THREAD_ALL_ACCESS,  FALSE, pi.dwThreadId );
-    Inject( &pi, &gui, arg );
-    CloseHandle( pi.hThread );
-    CloseHandle( pi.hProcess );
+    if (pi.hProcess == NULL)
+    {
+      DEBUGSTR( 1, L"  Unable to open process %lu (%lu)",
+		   pi.dwProcessId, GetLastError() );
+    }
+    else
+    {
+      Inject( &pi, &gui, NULL );
+      CloseHandle( pi.hProcess );
+    }
     return 0;
   }
 #endif
@@ -378,14 +408,10 @@ int main( void )
 
       case 'p':
 	shell = FALSE;
-	if (GetParentProcessInfo( &pi, arg + 3 ))
+	if (GetParentProcessInfo( &pi, arg ))
 	{
 	  pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
-	  pi.hThread  = OpenThread( THREAD_ALL_ACCESS,	FALSE, pi.dwThreadId );
-	  SuspendThread( pi.hThread );
-	  RemoteLoad( &pi );
-	  ResumeThread( pi.hThread );
-	  CloseHandle( pi.hThread );
+	  RemoteLoad( &pi, arg );
 	  CloseHandle( pi.hProcess );
 	}
 	else
@@ -702,35 +728,30 @@ BOOL find_proc_id( HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe )
 }
 
 
-// Obtain the process and thread identifiers of the parent process.
+// Obtain the process identifier of the parent process.
 BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR name )
 {
   HANDLE hSnap;
   PROCESSENTRY32 pe;
-  THREADENTRY32  te;
   BOOL	 fOk;
 
-  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS|TH32CS_SNAPTHREAD, 0 );
-
+  hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0 );
   if (hSnap == INVALID_HANDLE_VALUE)
-    return FALSE;
-
-  find_proc_id( hSnap, GetCurrentProcessId(), &pe );
-  if (!find_proc_id( hSnap, pe.th32ParentProcessID, &pe ))
   {
-    CloseHandle( hSnap );
+    DEBUGSTR( 1, L"Failed to create snapshot (%lu)", GetLastError() );
     return FALSE;
   }
 
-  te.dwSize = sizeof(te);
-  for (fOk = Thread32First( hSnap, &te ); fOk; fOk = Thread32Next( hSnap, &te ))
-    if (te.th32OwnerProcessID == pe.th32ProcessID)
-      break;
-
+  fOk = (find_proc_id( hSnap, GetCurrentProcessId(), &pe ) &&
+	 find_proc_id( hSnap, pe.th32ParentProcessID, &pe ));
   CloseHandle( hSnap );
+  if (!fOk)
+  {
+    DEBUGSTR( 1, L"Failed to locate parent" );
+    return FALSE;
+  }
 
   ppi->dwProcessId = pe.th32ProcessID;
-  ppi->dwThreadId  = te.th32ThreadID;
   wcscpy( name, pe.szExeFile );
 
   return fOk;
@@ -897,7 +918,7 @@ L"        [-e|E string | -t|T [file(s)] | program [args]]\n"
 L"\n"
 L"  -l\t\tset the logging level (1=process, 2=module, 3=function,\n"
 L"    \t\t +4=output, +8=append) for program (-p is unaffected)\n"
-L"  -i\t\tinstall - add ANSICON to the AutoRun entry (also implies -p)\n"
+L"  -i\t\tinstall - add ANSICON to CMD's AutoRun entry (also implies -p)\n"
 L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
 L"  -I -U\t\tuse local machine instead of current user\n"
 L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"

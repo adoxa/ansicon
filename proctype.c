@@ -2,10 +2,42 @@
   Test for a valid process (i386 for x86; that or AMD64 for x64).  We can get
   that info from the image header, which means getting the process's base
   address (which we need anyway, to modify the imports).  The simplest way to
-  do that is to enumerate the pages, looking for an executable image.
+  do that is to enumerate the pages, looking for an executable image.  A .NET
+  AnyCPU process has a 32-bit structure, but will load as 64-bit when possible.
+  The 64-bit version (both DLLs) will say this is type 48 (halfway between 32 &
+  64); the 32-bit version will ignore it if run on a 64-bit OS.
 */
 
 #include "ansicon.h"
+
+
+#if !defined(_WIN64) && !defined(W32ON64)
+static BOOL ProcessIs64( HANDLE hProcess )
+{
+  BOOL wow;
+
+  typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS)( HANDLE, PBOOL );
+  static LPFN_ISWOW64PROCESS fnIsWow64Process;
+
+  if (fnIsWow64Process == INVALID_HANDLE_VALUE)
+    return FALSE;
+
+  if (fnIsWow64Process == NULL)
+  {
+    fnIsWow64Process = (LPFN_ISWOW64PROCESS)GetProcAddress(
+			GetModuleHandle( L"kernel32.dll" ), "IsWow64Process" );
+    if (fnIsWow64Process == NULL)
+    {
+      fnIsWow64Process = INVALID_HANDLE_VALUE;
+      return FALSE;
+    }
+  }
+
+  // If IsWow64Process fails, say it is 64, since injection probably wouldn't
+  // work, either.
+  return !(fnIsWow64Process( hProcess, &wow ) && wow);
+}
+#endif
 
 
 int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
@@ -43,6 +75,34 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
       {
 	if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
 	{
+	  PIMAGE_NT_HEADERS32 pNTHeader = (PIMAGE_NT_HEADERS32)&nt_header;
+	  if (pNTHeader->COMDIR.VirtualAddress != 0 &&
+	      pNTHeader->COMDIR.Size != 0)
+	  {
+	    IMAGE_COR20_HEADER ComHeader, *pComHeader;
+	    pComHeader = (PIMAGE_COR20_HEADER)((PBYTE)minfo.BaseAddress
+				      + pNTHeader->COMDIR.VirtualAddress);
+	    ReadProcVar( pComHeader, &ComHeader );
+	    if ((ComHeader.Flags & COMIMAGE_FLAGS_ILONLY) &&
+		!(ComHeader.Flags & COMIMAGE_FLAGS_32BITREQUIRED))
+	    {
+#if defined(_WIN64) || !defined(W32ON64)	// W32ON64 will log due to -P
+	      DEBUGSTR( 1, L"  AnyCPU %s (base = %.8X)",
+			(*gui) ? L"GUI" : L"console",
+			PtrToUint( minfo.BaseAddress ) );
+#endif
+#if defined(_WIN64) || defined(W32ON64)
+	      return 48;
+#else
+	      if (ProcessIs64( ppi->hProcess ))
+	      {
+		DEBUGSTR( 1, L"  Unsupported (use x64\\ansicon)" );
+		return 0;
+	      }
+	      return 32;
+#endif
+	    }
+	  }
 	  DEBUGSTR( 1, L"  32-bit %s (base = %.8X)",
 		    (*gui) ? L"GUI" : L"console",
 		    PtrToUint( minfo.BaseAddress ) );

@@ -111,12 +111,14 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 4 February, 2014:
+  v1.70, 25 January to 7 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
-    inject by manipulating the import directory table;
+    inject by manipulating the import directory table; for 64-bit AnyCPU use
+     ntdll's LdrLoadDll via CreateRemoteThread;
     restore original attribute on detach (for LoadLibrary/FreeLibrary usage);
-    log: remove the quotes around the CreateProcess command line string.
+    log: remove the quotes around the CreateProcess command line string and
+	  distinguish NULL and "" args.
 */
 
 #include "ansicon.h"
@@ -956,10 +958,6 @@ ParseAndPrintString( HANDLE hDev,
 // - Matt Pietrek ~ Windows 95 System Programming Secrets.
 // - Jeffrey Richter ~ Programming Applications for Microsoft Windows 4th ed.
 
-// Macro for adding pointers/DWORDs together without C arithmetic interfering
-#define MakeVA( cast, offset ) (cast)((DWORD_PTR)(pDosHeader)+(DWORD)(offset))
-
-
 const char APIKernel[]		   = "kernel32.dll";
 const char APIConsole[] 	   = "API-MS-Win-Core-Console-";
 const char APIProcessThreads[]	   = "API-MS-Win-Core-ProcessThreads-";
@@ -987,9 +985,8 @@ API_DATA APIs[] =
 
 HMODULE   hKernel;		// Kernel32 module handle
 HINSTANCE hDllInstance; 	// Dll instance handle
-TCHAR	  hDllName[MAX_PATH];	// Dll file name
 #if defined(_WIN64) || defined(W32ON64)
-LPTSTR	  hDllNameType; 	// pointer to process type within above
+LPTSTR	  DllNameType;		// pointer to process type within DllName
 #endif
 
 typedef struct
@@ -1150,7 +1147,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
   if (hModuleSnap == INVALID_HANDLE_VALUE)
   {
-    DEBUGSTR( 1, L"Failed to create snapshot!" );
+    DEBUGSTR( 1, L"Failed to create snapshot (%lu)!", GetLastError() );
     return FALSE;
   }
 
@@ -1186,68 +1183,81 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
 
 // ========== Child process injection
 
+static LPTSTR get_program( LPTSTR app, BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
+{
+  app[MAX_PATH-1] = '\0';
+
+  if (lpApp == NULL)
+  {
+    // Extract the program from the command line.  I would use
+    // GetModuleFileNameEx, but it doesn't work when a process is created
+    // suspended and setting up a delay until it does work sometimes
+    // prevents the process running at all.  GetProcessImageFileName works,
+    // but it's not supported in 2K.
+    LPTSTR  name;
+    LPCTSTR term = L" \t";
+
+    if (wide)
+    {
+      LPCTSTR pos;
+      for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
+      if (*pos == '"')
+      {
+	term = L"\"";
+	++pos;
+      }
+      wcsncpy( app, pos, MAX_PATH-1 );
+    }
+    else
+    {
+      LPCSTR pos;
+      for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
+      if (*pos == '"')
+      {
+	term = L"\"";
+	++pos;
+      }
+      MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_PATH-1 );
+    }
+    // CreateProcess only works with surrounding quotes ('"a name"' works, but
+    // 'a" "name' fails), so that's all I'll test, too.  However, it also
+    // tests for a file at each separator ('a name' tries "a.exe" before
+    // "a name.exe") which I won't do.
+    name = wcspbrk( app, term );
+    if (name)
+      *name = '\0';
+  }
+  else
+  {
+    if (wide)
+      wcsncpy( app, lpApp, MAX_PATH-1 );
+    else
+      MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_PATH-1 );
+  }
+  return get_program_name( app );
+}
+
 // Inject code into the target process to load our DLL.
 void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 	     LPPROCESS_INFORMATION child_pi,
 	     BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
 {
-  int	type;
-  PBYTE base;
-  BOOL	gui;
+  int	 type;
+  PBYTE  base;
+  BOOL	 gui;
+  WCHAR  app[MAX_PATH];
+  LPTSTR name = NULL;
 
+  if (log_level)
+  {
+    name = get_program( app, wide, lpApp, lpCmd );
+    DEBUGSTR( 1, L"%s (%lu)", name, child_pi->dwProcessId );
+  }
   type = ProcessType( child_pi, &base, &gui );
   if (gui && type > 0)
   {
-    TCHAR   app[MAX_PATH];
-    LPTSTR  name;
-    LPCTSTR term = L" \t";
-
-    app[MAX_PATH-1] = '\0';
-    if (lpApp == NULL)
-    {
-      // Extract the program from the command line.  I would use
-      // GetModuleFileNameEx, but it doesn't work when a process is created
-      // suspended and setting up a delay until it does work sometimes
-      // prevents the process running at all.  GetProcessImageFileName works,
-      // but it's not supported in 2K.
-      if (wide)
-      {
-	LPCTSTR pos;
-	for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
-	if (*pos == '"')
-	{
-	  term = L"\"";
-	  ++pos;
-	}
-	wcsncpy( app, pos, MAX_PATH-1 );
-      }
-      else
-      {
-	LPCSTR pos;
-	for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
-	if (*pos == '"')
-	{
-	  term = L"\"";
-	  ++pos;
-	}
-	MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_PATH );
-      }
-      // CreateProcess only works with surrounding quotes ('"a name"' works, but
-      // 'a" "name' fails), so that's all I'll test, too.  However, it also
-      // tests for a file at each separator ('a name' tries "a.exe" before
-      // "a name.exe") which I won't do.
-      name = wcspbrk( app, term );
-      if (name)
-	*name = '\0';
-    }
-    else
-    {
-      if (wide)
-	wcsncpy( app, lpApp, MAX_PATH-1 );
-      else
-	MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_PATH );
-    }
-    name = get_program_name( app );
+    if (name == NULL)
+      name = get_program( app, wide, lpApp, lpCmd );
     if (!search_env( L"ANSICON_GUI", name ))
     {
       DEBUGSTR( 1, L"  %s", zIgnoring );
@@ -1257,31 +1267,34 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   if (type > 0)
   {
 #ifdef _WIN64
-    if (type == 32)
-    {
-      ansi_bits[0] = '3';
-      ansi_bits[1] = '2';
-      InjectDLL32( child_pi, base );
-    }
-    else
+    if (type == 64)
     {
       ansi_bits[0] = '6';
       ansi_bits[1] = '4';
       InjectDLL( child_pi, base );
     }
+    else if (type == 32)
+    {
+      ansi_bits[0] = '3';
+      ansi_bits[1] = '2';
+      InjectDLL32( child_pi, base );
+    }
+    else // (type == 48)
+    {
+      InjectDLL64( child_pi );
+    }
 #else
 #ifdef W32ON64
-    if (type == 64)
+    if (type != 32)
     {
       TCHAR args[64];
       STARTUPINFO si;
       PROCESS_INFORMATION pi;
-      wcscpy( hDllNameType, L"CON.exe" );
-      wsprintf( args, L"ansicon -P%lu:%lu",
-		      child_pi->dwProcessId, child_pi->dwThreadId );
+      wcscpy( DllNameType, L"CON.exe" );
+      wsprintf( args, L"ansicon -P%ld", child_pi->dwProcessId );
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
-      if (CreateProcess( hDllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
+      if (CreateProcess( DllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
 			 &si, &pi ))
       {
 	WaitForSingleObject( pi.hProcess, INFINITE );
@@ -1289,8 +1302,8 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 	CloseHandle( pi.hThread );
       }
       else
-	DEBUGSTR( 1, L"Could not execute \"%s\"", hDllName );
-      wcscpy( hDllNameType, L"32.dll" );
+	DEBUGSTR(1, L"Could not execute \"%s\" (%lu)", DllName, GetLastError());
+      wcscpy( DllNameType, L"32.dll" );
     }
     else
 #endif
@@ -1339,6 +1352,13 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 {
   PROCESS_INFORMATION child_pi;
 
+  DEBUGSTR( 1, L"CreateProcessA: %s%S%s, %S",
+	       (lpApplicationName == NULL) ? L"" : L"\"",
+	       (lpApplicationName == NULL) ? "<null>" : lpApplicationName,
+	       (lpApplicationName == NULL) ? L"" : L"\"",
+	       (lpCommandLine == NULL)	? "<null>" :
+	       (*lpCommandLine == '\0') ? "<empty>" : lpCommandLine );
+
   if (!CreateProcessA( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1349,12 +1369,11 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       lpCurrentDirectory,
 		       lpStartupInfo,
 		       &child_pi ))
+  {
+    DEBUGSTR( 1, L"  Failed (%lu)", GetLastError() );
     return FALSE;
+  }
 
-  DEBUGSTR( 1, L"CreateProcessA: (%lu) \"%S\", %S",
-	    child_pi.dwProcessId,
-	    (lpApplicationName == NULL) ? "" : lpApplicationName,
-	    (lpCommandLine == NULL) ? "" : lpCommandLine );
   Inject( dwCreationFlags, lpProcessInformation, &child_pi,
 	  FALSE, lpApplicationName, lpCommandLine );
 
@@ -1375,6 +1394,13 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 {
   PROCESS_INFORMATION child_pi;
 
+  DEBUGSTR( 1, L"CreateProcessW: %s%s%s, %s",
+	       (lpApplicationName == NULL) ? L"" : L"\"",
+	       (lpApplicationName == NULL) ? L"<null>" : lpApplicationName,
+	       (lpApplicationName == NULL) ? L"" : L"\"",
+	       (lpCommandLine == NULL)	? L"<null>" :
+	       (*lpCommandLine == '\0') ? L"<empty>" : lpCommandLine );
+
   if (!CreateProcessW( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1385,12 +1411,11 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       lpCurrentDirectory,
 		       lpStartupInfo,
 		       &child_pi ))
+  {
+    DEBUGSTR( 1, L"  Failed (%lu)", GetLastError() );
     return FALSE;
+  }
 
-  DEBUGSTR( 1, L"CreateProcessW: (%lu) \"%s\", %s",
-	    child_pi.dwProcessId,
-	    (lpApplicationName == NULL) ? L"" : lpApplicationName,
-	    (lpCommandLine == NULL) ? L"" : lpCommandLine );
   Inject( dwCreationFlags, lpProcessInformation, &child_pi,
 	  TRUE, lpApplicationName, lpCommandLine );
 
@@ -1819,13 +1844,10 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     log_level = _wtoi( logstr );
     prog = get_program_name( NULL );
 #if defined(_WIN64) || defined(W32ON64)
-    hDllNameType = hDllName - 6 +
+    DllNameType = DllName - 6 +
 #endif
-    GetModuleFileName( hInstance, hDllName, lenof(hDllName) );
-#ifdef _WIN64
-    ansi_bits = (LPSTR)hDllNameType;
-#endif
-    set_ansi_dll( hDllName );
+    GetModuleFileName( hInstance, DllName, lenof(DllName) );
+    set_ansi_dll();
 
     hDllInstance = hInstance; // save Dll instance handle
 #ifdef _WIN64

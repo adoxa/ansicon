@@ -11,6 +11,7 @@ LPTSTR	prog;
 
 int	log_level;
 
+TCHAR	DllName[MAX_PATH];	// Dll file name
 char	ansi_dll[MAX_PATH];
 DWORD	ansi_len;
 #ifdef _WIN64
@@ -43,31 +44,27 @@ LPTSTR get_program_name( LPTSTR program )
 
 
 // Get the ANSI path of the DLL for the import.  If it can't be converted,
-// just use the name and hope it's on the PATH.  Returns the length of the
-// path/name, including padding to make it dword-aligned.  The 64-bit version
-// expects ansi_bits to point to the size within dll on entry.
-void set_ansi_dll( LPTSTR dll )
+// just use the name and hope it's on the PATH.
+void set_ansi_dll( void )
 {
   BOOL bad;
 
-  ansi_len = WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, dll, -1,
+  ansi_len = WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, DllName, -1,
 				  NULL, 0, NULL, &bad );
   if (bad || ansi_len > MAX_PATH)
   {
-    ansi_len = 12;
-    memcpy( ansi_dll, "ANSI32.dll\0", 12 );
 #ifdef _WIN64
-    if (*ansi_bits == '6')
-    {
-      ansi_dll[4] = '6';
-      ansi_dll[5] = '4';
-    }
     ansi_bits = ansi_dll + 4;
+    if (*DllNameType == '6')
+      memcpy( ansi_dll, "ANSI64.dll\0", 12 );
+    else
 #endif
+    memcpy( ansi_dll, "ANSI32.dll\0", 12 );
+    ansi_len = 12;
   }
   else
   {
-    WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, dll, -1,
+    WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, DllName, -1,
 			 ansi_dll, MAX_PATH, NULL, NULL );
 #ifdef _WIN64
     ansi_bits = ansi_dll + ansi_len - 7;
@@ -104,6 +101,9 @@ void DEBUGSTR( int level, LPTSTR szFormat, ... )
     {
       SYSTEMTIME now;
       GetLocalTime( &now );
+      fseek( file, 0, SEEK_END );
+      if (ftell( file ) != 0)
+	putc( '\n', file );
       fprintf( file, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d) started "
 		      "%d-%.2d-%.2d %d:%.2d:%.2d\n",
 		     log_level,
