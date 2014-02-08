@@ -118,7 +118,8 @@
      ntdll's LdrLoadDll via CreateRemoteThread;
     restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
     log: remove the quotes around the CreateProcess command line string and
-	  distinguish NULL and "" args.
+	  distinguish NULL and "" args;
+    attributes (and saved position) are local to each console window.
 */
 
 #include "ansicon.h"
@@ -126,15 +127,6 @@
 #include <tlhelp32.h>
 
 #define is_digit(c) ('0' <= (c) && (c) <= '9')
-
-#ifdef __GNUC__
-#define SHARED __attribute__((shared, section(".shared")))
-#else
-#pragma data_seg(".shared", "read,write,shared")
-#pragma data_seg()
-#define SHARED __declspec(allocate(".shared"))
-#endif
-
 
 // ========== Global variables and constants
 
@@ -246,36 +238,111 @@ const BYTE attr2ansi[8] =		// map console attribute to ANSI number
   7					// white
 };
 
-GRM grm;
 
-// saved cursor position
-COORD SavePos;
-
-// Variables to enable copying attributes between processes.
-SHARED DWORD s_pid;
-SHARED GRM   s_grm;
-SHARED DWORD s_flag;
-#define GRM_INIT 1
-#define GRM_EXIT 2
-
-
-// Wait for the child process to finish, then update our GRM to the child's.
-DWORD WINAPI UpdateGRM( LPVOID child_pi )
+typedef struct
 {
-  DWORD  pid  = ((LPPROCESS_INFORMATION)child_pi)->dwProcessId;
-  HANDLE proc = ((LPPROCESS_INFORMATION)child_pi)->hProcess;
-  free( child_pi );
+  BYTE	foreground;	// ANSI base color (0 to 7; add 30)
+  BYTE	background;	// ANSI base color (0 to 7; add 40)
+  BYTE	bold;		// console FOREGROUND_INTENSITY bit
+  BYTE	underline;	// console BACKGROUND_INTENSITY bit
+  BYTE	rvideo; 	// swap foreground/bold & background/underline
+  BYTE	concealed;	// set foreground/bold to background/underline
+  BYTE	reverse;	// swap console foreground & background attributes
+  COORD SavePos;	// saved cursor position
+} STATE, *PSTATE;
 
-  WaitForSingleObject( proc, INFINITE );
-  CloseHandle( proc );
+PSTATE pState;
+HANDLE hMap;
 
-  if (s_flag == GRM_EXIT && s_pid == pid)
+void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO );
+
+
+void get_state( void )
+{
+  TCHAR  buf[64];
+  HWND	 hwnd;
+  BOOL	 init;
+  HANDLE hConOut;
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  static STATE state;	// on the odd chance file mapping fails
+
+  if (pState != NULL)
+    return;
+
+  hwnd = GetConsoleWindow();
+  if (hwnd == NULL)
+    return;
+
+  wsprintf( buf, L"ANSICON_State_%X", PtrToUint( hwnd ) );
+  hMap = CreateFileMapping( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+			    0, sizeof(STATE), buf );
+  if (hMap == NULL)
   {
-    s_flag = 0;
-    grm = s_grm;
+  no_go:
+    DEBUGSTR( 1, L"File mapping failed (%lu) - using default state",
+		 GetLastError() );
+    pState = &state;
+    goto do_init;
+  }
+  init = (GetLastError() != ERROR_ALREADY_EXISTS);
+
+  pState = MapViewOfFile( hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
+  if (pState == NULL)
+  {
+    CloseHandle( hMap );
+    goto no_go;
   }
 
-  return 0;
+  if (init)
+  {
+  do_init:
+    hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				      FILE_SHARE_READ | FILE_SHARE_WRITE,
+				      NULL, OPEN_EXISTING, 0, 0 );
+    if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
+    {
+      DEBUGSTR(1, L"Failed to get screen buffer info (%lu) - assuming defaults",
+		  GetLastError() );
+      csbi.wAttributes	   = 7;
+      csbi.dwSize.X	   = 80;
+      csbi.dwSize.Y	   = 300;
+      csbi.srWindow.Left   = 0;
+      csbi.srWindow.Right  = 79;
+      csbi.srWindow.Top    = 0;
+      csbi.srWindow.Bottom = 24;
+    }
+    if (GetEnvironmentVariable( L"ANSICON_REVERSE", NULL, 0 ))
+    {
+      SetEnvironmentVariable( L"ANSICON_REVERSE", NULL );
+      pState->reverse	 = TRUE;
+      pState->foreground = attr2ansi[(csbi.wAttributes >> 4) & 7];
+      pState->background = attr2ansi[csbi.wAttributes & 7];
+      pState->bold	 = (csbi.wAttributes & BACKGROUND_INTENSITY) >> 4;
+      pState->underline  = (csbi.wAttributes & FOREGROUND_INTENSITY) << 4;
+    }
+    else
+    {
+      pState->foreground = attr2ansi[csbi.wAttributes & 7];
+      pState->background = attr2ansi[(csbi.wAttributes >> 4) & 7];
+      pState->bold	 = csbi.wAttributes & FOREGROUND_INTENSITY;
+      pState->underline  = csbi.wAttributes & BACKGROUND_INTENSITY;
+    }
+    if (!GetEnvironmentVariable( L"ANSICON_DEF", NULL, 0 ))
+    {
+      TCHAR  def[4];
+      LPTSTR a = def;
+      if (pState->reverse)
+      {
+	*a++ = '-';
+	csbi.wAttributes = ((csbi.wAttributes >> 4) & 15)
+			 | ((csbi.wAttributes & 15) << 4);
+      }
+      wsprintf( a, L"%X", csbi.wAttributes & 255 );
+      SetEnvironmentVariable( L"ANSICON_DEF", def );
+    }
+    set_ansicon( &csbi );
+    CloseHandle( hConOut );
+  }
 }
 
 
@@ -418,13 +485,14 @@ void InterpretEscSeq( void )
     switch (suffix)
     {
       case 'm':
+	get_state();
 	if (es_argc == 0) es_argv[es_argc++] = 0;
 	for (i = 0; i < es_argc; i++)
 	{
 	  if (30 <= es_argv[i] && es_argv[i] <= 37)
-	    grm.foreground = es_argv[i] - 30;
+	    pState->foreground = es_argv[i] - 30;
 	  else if (40 <= es_argv[i] && es_argv[i] <= 47)
-	    grm.background = es_argv[i] - 40;
+	    pState->background = es_argv[i] - 40;
 	  else switch (es_argv[i])
 	  {
 	    case 0:
@@ -436,78 +504,78 @@ void InterpretEscSeq( void )
 	      *def = '7'; def[1] = '\0';
 	      GetEnvironmentVariable( L"ANSICON_DEF", def, lenof(def) );
 	      a = wcstol( def, NULL, 16 );
-	      grm.reverse = FALSE;
+	      pState->reverse = FALSE;
 	      if (a < 0)
 	      {
-		grm.reverse = TRUE;
+		pState->reverse = TRUE;
 		a = -a;
 	      }
 	      if (es_argv[i] != 49)
-		grm.foreground = attr2ansi[a & 7];
+		pState->foreground = attr2ansi[a & 7];
 	      if (es_argv[i] != 39)
-		grm.background = attr2ansi[(a >> 4) & 7];
+		pState->background = attr2ansi[(a >> 4) & 7];
 	      if (es_argv[i] == 0)
 	      {
 		if (es_argc == 1)
 		{
-		  grm.bold	= a & FOREGROUND_INTENSITY;
-		  grm.underline = a & BACKGROUND_INTENSITY;
+		  pState->bold	    = a & FOREGROUND_INTENSITY;
+		  pState->underline = a & BACKGROUND_INTENSITY;
 		}
 		else
 		{
-		  grm.bold	= 0;
-		  grm.underline = 0;
+		  pState->bold	    = 0;
+		  pState->underline = 0;
 		}
-		grm.rvideo    = 0;
-		grm.concealed = 0;
+		pState->rvideo    = 0;
+		pState->concealed = 0;
 	      }
 	    }
 	    break;
 
-	    case  1: grm.bold	   = FOREGROUND_INTENSITY; break;
+	    case  1: pState->bold      = FOREGROUND_INTENSITY; break;
 	    case  5: // blink
-	    case  4: grm.underline = BACKGROUND_INTENSITY; break;
-	    case  7: grm.rvideo    = 1; break;
-	    case  8: grm.concealed = 1; break;
+	    case  4: pState->underline = BACKGROUND_INTENSITY; break;
+	    case  7: pState->rvideo    = 1; break;
+	    case  8: pState->concealed = 1; break;
 	    case 21: // oops, this actually turns on double underline
 		     // but xterm turns off bold too, so that's alright
-	    case 22: grm.bold	   = 0; break;
+	    case 22: pState->bold      = 0; break;
 	    case 25:
-	    case 24: grm.underline = 0; break;
-	    case 27: grm.rvideo    = 0; break;
-	    case 28: grm.concealed = 0; break;
+	    case 24: pState->underline = 0; break;
+	    case 27: pState->rvideo    = 0; break;
+	    case 28: pState->concealed = 0; break;
 	  }
 	}
-	if (grm.concealed)
+	if (pState->concealed)
 	{
-	  if (grm.rvideo)
+	  if (pState->rvideo)
 	  {
-	    attribut = foregroundcolor[grm.foreground]
-		     | backgroundcolor[grm.foreground];
-	    if (grm.bold)
+	    attribut = foregroundcolor[pState->foreground]
+		     | backgroundcolor[pState->foreground];
+	    if (pState->bold)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	  else
 	  {
-	    attribut = foregroundcolor[grm.background]
-		     | backgroundcolor[grm.background];
-	    if (grm.underline)
+	    attribut = foregroundcolor[pState->background]
+		     | backgroundcolor[pState->background];
+	    if (pState->underline)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	}
-	else if (grm.rvideo)
+	else if (pState->rvideo)
 	{
-	  attribut = foregroundcolor[grm.background]
-		   | backgroundcolor[grm.foreground];
-	  if (grm.bold)
+	  attribut = foregroundcolor[pState->background]
+		   | backgroundcolor[pState->foreground];
+	  if (pState->bold)
 	    attribut |= BACKGROUND_INTENSITY;
-	  if (grm.underline)
+	  if (pState->underline)
 	    attribut |= FOREGROUND_INTENSITY;
 	}
 	else
-	  attribut = foregroundcolor[grm.foreground] | grm.bold
-		   | backgroundcolor[grm.background] | grm.underline;
-	if (grm.reverse)
+	  attribut = foregroundcolor[pState->foreground] | pState->bold
+		   | backgroundcolor[pState->background] | pState->underline;
+	if (pState->reverse)
 	  attribut = ((attribut >> 4) & 15) | ((attribut & 15) << 4);
 	SetConsoleTextAttribute( hConOut, attribut );
       return;
@@ -762,12 +830,14 @@ void InterpretEscSeq( void )
 
       case 's':                 // ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
-	SavePos = Info.dwCursorPosition;
+	get_state();
+	pState->SavePos = Info.dwCursorPosition;
       return;
 
       case 'u':                 // ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
-	SetConsoleCursorPosition( hConOut, SavePos );
+	get_state();
+	SetConsoleCursorPosition( hConOut, pState->SavePos );
       return;
 
       case 'n':                 // ESC[#n Device status report
@@ -1309,19 +1379,6 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 #endif
     InjectDLL( child_pi, base );
 #endif
-    if (!gui && !(dwCreationFlags & (CREATE_NEW_CONSOLE | DETACHED_PROCESS)))
-    {
-      LPPROCESS_INFORMATION cpi;
-      s_pid = child_pi->dwProcessId;
-      s_grm = grm;
-      s_flag = GRM_INIT;
-      cpi = malloc( sizeof(*cpi) );
-      cpi->dwProcessId = child_pi->dwProcessId;
-      DuplicateHandle( GetCurrentProcess(), child_pi->hProcess,
-		       GetCurrentProcess(), &cpi->hProcess, 0, FALSE,
-		       DUPLICATE_SAME_ACCESS );
-      CloseHandle( CreateThread( NULL, 4096, UpdateGRM, cpi, 0, NULL ) );
-    }
   }
 
   if (!(dwCreationFlags & CREATE_SUSPENDED))
@@ -1359,6 +1416,8 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 	       (lpCommandLine == NULL)	? "<null>" :
 	       (*lpCommandLine == '\0') ? "<empty>" : lpCommandLine );
 
+  // May need to initialise the state, to propagate environment variables.
+  get_state();
   if (!CreateProcessA( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1401,6 +1460,7 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 	       (lpCommandLine == NULL)	? L"<null>" :
 	       (*lpCommandLine == '\0') ? L"<empty>" : lpCommandLine );
 
+  get_state();
   if (!CreateProcessW( lpApplicationName,
 		       lpCommandLine,
 		       lpThreadAttributes,
@@ -1801,44 +1861,7 @@ void OriginalAttr( PVOID lpReserved )
     break;
   }
 
-  if (s_flag == GRM_INIT && s_pid == GetCurrentProcessId())
-  {
-    s_flag = 0;
-    grm = s_grm;
-  }
-  else
-  {
-    if (GetEnvironmentVariable( L"ANSICON_REVERSE", NULL, 0 ))
-    {
-      SetEnvironmentVariable( L"ANSICON_REVERSE", NULL );
-      grm.reverse = TRUE;
-      grm.foreground = attr2ansi[(csbi.wAttributes >> 4) & 7];
-      grm.background = attr2ansi[csbi.wAttributes & 7];
-      grm.bold	     = (csbi.wAttributes & BACKGROUND_INTENSITY) >> 4;
-      grm.underline  = (csbi.wAttributes & FOREGROUND_INTENSITY) << 4;
-    }
-    else
-    {
-      grm.foreground = attr2ansi[csbi.wAttributes & 7];
-      grm.background = attr2ansi[(csbi.wAttributes >> 4) & 7];
-      grm.bold	     = csbi.wAttributes & FOREGROUND_INTENSITY;
-      grm.underline  = csbi.wAttributes & BACKGROUND_INTENSITY;
-    }
-  }
-  if (!GetEnvironmentVariable( L"ANSICON_DEF", NULL, 0 ))
-  {
-    TCHAR  def[4];
-    LPTSTR a = def;
-    if (grm.reverse)
-    {
-      *a++ = '-';
-      csbi.wAttributes = ((csbi.wAttributes >> 4) & 15)
-		       | ((csbi.wAttributes & 15) << 4);
-    }
-    wsprintf( a, L"%X", csbi.wAttributes & 255 );
-    SetEnvironmentVariable( L"ANSICON_DEF", def );
-  }
-  set_ansicon( &csbi );
+  get_state();
 }
 
 
@@ -1896,9 +1919,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     else
     {
       DEBUGSTR( 1, L"Terminating" );
-      s_pid = GetCurrentProcessId();
-      s_grm = grm;
-      s_flag = GRM_EXIT;
     }
     if (orgattr != 0)
     {
@@ -1908,6 +1928,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
       SetConsoleTextAttribute( hConOut, orgattr );
       CloseHandle( hConOut );
     }
+    CloseHandle( pState );
+    CloseHandle( hMap );
   }
 
   return bResult;

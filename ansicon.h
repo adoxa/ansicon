@@ -13,9 +13,9 @@
 
 #define WIN32_LEAN_AND_MEAN
 #ifdef _WIN64
-#define _WIN32_WINNT 0x0600	// MinGW-w64 wants this defined for Wow64 stuff
+#define _WIN32_WINNT 0x0501	// at least XP required
 #else
-#define _WIN32_WINNT 0x0500
+#define _WIN32_WINNT 0x0500	// at least Windows 2000 required
 #endif
 #include <windows.h>
 #include <stdio.h>
@@ -47,18 +47,6 @@
 #define ReadProcMem(a, b, c)  ReadProcessMemory( ppi->hProcess, a, b, c, NULL )
 #define WriteProcMem(a, b, c) WriteProcessMemory( ppi->hProcess, a, b, c, NULL )
 #define VirtProtVar(a, b)     VirtualProtectEx( ppi->hProcess, a, sizeof(*(a)), b, &pr )
-
-
-typedef struct
-{
-  BYTE foreground;	// ANSI base color (0 to 7; add 30)
-  BYTE background;	// ANSI base color (0 to 7; add 40)
-  BYTE bold;		// console FOREGROUND_INTENSITY bit
-  BYTE underline;	// console BACKGROUND_INTENSITY bit
-  BYTE rvideo;		// swap foreground/bold & background/underline
-  BYTE concealed;	// set foreground/bold to background/underline
-  BYTE reverse; 	// swap console foreground & background attributes
-} GRM, *PGRM;		// Graphic Rendition Mode
 
 
 int    ProcessType( LPPROCESS_INFORMATION, PBYTE*, BOOL* );

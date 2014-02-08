@@ -102,7 +102,7 @@ x86\ansicon.exe: x86\ansicon.obj $(X86OBJS) x86\procrva.obj x86\ansicon.res
 
 x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
-		      /base:0xAC0000 /section:.shared,s /filealign:512
+		      /base:0xAC0000 /filealign:512
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
 	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
 	@del $@.manifest
@@ -116,11 +116,11 @@ x64\ansicon.exe: x64\ansicon.obj $(X64OBJS) x64\ansicon.res
 
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
-		      /base:0xAC000000 /section:.shared,s
+		      /base:0xAC000000
 
 x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll.obj x86\util.obj x86\ansi.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
-	    /base:0xAC0000 /section:.shared,s /filealign:512 /largeaddressaware
+		      /base:0xAC0000 /filealign:512 /largeaddressaware
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
 	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;2
 	@del $@.manifest

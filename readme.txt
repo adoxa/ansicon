@@ -273,14 +273,15 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.70 - 4 February, 2014:
+    1.70 - 8 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
     - update the LoadLibraryEx flags that shouldn't hook;
     - restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
     - ansicon.exe will start with ANSICON_DEF (if defined and -m not used);
     - an installed ansicon.exe will restore current (not default) attributes;
+    - attributes and saved position are local to each console window;
     * inject into a created process by modifying the import descriptor table
-      (use CreateRemoteThread for -p);
+      (-p will use CreateRemoteThread);
     * log: remove the quotes around the CreateProcess command line;
 	   add an underscore in 64-bit addresses to distinguish 8-digit groups.
 
@@ -470,4 +471,4 @@ Distribution
 
 
 =============================
-Jason Hood, 4 February, 2014.
+Jason Hood, 8 February, 2014.
