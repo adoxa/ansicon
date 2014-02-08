@@ -111,12 +111,12 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 7 February, 2014:
+  v1.70, 25 January to 8 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
     inject by manipulating the import directory table; for 64-bit AnyCPU use
      ntdll's LdrLoadDll via CreateRemoteThread;
-    restore original attribute on detach (for LoadLibrary/FreeLibrary usage);
+    restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
     log: remove the quotes around the CreateProcess command line string and
 	  distinguish NULL and "" args.
 */
@@ -139,7 +139,7 @@
 // ========== Global variables and constants
 
 HANDLE	  hConOut;		// handle to CONOUT$
-WORD	  orgattr;		// original attribute
+WORD	  orgattr;		// original attributes
 
 #define ESC	'\x1B'          // ESCape character
 #define BEL	'\x07'
@@ -1769,7 +1769,7 @@ HookFn Hooks[] = {
 //   OriginalAttr()
 // Determine the original attributes for use by \e[m.
 //-----------------------------------------------------------------------------
-void OriginalAttr( void )
+void OriginalAttr( PVOID lpReserved )
 {
   HANDLE hConOut;
   CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -1779,8 +1779,27 @@ void OriginalAttr( void )
 				    NULL, OPEN_EXISTING, 0, 0 );
   if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     csbi.wAttributes = 7;
-  orgattr = csbi.wAttributes;
   CloseHandle( hConOut );
+
+  // If we were loaded dynamically, remember the current attributes to restore
+  // upon unloading.  However, if we're the 64-bit DLL, but the image is 32-
+  // bit, then the dynamic load was due to injecting into AnyCPU.
+  while (lpReserved == NULL)	// breakable if
+  {
+#ifdef _WIN64
+    if (*DllNameType == '6')
+    {
+      PIMAGE_DOS_HEADER pDosHeader;
+      PIMAGE_NT_HEADERS pNTHeader;
+      pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
+      pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
+      if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
+	break;
+    }
+#endif
+    orgattr = csbi.wAttributes;
+    break;
+  }
 
   if (s_flag == GRM_INIT && s_pid == GetCurrentProcessId())
   {
@@ -1864,7 +1883,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
       hook->oldfunc = GetProcAddress( hKernel, hook->name );
 
     bResult = HookAPIAllMod( Hooks, FALSE );
-    OriginalAttr();
+    OriginalAttr( lpReserved );
     DisableThreadLibraryCalls( hInstance );
   }
   else if (dwReason == DLL_PROCESS_DETACH)
@@ -1873,11 +1892,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     {
       DEBUGSTR( 1, L"Unloading" );
       HookAPIAllMod( Hooks, TRUE );
-      hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
-					FILE_SHARE_READ | FILE_SHARE_WRITE,
-					NULL, OPEN_EXISTING, 0, 0 );
-      SetConsoleTextAttribute( hConOut, orgattr );
-      CloseHandle( hConOut );
     }
     else
     {
@@ -1885,6 +1899,14 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
       s_pid = GetCurrentProcessId();
       s_grm = grm;
       s_flag = GRM_EXIT;
+    }
+    if (orgattr != 0)
+    {
+      hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+					FILE_SHARE_READ | FILE_SHARE_WRITE,
+					NULL, OPEN_EXISTING, 0, 0 );
+      SetConsoleTextAttribute( hConOut, orgattr );
+      CloseHandle( hConOut );
     }
   }
 

@@ -87,7 +87,7 @@
 	 add error codes to some message.
 */
 
-#define PDATE L"7 February, 2014"
+#define PDATE L"8 February, 2014"
 
 #include "ansicon.h"
 #include "version.h"
@@ -331,7 +331,7 @@ int main( void )
   if (_isatty( 2 ))
     _setmode( 2, _O_U16TEXT);
 
-  // Create a console handle and store the current attribute.
+  // Create a console handle and store the current attributes.
   get_original_attr();
 
   argv = GetCommandLine();
