@@ -23,7 +23,7 @@
 #BITS = 64
 
 !IFNDEF BITS
-!IF "$(CPU)" == "AMD64" || "$(PLATFORM)" == "x64"
+!IF "$(CPU)" == "AMD64" || "$(PLATFORM)" == "x64" || "$(PLATFORM)" == "X64"
 BITS = 64
 !ELSE
 BITS = 32

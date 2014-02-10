@@ -111,7 +111,7 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 8 February, 2014:
+  v1.70, 25 January to 10 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
     inject by manipulating the import directory table; for 64-bit AnyCPU use
@@ -119,7 +119,11 @@
     restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
     log: remove the quotes around the CreateProcess command line string and
 	  distinguish NULL and "" args;
-    attributes (and saved position) are local to each console window.
+    attributes (and saved position) are local to each console window;
+    exclude entire programs, by not using an extension in ANSICON_EXC;
+    hook modules injected via CreateRemoteThread+LoadLibrary;
+    hook all modules loaded due to LoadLibrary, not just the specified;
+    don't hook a module that's already hooked us.
 */
 
 #include "ansicon.h"
@@ -1066,6 +1070,7 @@ typedef struct
   PROC	newfunc;
   PROC	oldfunc;
   PROC	apifunc;
+  PULONG_PTR myimport;
 } HookFn, *PHookFn;
 
 HookFn Hooks[];
@@ -1085,7 +1090,8 @@ const WCHAR zUnhooking[] = L"Unhooking";
 BOOL HookAPIOneMod(
     HMODULE hFromModule,	// Handle of the module to intercept calls from
     PHookFn Hooks,		// Functions to replace
-    BOOL    restore		// Restore the original functions
+    BOOL    restore,		// Restore the original functions
+    LPCTSTR sp			// Logging indentation
     )
 {
   PIMAGE_DOS_HEADER	   pDosHeader;
@@ -1093,6 +1099,15 @@ BOOL HookAPIOneMod(
   PIMAGE_IMPORT_DESCRIPTOR pImportDesc;
   PIMAGE_THUNK_DATA	   pThunk;
   PHookFn		   hook;
+  BOOL			   self;
+
+  if (hFromModule == NULL)
+  {
+    self = TRUE;
+    hFromModule = hDllInstance;
+  }
+  else
+    self = FALSE;
 
   // Tests to make sure we're looking at a module image (the 'MZ' header)
   pDosHeader = (PIMAGE_DOS_HEADER)hFromModule;
@@ -1147,13 +1162,13 @@ BOOL HookAPIOneMod(
       if (lib->name == NULL)
       {
 	if (log_level & 16)
-	  DEBUGSTR( 2, L" %s %S", zIgnoring, pszModName );
+	  DEBUGSTR( 2, L" %s%s %S", sp, zIgnoring, pszModName );
 	continue;
       }
       kernel = FALSE;
     }
     if (log_level & 16)
-      DEBUGSTR( 2, L" Scanning %S", pszModName );
+      DEBUGSTR( 2, L" %sScanning %S", sp, pszModName );
 
     // Get a pointer to the found module's import address table (IAT).
     pThunk = MakeVA( PIMAGE_THUNK_DATA, pImportDesc->FirstThunk );
@@ -1173,13 +1188,23 @@ BOOL HookAPIOneMod(
 	else if ((PROC)pThunk->u1.Function == hook->oldfunc ||
 		 (PROC)pThunk->u1.Function == hook->apifunc)
 	{
-	  patch = hook->newfunc;
+	  if (self)
+	    hook->myimport = &pThunk->u1.Function;
+	  else
+	  {
+	    // Don't hook if our import already points to the module being
+	    // hooked (i.e. it's already hooked us).
+	    MEMORY_BASIC_INFORMATION minfo;
+	    VirtualQuery( (LPVOID)*hook->myimport, &minfo, sizeof(minfo) );
+	    if (minfo.AllocationBase != hFromModule)
+	      patch = hook->newfunc;
+	  }
 	}
 	if (patch)
 	{
 	  DWORD pr;
 
-	  DEBUGSTR( 3, L"  %S", hook->name );
+	  DEBUGSTR( 3, L"  %s%S", sp, hook->name );
 	  // Change the access protection on the region of committed pages in
 	  // the virtual address space of the current process.
 	  VirtualProtect( &pThunk->u1.Function, PTRSZ, PAGE_READWRITE, &pr );
@@ -1205,11 +1230,13 @@ BOOL HookAPIOneMod(
 // Return FALSE on error and TRUE on success.
 //-----------------------------------------------------------------------------
 
-BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
+BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
 {
   HANDLE	hModuleSnap;
   MODULEENTRY32 me;
   BOOL		fOk;
+  LPCTSTR	op, sp;
+  DWORD 	pr;
 
   // Take a snapshot of all modules in the current process.
   hModuleSnap = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE,
@@ -1221,6 +1248,9 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
     return FALSE;
   }
 
+  op = (restore) ? zUnhooking : zHooking;
+  sp = (indent) ? L"  " : L"";
+
   // Fill the size of the structure before using it.
   me.dwSize = sizeof(MODULEENTRY32);
 
@@ -1229,83 +1259,109 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore )
        fOk = Module32Next( hModuleSnap, &me ))
   {
     // We don't hook functions in our own module.
-    if (me.hModule != hDllInstance && me.hModule != hKernel)
+    if (me.hModule == hDllInstance || me.hModule == hKernel)
+      continue;
+
+    // Don't scan what we've already scanned.
+    if (*(PDWORD)((PBYTE)me.hModule + 36) == 'ISNA')    // e_oemid, e_oeminfo
+      continue;
+    VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
+    *(PDWORD)((PBYTE)me.hModule + 36) = 'ISNA';
+    VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
+
+    if (search_env( L"ANSICON_EXC", me.szModule ))
     {
-      if (search_env( L"ANSICON_EXC", me.szModule ))
-      {
-	DEBUGSTR( 2, L"%s %s", zIgnoring, me.szModule );
-	continue;
-      }
-      DEBUGSTR( 2, L"%s %s", (restore) ? zUnhooking : zHooking, me.szModule );
-      // Hook this function in this module.
-      if (!HookAPIOneMod( me.hModule, Hooks, restore ))
-      {
-	CloseHandle( hModuleSnap );
-	return FALSE;
-      }
+      DEBUGSTR( 2, L"%s%s %s", sp, zIgnoring, me.szModule );
+      continue;
+    }
+
+    // Hook the functions in this module.
+    DEBUGSTR( 2, L"%s%s %s", sp, op, me.szModule );
+    if (!HookAPIOneMod( me.hModule, Hooks, restore, sp ))
+    {
+      CloseHandle( hModuleSnap );
+      return FALSE;
     }
   }
   CloseHandle( hModuleSnap );
-  DEBUGSTR( 2, L"%s completed", (restore) ? zUnhooking : zHooking );
+  DEBUGSTR( 2, L"%s%s completed", sp, op );
   return TRUE;
 }
 
 
 // ========== Child process injection
 
-static LPTSTR get_program( LPTSTR app, BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
+#define MAX_DEV_PATH (32+MAX_PATH)	// device form instead of drive letter
+
+static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
+			   BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
 {
-  app[MAX_PATH-1] = '\0';
+  app[MAX_DEV_PATH-1] = '\0';
 
   if (lpApp == NULL)
   {
-    // Extract the program from the command line.  I would use
-    // GetModuleFileNameEx, but it doesn't work when a process is created
-    // suspended and setting up a delay until it does work sometimes
-    // prevents the process running at all.  GetProcessImageFileName works,
-    // but it's not supported in 2K.
-    LPTSTR  name;
-    LPCTSTR term = L" \t";
+    typedef DWORD (WINAPI *PGPIFNW)( HANDLE, LPTSTR, DWORD );
+    static PGPIFNW GetProcessImageFileName;
 
-    if (wide)
+    if (GetProcessImageFileName == NULL)
     {
-      LPCTSTR pos;
-      for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
-      if (*pos == '"')
+      // Use Ex to avoid potential recursion with other hooks.
+      HMODULE psapi = LoadLibraryEx( L"psapi.dll", NULL, 0 );
+      if (psapi != NULL)
       {
-	term = L"\"";
-	++pos;
+	GetProcessImageFileName = (PGPIFNW)GetProcAddress( psapi,
+						  "GetProcessImageFileNameW" );
       }
-      wcsncpy( app, pos, MAX_PATH-1 );
+      if (GetProcessImageFileName == NULL)
+	GetProcessImageFileName = INVALID_HANDLE_VALUE;
     }
-    else
+    if (GetProcessImageFileName == INVALID_HANDLE_VALUE ||
+	GetProcessImageFileName( hProcess, app, MAX_DEV_PATH ) == 0)
     {
-      LPCSTR pos;
-      for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
-      if (*pos == '"')
+      LPTSTR  name;
+      LPCTSTR term = L" \t";
+
+      if (wide)
       {
-	term = L"\"";
-	++pos;
+	LPCTSTR pos;
+	for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
+	if (*pos == '"')
+	{
+	  term = L"\"";
+	  ++pos;
+	}
+	wcsncpy( app, pos, MAX_DEV_PATH-1 );
       }
-      MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_PATH-1 );
+      else
+      {
+	LPCSTR pos;
+	for (pos = lpCmd; *pos == ' ' || *pos == '\t'; ++pos) ;
+	if (*pos == '"')
+	{
+	  term = L"\"";
+	  ++pos;
+	}
+	MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_DEV_PATH-1 );
+      }
+      // CreateProcess only works with surrounding quotes ('"a name"' works,
+      // but 'a" "name' fails), so that's all I'll test, too.  However, it also
+      // tests for a file at each separator ('a name' tries "a.exe" before
+      // "a name.exe") which I won't do.
+      name = wcspbrk( app, term );
+      if (name)
+	*name = '\0';
     }
-    // CreateProcess only works with surrounding quotes ('"a name"' works, but
-    // 'a" "name' fails), so that's all I'll test, too.  However, it also
-    // tests for a file at each separator ('a name' tries "a.exe" before
-    // "a name.exe") which I won't do.
-    name = wcspbrk( app, term );
-    if (name)
-      *name = '\0';
   }
   else
   {
     if (wide)
-      wcsncpy( app, lpApp, MAX_PATH-1 );
+      wcsncpy( app, lpApp, MAX_DEV_PATH-1 );
     else
-      MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_PATH-1 );
+      MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_DEV_PATH-1 );
   }
   return get_program_name( app );
 }
+
 
 // Inject code into the target process to load our DLL.
 void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
@@ -1315,23 +1371,26 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   int	 type;
   PBYTE  base;
   BOOL	 gui;
-  WCHAR  app[MAX_PATH];
-  LPTSTR name = NULL;
+  WCHAR  app[MAX_DEV_PATH];
+  LPTSTR name;
 
-  if (log_level)
+  name = get_program( app, child_pi->hProcess, wide, lpApp, lpCmd );
+  DEBUGSTR( 1, L"%s (%lu)", name, child_pi->dwProcessId );
+  if (search_env( L"ANSICON_EXC", name ))
   {
-    name = get_program( app, wide, lpApp, lpCmd );
-    DEBUGSTR( 1, L"%s (%lu)", name, child_pi->dwProcessId );
+    DEBUGSTR( 1, L"  Excluded" );
+    type = 0;
   }
-  type = ProcessType( child_pi, &base, &gui );
-  if (gui && type > 0)
+  else
   {
-    if (name == NULL)
-      name = get_program( app, wide, lpApp, lpCmd );
-    if (!search_env( L"ANSICON_GUI", name ))
+    type = ProcessType( child_pi, &base, &gui );
+    if (gui && type > 0)
     {
-      DEBUGSTR( 1, L"  %s", zIgnoring );
-      type = 0;
+      if (!search_env( L"ANSICON_GUI", name ))
+      {
+	DEBUGSTR( 1, L"  %s", zIgnoring );
+	type = 0;
+      }
     }
   }
   if (type > 0)
@@ -1540,39 +1599,11 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 }
 
 
-void HookLibrary( HMODULE hMod, LPCVOID lpFileName, BOOL wide, LPCSTR funcName )
-{
-  LPCWSTR name;
-  WCHAR   wname[MAX_PATH];
-
-  if (hMod && hMod != hKernel && hMod != hDllInstance)
-  {
-    if (!wide)
-    {
-      MultiByteToWideChar( AreFileApisANSI() ? CP_ACP : CP_OEMCP, 0,
-			   lpFileName, -1, wname, MAX_PATH );
-      lpFileName = wname;
-    }
-    name = wcsrchr( lpFileName, '\\' );
-    if (name == NULL)
-      name = lpFileName;
-    else
-      ++name;
-    if (search_env( L"ANSICON_EXC", name ))
-      DEBUGSTR( 2, L"%s %s (%S)", zIgnoring, lpFileName, funcName );
-    else
-    {
-      DEBUGSTR( 2, L"%s %s (%S)", zHooking, lpFileName, funcName );
-      HookAPIOneMod( hMod, Hooks, FALSE );
-    }
-  }
-}
-
-
 HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryA( lpFileName );
-  HookLibrary( hMod, lpFileName, FALSE, "LoadLibraryA" );
+  DEBUGSTR( 2, L"LoadLibraryA %S", lpFileName );
+  HookAPIAllMod( Hooks, FALSE, TRUE );
   return hMod;
 }
 
@@ -1580,7 +1611,8 @@ HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 HMODULE WINAPI MyLoadLibraryW( LPCWSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryW( lpFileName );
-  HookLibrary( hMod, lpFileName, TRUE, "LoadLibraryW" );
+  DEBUGSTR( 2, L"LoadLibraryW %s", lpFileName );
+  HookAPIAllMod( Hooks, FALSE, TRUE );
   return hMod;
 }
 
@@ -1592,7 +1624,10 @@ HMODULE WINAPI MyLoadLibraryExA( LPCSTR lpFileName, HANDLE hFile,
   if (!(dwFlags & (LOAD_LIBRARY_AS_DATAFILE |
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
-    HookLibrary( hMod, lpFileName, FALSE, "LoadLibraryExA" );
+  {
+    DEBUGSTR( 2, L"LoadLibraryExA %S", lpFileName );
+    HookAPIAllMod( Hooks, FALSE, TRUE );
+  }
   return hMod;
 }
 
@@ -1604,7 +1639,10 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
   if (!(dwFlags & (LOAD_LIBRARY_AS_DATAFILE |
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
-    HookLibrary( hMod, lpFileName, TRUE, "LoadLibraryExW" );
+  {
+    DEBUGSTR( 2, L"LoadLibraryExW %s", lpFileName );
+    HookAPIAllMod( Hooks, FALSE, TRUE );
+  }
   return hMod;
 }
 
@@ -1808,21 +1846,21 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 
 HookFn Hooks[] = {
   // These two are expected first!
-  { APILibraryLoader,	   "LoadLibraryA",            (PROC)MyLoadLibraryA,            NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryW",            (PROC)MyLoadLibraryW,            NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessA",          (PROC)MyCreateProcessA,          NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessW",          (PROC)MyCreateProcessW,          NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableA", (PROC)MyGetEnvironmentVariableA, NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableW", (PROC)MyGetEnvironmentVariableW, NULL, NULL },
-  { APILibraryLoader,	   "GetProcAddress",          (PROC)MyGetProcAddress,          NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExA",          (PROC)MyLoadLibraryExA,          NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExW",          (PROC)MyLoadLibraryExW,          NULL, NULL },
-  { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL },
-  { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL },
-  { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL },
-  { APIKernel,		   "_lwrite",                 (PROC)My_lwrite,                 NULL, NULL },
-  { APIKernel,		   "_hwrite",                 (PROC)My_hwrite,                 NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL }
+  { APILibraryLoader,	   "LoadLibraryA",            (PROC)MyLoadLibraryA,            NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryW",            (PROC)MyLoadLibraryW,            NULL, NULL, NULL },
+  { APIProcessThreads,	   "CreateProcessA",          (PROC)MyCreateProcessA,          NULL, NULL, NULL },
+  { APIProcessThreads,	   "CreateProcessW",          (PROC)MyCreateProcessW,          NULL, NULL, NULL },
+  { APIProcessEnvironment, "GetEnvironmentVariableA", (PROC)MyGetEnvironmentVariableA, NULL, NULL, NULL },
+  { APIProcessEnvironment, "GetEnvironmentVariableW", (PROC)MyGetEnvironmentVariableW, NULL, NULL, NULL },
+  { APILibraryLoader,	   "GetProcAddress",          (PROC)MyGetProcAddress,          NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryExA",          (PROC)MyLoadLibraryExA,          NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryExW",          (PROC)MyLoadLibraryExW,          NULL, NULL, NULL },
+  { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL, NULL },
+  { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL, NULL },
+  { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL, NULL },
+  { APIKernel,		   "_lwrite",                 (PROC)My_lwrite,                 NULL, NULL, NULL },
+  { APIKernel,		   "_hwrite",                 (PROC)My_hwrite,                 NULL, NULL, NULL },
+  { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 //-----------------------------------------------------------------------------
@@ -1844,21 +1882,16 @@ void OriginalAttr( PVOID lpReserved )
   // If we were loaded dynamically, remember the current attributes to restore
   // upon unloading.  However, if we're the 64-bit DLL, but the image is 32-
   // bit, then the dynamic load was due to injecting into AnyCPU.
-  while (lpReserved == NULL)	// breakable if
+  if (lpReserved == NULL)
   {
 #ifdef _WIN64
-    if (*DllNameType == '6')
-    {
-      PIMAGE_DOS_HEADER pDosHeader;
-      PIMAGE_NT_HEADERS pNTHeader;
-      pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
-      pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
-      if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-	break;
-    }
+    PIMAGE_DOS_HEADER pDosHeader;
+    PIMAGE_NT_HEADERS pNTHeader;
+    pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
+    pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
+    if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 #endif
     orgattr = csbi.wAttributes;
-    break;
   }
 
   get_state();
@@ -1878,6 +1911,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   BOOL	  bResult = TRUE;
   PHookFn hook;
   TCHAR   logstr[4];
+  typedef LONG (WINAPI *PNTQIT)( HANDLE, int, PVOID, ULONG, PULONG );
+  static PNTQIT NtQueryInformationThread;
 
   if (dwReason == DLL_PROCESS_ATTACH)
   {
@@ -1905,16 +1940,23 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     for (hook = Hooks; hook->name; ++hook)
       hook->oldfunc = GetProcAddress( hKernel, hook->name );
 
-    bResult = HookAPIAllMod( Hooks, FALSE );
+    // Get my import addresses, to detect if anyone's hooked me.
+    HookAPIOneMod( NULL, Hooks, FALSE, L"" );
+
+    bResult = HookAPIAllMod( Hooks, FALSE, FALSE );
     OriginalAttr( lpReserved );
-    DisableThreadLibraryCalls( hInstance );
+
+    NtQueryInformationThread = (PNTQIT)GetProcAddress(
+		 GetModuleHandle( L"ntdll.dll" ), "NtQueryInformationThread" );
+    if (NtQueryInformationThread == NULL)
+      DisableThreadLibraryCalls( hInstance );
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
     if (lpReserved == NULL)
     {
       DEBUGSTR( 1, L"Unloading" );
-      HookAPIAllMod( Hooks, TRUE );
+      HookAPIAllMod( Hooks, TRUE, FALSE );
     }
     else
     {
@@ -1931,6 +1973,18 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     CloseHandle( pState );
     CloseHandle( hMap );
   }
-
+  else if (dwReason == DLL_THREAD_DETACH)
+  {
+    PVOID start;
+    if (NtQueryInformationThread( GetCurrentThread(),
+				  9 /* ThreadQuerySetWin32StartAddress */,
+				  &start, sizeof(start), NULL ) == 0
+	&& (start == Hooks[0].oldfunc || start == Hooks[1].oldfunc
+	 || start == Hooks[0].apifunc || start == Hooks[1].apifunc))
+    {
+      DEBUGSTR( 2, L"Injection detected" );
+      HookAPIAllMod( Hooks, FALSE, TRUE );
+    }
+  }
   return bResult;
 }

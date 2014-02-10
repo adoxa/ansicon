@@ -21,7 +21,7 @@
 # * MinGW-builds x64-4.8.1-release-posix-seh-rev1.
 
 CC = gcc
-CFLAGS = -O2 -Wall
+CFLAGS = -O2 -Wall -Wno-multichar
 
 # Identify ansicon.exe using "ANSI" as a version number.
 IVER = -Wl,--major-image-version,20033,--minor-image-version,18771
