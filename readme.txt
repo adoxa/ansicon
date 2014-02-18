@@ -95,8 +95,11 @@ Usage
     The log option will not work with '-p'; set the environment variable
     ANSICON_LOG (to the number) instead.  The variable is only read once when a
     process is started; changing it won't affect running processes.  If you
-    identify a module that causes problems, add it to the ANSICON_EXC environ-
-    ment variable (see ANSICON_API below, but the extension is required).
+    identify a program or module that causes problems, add it to the
+    ANSICON_EXC environment variable (see ANSICON_API below; add the extension
+    to exclude a single module).  Be aware that excluding a program will also
+    exclude any programs it creates (alghough excluding "program.exe" may still
+    hook created programs run through its DLLs).
 
     E.g.: 'ansicon -l5' will start a new command processor, logging every pro-
     cess it starts along with their output.
@@ -144,7 +147,8 @@ Sequences Recognised
 
     The following escape sequences are recognised.
 
-	\e]0;titleBEL		Set (xterm) window's title (and icon)
+	\e]0;titleBEL		Set (xterm) window's title (and icon, ignored)
+	\e]2;titleBEL		Set (xterm) window's title
 	\e[21t			Report (xterm) window's title
 	\e[s			Save Cursor
 	\e[u			Restore Cursor
@@ -214,7 +218,7 @@ DEC Special Graphics Character Set
 
 	Char	Unicode Code Point & Name
 	----	-------------------------
-	_	U+0020	Space (blank)
+	_	U+00A0	No-Break Space (blank)
 	`	U+2666	Black Diamond Suit
 	a	U+2592	Medium Shade
 	b	U+2409	Symbol For Horizontal Tabulation
@@ -273,17 +277,20 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.70 - 8 February, 2014:
+    1.70 - 18 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
     - update the LoadLibraryEx flags that shouldn't hook;
     - restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
     - ansicon.exe will start with ANSICON_DEF (if defined and -m not used);
     - an installed ansicon.exe will restore current (not default) attributes;
     - attributes and saved position are local to each console window;
+    - improved recognition of unsupported sequences;
     * inject into a created process by modifying the import descriptor table
       (-p will use CreateRemoteThread);
     * log: remove the quotes around the CreateProcess command line;
-	   add an underscore in 64-bit addresses to distinguish 8-digit groups.
+	   add an underscore in 64-bit addresses to distinguish 8-digit groups;
+    * ANSICON_EXC can exclude entire programs;
+    * switch G1 blank from space (U+0020) to No-Break Space (U+00A0).
 
     1.66 - 20 September, 2013:
     - fix 32-bit process trying to detect 64-bit process.
@@ -470,5 +477,5 @@ Distribution
     in LICENSE.txt.
 
 
-=============================
-Jason Hood, 8 February, 2014.
+==============================
+Jason Hood, 18 February, 2014.

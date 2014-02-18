@@ -114,5 +114,6 @@ roughly ordered by function.  The initial escape character is assumed.
 [6n	sends "\e[#;#R" (line & column) to console input
 [21t	sends "\e]lTitle\e\" (the console's window title) to console input
 ]0;TitleST
+]2;TitleST
 	sets the console title to "Title"; ST (string terminator) is either
 	 character 7 (BEL) or escape and backslash

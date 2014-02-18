@@ -111,7 +111,7 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 10 February, 2014:
+  v1.70, 25 January to 18 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
     inject by manipulating the import directory table; for 64-bit AnyCPU use
@@ -123,7 +123,10 @@
     exclude entire programs, by not using an extension in ANSICON_EXC;
     hook modules injected via CreateRemoteThread+LoadLibrary;
     hook all modules loaded due to LoadLibrary, not just the specified;
-    don't hook a module that's already hooked us.
+    don't hook a module that's already hooked us;
+    better parsing of escape & CSI sequences;
+    ignore xterm 38 & 48 SGR values;
+    change G1 blank from space to U+00A0 - No-Break Space.
 */
 
 #include "ansicon.h"
@@ -147,6 +150,7 @@ int   state;			// automata state
 TCHAR prefix;			// escape sequence prefix ( '[', ']' or '(' );
 TCHAR prefix2;			// secondary prefix ( '?' or '>' );
 TCHAR suffix;			// escape sequence suffix
+TCHAR suffix2;			// escape sequence secondary suffix
 int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
@@ -160,7 +164,7 @@ BOOL  shifted;
 // particular, the Control Pictures probably won't work at all).
 const WCHAR G1[] =
 {
-  ' ',          // _ - blank
+  L'\x00a0',    // _ - No-Break Space
   L'\x2666',    // ` - Black Diamond Suit
   L'\x2592',    // a - Medium Shade
   L'\x2409',    // b - HT
@@ -481,7 +485,7 @@ void InterpretEscSeq( void )
 	return;
       }
     }
-    // Ignore any other \e[? or \e[> sequences.
+    // Ignore any other private sequences.
     if (prefix2 != 0)
       return;
 
@@ -494,9 +498,28 @@ void InterpretEscSeq( void )
 	for (i = 0; i < es_argc; i++)
 	{
 	  if (30 <= es_argv[i] && es_argv[i] <= 37)
+	  {
 	    pState->foreground = es_argv[i] - 30;
+	  }
 	  else if (40 <= es_argv[i] && es_argv[i] <= 47)
+	  {
 	    pState->background = es_argv[i] - 40;
+	  }
+	  else if (es_argv[i] == 38 || es_argv[i] == 48)
+	  {
+	    // This is technically incorrect, but it's what xterm does, so
+	    // that's what we do.  According to T.416 (ISO 8613-6), there is
+	    // only one parameter, which is divided into elements.  So where
+	    // xterm does "38;2;R;G;B" it should really be "38;2:I:R:G:B" (I is
+	    // a colour space identifier).
+	    if (i+1 < es_argc)
+	    {
+	      if (es_argv[i+1] == 2)		// rgb
+		i += 4;
+	      else if (es_argv[i+1] == 5)	// index
+		i += 2;
+	    }
+	  }
 	  else switch (es_argv[i])
 	  {
 	    case 0:
@@ -888,11 +911,12 @@ void InterpretEscSeq( void )
   }
   else // (prefix == ']')
   {
-    // Ignore any \e]? or \e]> sequences.
+    // Ignore any "private" sequences.
     if (prefix2 != 0)
       return;
 
-    if (es_argc == 1 && es_argv[0] == 0) // ESC]0;titleST
+    if (es_argc == 1 && (es_argv[0] == 0 || // ESC]0;titleST - icon (ignored) &
+			 es_argv[0] == 2))  // ESC]2;titleST - window
     {
       SetConsoleTitle( Pt_arg );
     }
@@ -928,24 +952,40 @@ ParseAndPrintString( HANDLE hDev,
   {
     if (state == 1)
     {
-      if (*s == ESC) state = 2;
+      if (*s == ESC)
+      {
+	suffix2 = 0;
+	state = 2;
+      }
       else if (*s == SO) shifted = TRUE;
       else if (*s == SI) shifted = FALSE;
       else PushBuffer( *s );
     }
     else if (state == 2)
     {
-      if (*s == ESC) ;	// \e\e...\e == \e
-      else if ((*s == '[') || (*s == ']'))
+      if (*s == ESC) ;		// \e\e...\e == \e
+      else if (*s >= '\x20' && *s <= '\x2f')
+	suffix2 = *s;
+      else if (suffix2 != 0)
+	state = 1;
+      else if (*s == '[' ||     // CSI Control Sequence Introducer
+	       *s == ']')       // OSC Operating System Command
       {
 	FlushBuffer();
 	prefix = *s;
 	prefix2 = 0;
-	state = 3;
 	Pt_len = 0;
 	*Pt_arg = '\0';
+	state = 3;
       }
-      else if (*s == ')' || *s == '(') state = 6;
+      else if (*s == 'P' ||     // DCS Device Control String
+	       *s == 'X' ||     // SOS Start Of String
+	       *s == '^' ||     // PM  Privacy Message
+	       *s == '_')       // APC Application Program Command
+      {
+	*Pt_arg = '\0';
+	state = 6;
+      }
       else state = 1;
     }
     else if (state == 3)
@@ -963,9 +1003,21 @@ ParseAndPrintString( HANDLE hDev,
 	es_argv[1] = 0;
         state = 4;
       }
-      else if (*s == '?' || *s == '>')
+      else if (*s == ':')
+      {
+	// ignore it
+      }
+      else if (*s >= '\x3b' && *s <= '\x3f')
       {
 	prefix2 = *s;
+      }
+      else if (*s >= '\x20' && *s <= '\x2f')
+      {
+	suffix2 = *s;
+      }
+      else if (suffix2 != 0)
+      {
+	state = 1;
       }
       else
       {
@@ -987,6 +1039,18 @@ ParseAndPrintString( HANDLE hDev,
 	es_argv[es_argc] = 0;
 	if (prefix == ']')
 	  state = 5;
+      }
+      else if (*s >= '\x3a' && *s <= '\x3f')
+      {
+	// ignore 'em
+      }
+      else if (*s >= '\x20' && *s <= '\x2f')
+      {
+	suffix2 = *s;
+      }
+      else if (suffix2 != 0)
+      {
+	state = 1;
       }
       else
       {
@@ -1015,8 +1079,10 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 6)
     {
-      // Ignore it (ESC ) 0 is implicit; nothing else is supported).
-      state = 1;
+      if (*s == BEL || (*s == '\\' && *Pt_arg == ESC))
+	state = 1;
+      else
+	*Pt_arg = *s;
     }
   }
   FlushBuffer();
