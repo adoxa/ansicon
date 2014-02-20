@@ -147,11 +147,11 @@ Sequences Recognised
 
     The following escape sequences are recognised.
 
-	\e]0;titleBEL		Set (xterm) window's title (and icon, ignored)
-	\e]2;titleBEL		Set (xterm) window's title
-	\e[21t			Report (xterm) window's title
-	\e[s			Save Cursor
-	\e[u			Restore Cursor
+	\e]0;titleBEL		xterm: Set window's title (and icon, ignored)
+	\e]2;titleBEL		xterm: Set window's title
+	\e[21t			xterm: Report window's title
+	\e[s			ANSI.SYS: Save Cursor Position
+	\e[u			ANSI.SYS: Restore Cursor Position
 	\e[#G		CHA	Cursor Character Absolute
 	\e[#E		CNL	Cursor Next Line
 	\e[#F		CPL	Cursor Preceding Line
@@ -193,6 +193,12 @@ Sequences Recognised
     butes, whilst the latter will explicitly reset them.  The environment var-
     iable ANSICON_DEF can be used to change the default colors (same value as
     '-m'; setting the variable does not change the current colors).
+
+    The first time a program clears the screen ('\e[2J') will actually scroll
+    in a new window (assuming the buffer is bigger than the window, of course).
+    Subsequent clears will then blank the window.  However, if the window has
+    scrolled, or the cursor is on the last line of the buffer, it will again
+    scroll in a new window.
 
 
 Sequences Ignored
@@ -261,7 +267,7 @@ DEC Special Graphics Character Set
 Limitations
 ===========
 
-    The entire console buffer is used, not just the visible window.
+    Line sequences use the window; column sequences use the buffer.
 
     There's a conflict with NVIDIA's drivers, requiring the setting of the
     Environment Variable:
@@ -277,7 +283,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.70 - 18 February, 2014:
+    1.70 - 20 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
     - update the LoadLibraryEx flags that shouldn't hook;
     - restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
@@ -285,12 +291,14 @@ Version History
     - an installed ansicon.exe will restore current (not default) attributes;
     - attributes and saved position are local to each console window;
     - improved recognition of unsupported sequences;
+    - restore cursor to bounds, if size reduced;
     * inject into a created process by modifying the import descriptor table
       (-p will use CreateRemoteThread);
     * log: remove the quotes around the CreateProcess command line;
 	   add an underscore in 64-bit addresses to distinguish 8-digit groups;
     * ANSICON_EXC can exclude entire programs;
-    * switch G1 blank from space (U+0020) to No-Break Space (U+00A0).
+    * switch G1 blank from space (U+0020) to No-Break Space (U+00A0);
+    * use window height, not buffer.
 
     1.66 - 20 September, 2013:
     - fix 32-bit process trying to detect 64-bit process.
@@ -478,4 +486,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 18 February, 2014.
+Jason Hood, 20 February, 2014.

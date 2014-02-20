@@ -111,7 +111,7 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 18 February, 2014:
+  v1.70, 25 January to 20 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
     inject by manipulating the import directory table; for 64-bit AnyCPU use
@@ -126,7 +126,8 @@
     don't hook a module that's already hooked us;
     better parsing of escape & CSI sequences;
     ignore xterm 38 & 48 SGR values;
-    change G1 blank from space to U+00A0 - No-Break Space.
+    change G1 blank from space to U+00A0 - No-Break Space;
+    use window height, not buffer.
 */
 
 #include "ansicon.h"
@@ -156,6 +157,7 @@ int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
 BOOL  shifted;
+int   screen_top = -1;		// initial window top when cleared
 
 
 // DEC Special Graphics Character Set from
@@ -473,6 +475,17 @@ void InterpretEscSeq( void )
   SMALL_RECT Rect;
   CHAR_INFO  CharInfo;
 
+#define WIDTH  Info.dwSize.X
+#define CUR    Info.dwCursorPosition
+#define WIN    Info.srWindow
+#define TOP    WIN.Top
+#define BOTTOM WIN.Bottom
+
+#define FillBlank( len, Pos ) \
+  FillConsoleOutputCharacter( hConOut, ' ', len, Pos, &NumberOfCharsWritten );\
+  FillConsoleOutputAttribute( hConOut, Info.wAttributes, len, Pos, \
+			      &NumberOfCharsWritten )
+
   if (prefix == '[')
   {
     if (prefix2 == '?' && (suffix == 'h' || suffix == 'l'))
@@ -613,35 +626,50 @@ void InterpretEscSeq( void )
 	switch (es_argv[0])
 	{
 	  case 0:		// ESC[0J erase from cursor to end of display
-	    len = (Info.dwSize.Y - Info.dwCursorPosition.Y - 1) * Info.dwSize.X
-		  + Info.dwSize.X - Info.dwCursorPosition.X - 1;
-	    FillConsoleOutputCharacter( hConOut, ' ', len,
-					Info.dwCursorPosition,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes, len,
-					Info.dwCursorPosition,
-					&NumberOfCharsWritten );
+	    len = (BOTTOM - CUR.Y) * WIDTH + WIDTH - CUR.X;
+	    FillBlank( len, CUR );
 	  return;
 
 	  case 1:		// ESC[1J erase from start to cursor.
 	    Pos.X = 0;
-	    Pos.Y = 0;
-	    len   = Info.dwCursorPosition.Y * Info.dwSize.X
-		    + Info.dwCursorPosition.X + 1;
-	    FillConsoleOutputCharacter( hConOut, ' ', len, Pos,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes, len, Pos,
-					&NumberOfCharsWritten );
-	    return;
+	    Pos.Y = TOP;
+	    len   = (CUR.Y - TOP) * WIDTH + CUR.X + 1;
+	    FillBlank( len, Pos );
+	  return;
 
 	  case 2:		// ESC[2J Clear screen and home cursor
+	    if (TOP != screen_top || BOTTOM == Info.dwSize.Y - 1)
+	    {
+	      // Rather than clearing the existing window, make the current
+	      // line the new top of the window (assuming this is the first
+	      // thing a program does).
+	      int range = BOTTOM - TOP;
+	      if (CUR.Y + range < Info.dwSize.Y)
+	      {
+		TOP = CUR.Y;
+		BOTTOM = TOP + range;
+	      }
+	      else
+	      {
+		BOTTOM = Info.dwSize.Y - 1;
+		TOP = BOTTOM - range;
+		Rect.Left = 0;
+		Rect.Right = WIDTH - 1;
+		Rect.Top = CUR.Y - TOP;
+		Rect.Bottom = CUR.Y - 1;
+		Pos.X = Pos.Y = 0;
+		CharInfo.Char.UnicodeChar = ' ';
+		CharInfo.Attributes = Info.wAttributes;
+		ScrollConsoleScreenBuffer(hConOut, &Rect, NULL, Pos, &CharInfo);
+	      }
+	      SetConsoleWindowInfo( hConOut, TRUE, &WIN );
+	      screen_top = TOP;
+	    }
 	    Pos.X = 0;
-	    Pos.Y = 0;
-	    len   = Info.dwSize.X * Info.dwSize.Y;
-	    FillConsoleOutputCharacter( hConOut, ' ', len, Pos,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes, len, Pos,
-					&NumberOfCharsWritten );
+	    Pos.Y = TOP;
+	    len   = (BOTTOM - TOP + 1) * WIDTH;
+	    FillBlank( len, Pos );
+	    // Not technically correct, but perhaps expected.
 	    SetConsoleCursorPosition( hConOut, Pos );
 	  return;
 
@@ -655,34 +683,20 @@ void InterpretEscSeq( void )
 	switch (es_argv[0])
 	{
 	  case 0:		// ESC[0K Clear to end of line
-	    len = Info.dwSize.X - Info.dwCursorPosition.X + 1;
-	    FillConsoleOutputCharacter( hConOut, ' ', len,
-					Info.dwCursorPosition,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes, len,
-					Info.dwCursorPosition,
-					&NumberOfCharsWritten );
+	    len = WIDTH - CUR.X + 1;
+	    FillBlank( len, CUR );
 	  return;
 
 	  case 1:		// ESC[1K Clear from start of line to cursor
 	    Pos.X = 0;
-	    Pos.Y = Info.dwCursorPosition.Y;
-	    FillConsoleOutputCharacter( hConOut, ' ',
-					Info.dwCursorPosition.X + 1, Pos,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes,
-					Info.dwCursorPosition.X + 1, Pos,
-					&NumberOfCharsWritten );
+	    Pos.Y = CUR.Y;
+	    FillBlank( CUR.X + 1, Pos );
 	  return;
 
 	  case 2:		// ESC[2K Clear whole line.
 	    Pos.X = 0;
-	    Pos.Y = Info.dwCursorPosition.Y;
-	    FillConsoleOutputCharacter( hConOut, ' ', Info.dwSize.X, Pos,
-					&NumberOfCharsWritten );
-	    FillConsoleOutputAttribute( hConOut, Info.wAttributes,
-					Info.dwSize.X, Pos,
-					&NumberOfCharsWritten );
+	    Pos.Y = CUR.Y;
+	    FillBlank( WIDTH, Pos );
 	  return;
 
 	  default:
@@ -692,82 +706,74 @@ void InterpretEscSeq( void )
       case 'X':                 // ESC[#X Erase # characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[X == ESC[1X
 	if (es_argc != 1) return;
-	FillConsoleOutputCharacter( hConOut, ' ', es_argv[0],
-				    Info.dwCursorPosition,
-				    &NumberOfCharsWritten );
-	FillConsoleOutputAttribute( hConOut, Info.wAttributes, es_argv[0],
-				    Info.dwCursorPosition,
-				    &NumberOfCharsWritten );
+	FillBlank( es_argv[0], CUR );
       return;
 
       case 'L':                 // ESC[#L Insert # blank lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[L == ESC[1L
 	if (es_argc != 1) return;
-	Rect.Left   = 0;
-	Rect.Top    = Info.dwCursorPosition.Y;
-	Rect.Right  = Info.dwSize.X - 1;
-	Rect.Bottom = Info.dwSize.Y - 1;
+	Rect.Left   = WIN.Left	= 0;
+	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Top    = CUR.Y;
+	Rect.Bottom = BOTTOM;
 	Pos.X = 0;
-	Pos.Y = Info.dwCursorPosition.Y + es_argv[0];
+	Pos.Y = CUR.Y + es_argv[0];
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
-	ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
+	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
+	// Technically should home the cursor, but perhaps not expected.
       return;
 
       case 'M':                 // ESC[#M Delete # lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[M == ESC[1M
 	if (es_argc != 1) return;
-	if (es_argv[0] > Info.dwSize.Y - Info.dwCursorPosition.Y)
-	  es_argv[0] = Info.dwSize.Y - Info.dwCursorPosition.Y;
-	Rect.Left   = 0;
-	Rect.Top    = Info.dwCursorPosition.Y + es_argv[0];
-	Rect.Right  = Info.dwSize.X - 1;
-	Rect.Bottom = Info.dwSize.Y - 1;
+	Rect.Left   = WIN.Left	= 0;
+	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Bottom = BOTTOM;
+	Rect.Top    = CUR.Y - es_argv[0];
 	Pos.X = 0;
-	Pos.Y = Info.dwCursorPosition.Y;
+	Pos.Y = TOP = CUR.Y;
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
-	ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
+	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
+	// Technically should home the cursor, but perhaps not expected.
       return;
 
       case 'P':                 // ESC[#P Delete # characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[P == ESC[1P
 	if (es_argc != 1) return;
-	if (Info.dwCursorPosition.X + es_argv[0] > Info.dwSize.X - 1)
-	  es_argv[0] = Info.dwSize.X - Info.dwCursorPosition.X;
-	Rect.Left   = Info.dwCursorPosition.X + es_argv[0];
-	Rect.Top    = Info.dwCursorPosition.Y;
-	Rect.Right  = Info.dwSize.X - 1;
-	Rect.Bottom = Info.dwCursorPosition.Y;
+	Rect.Left   = WIN.Left	= CUR.X;
+	Rect.Right  = WIN.Right = WIDTH - 1;
+	Pos.X	    = CUR.X - es_argv[0];
+	Pos.Y	    =
+	Rect.Top    =
+	Rect.Bottom = CUR.Y;
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
-	ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Info.dwCursorPosition,
-				   &CharInfo );
+	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
       return;
 
       case '@':                 // ESC[#@ Insert # blank characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[@ == ESC[1@
 	if (es_argc != 1) return;
-	if (Info.dwCursorPosition.X + es_argv[0] > Info.dwSize.X - 1)
-	  es_argv[0] = Info.dwSize.X - Info.dwCursorPosition.X;
-	Rect.Left   = Info.dwCursorPosition.X;
-	Rect.Top    = Info.dwCursorPosition.Y;
-	Rect.Right  = Info.dwSize.X - 1 - es_argv[0];
-	Rect.Bottom = Info.dwCursorPosition.Y;
-	Pos.X = Info.dwCursorPosition.X + es_argv[0];
-	Pos.Y = Info.dwCursorPosition.Y;
+	Rect.Left   = WIN.Left	= CUR.X;
+	Rect.Right  = WIN.Right = WIDTH - 1;
+	Pos.X	    = CUR.X + es_argv[0];
+	Pos.Y	    =
+	Rect.Top    =
+	Rect.Bottom = CUR.Y;
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
-	ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
+	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
       return;
 
       case 'k':                 // ESC[#k
       case 'A':                 // ESC[#A Moves cursor up # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[A == ESC[1A
 	if (es_argc != 1) return;
-	Pos.Y = Info.dwCursorPosition.Y - es_argv[0];
-	if (Pos.Y < 0) Pos.Y = 0;
-	Pos.X = Info.dwCursorPosition.X;
+	Pos.Y = CUR.Y - es_argv[0];
+	if (Pos.Y < TOP) Pos.Y = TOP;
+	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -775,9 +781,9 @@ void InterpretEscSeq( void )
       case 'B':                 // ESC[#B Moves cursor down # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[B == ESC[1B
 	if (es_argc != 1) return;
-	Pos.Y = Info.dwCursorPosition.Y + es_argv[0];
-	if (Pos.Y >= Info.dwSize.Y) Pos.Y = Info.dwSize.Y - 1;
-	Pos.X = Info.dwCursorPosition.X;
+	Pos.Y = CUR.Y + es_argv[0];
+	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -785,9 +791,9 @@ void InterpretEscSeq( void )
       case 'C':                 // ESC[#C Moves cursor forward # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[C == ESC[1C
 	if (es_argc != 1) return;
-	Pos.X = Info.dwCursorPosition.X + es_argv[0];
-	if (Pos.X >= Info.dwSize.X) Pos.X = Info.dwSize.X - 1;
-	Pos.Y = Info.dwCursorPosition.Y;
+	Pos.X = CUR.X + es_argv[0];
+	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
+	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -795,17 +801,17 @@ void InterpretEscSeq( void )
       case 'D':                 // ESC[#D Moves cursor back # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[D == ESC[1D
 	if (es_argc != 1) return;
-	Pos.X = Info.dwCursorPosition.X - es_argv[0];
+	Pos.X = CUR.X - es_argv[0];
 	if (Pos.X < 0) Pos.X = 0;
-	Pos.Y = Info.dwCursorPosition.Y;
+	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'E':                 // ESC[#E Moves cursor down # lines, column 1.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[E == ESC[1E
 	if (es_argc != 1) return;
-	Pos.Y = Info.dwCursorPosition.Y + es_argv[0];
-	if (Pos.Y >= Info.dwSize.Y) Pos.Y = Info.dwSize.Y - 1;
+	Pos.Y = CUR.Y + es_argv[0];
+	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	Pos.X = 0;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -813,8 +819,8 @@ void InterpretEscSeq( void )
       case 'F':                 // ESC[#F Moves cursor up # lines, column 1.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[F == ESC[1F
 	if (es_argc != 1) return;
-	Pos.Y = Info.dwCursorPosition.Y - es_argv[0];
-	if (Pos.Y < 0) Pos.Y = 0;
+	Pos.Y = CUR.Y - es_argv[0];
+	if (Pos.Y < TOP) Pos.Y = TOP;
 	Pos.X = 0;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -824,9 +830,9 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[G == ESC[1G
 	if (es_argc != 1) return;
 	Pos.X = es_argv[0] - 1;
-	if (Pos.X >= Info.dwSize.X) Pos.X = Info.dwSize.X - 1;
+	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
 	if (Pos.X < 0) Pos.X = 0;
-	Pos.Y = Info.dwCursorPosition.Y;
+	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -834,8 +840,8 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[d == ESC[1d
 	if (es_argc != 1) return;
 	Pos.Y = es_argv[0] - 1;
-	if (Pos.Y < 0) Pos.Y = 0;
-	if (Pos.Y >= Info.dwSize.Y) Pos.Y = Info.dwSize.Y - 1;
+	if (Pos.Y < TOP) Pos.Y = TOP;
+	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -848,23 +854,28 @@ void InterpretEscSeq( void )
 	if (es_argc > 2) return;
 	Pos.X = es_argv[1] - 1;
 	if (Pos.X < 0) Pos.X = 0;
-	if (Pos.X >= Info.dwSize.X) Pos.X = Info.dwSize.X - 1;
+	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
 	Pos.Y = es_argv[0] - 1;
-	if (Pos.Y < 0) Pos.Y = 0;
-	if (Pos.Y >= Info.dwSize.Y) Pos.Y = Info.dwSize.Y - 1;
+	if (Pos.Y < TOP) Pos.Y = TOP;
+	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 's':                 // ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
 	get_state();
-	pState->SavePos = Info.dwCursorPosition;
+	pState->SavePos.X = CUR.X;
+	pState->SavePos.Y = CUR.Y - TOP;
       return;
 
       case 'u':                 // ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
 	get_state();
-	SetConsoleCursorPosition( hConOut, pState->SavePos );
+	Pos.X = pState->SavePos.X;
+	Pos.Y = pState->SavePos.Y + TOP;
+	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
+	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'n':                 // ESC[#n Device status report
@@ -878,8 +889,7 @@ void InterpretEscSeq( void )
 	  case 6:		// ESC[6n Report cursor position
 	  {
 	    TCHAR buf[32];
-	    wsprintf( buf, L"\33[%d;%dR", Info.dwCursorPosition.Y + 1,
-					  Info.dwCursorPosition.X + 1 );
+	    wsprintf( buf, L"\33[%d;%dR", CUR.Y - TOP + 1, CUR.X + 1 );
 	    SendSequence( buf );
 	  }
 	  return;
