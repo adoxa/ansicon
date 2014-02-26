@@ -1,6 +1,6 @@
 
 				    ANSICON
-				  Version 1.60
+				  Version 1.70
 
 This is a complete list of the ANSI escape sequences recognised by ANSICON,
 roughly ordered by function.  The initial escape character is assumed.
@@ -64,6 +64,9 @@ roughly ordered by function.  The initial escape character is assumed.
 [@	insert one blank character
 [#@	insert # blank characters
 
+[b	repeat the previous character
+[#b	repeat the previous character # times
+
 [A	move cursor up one line
 [#A	move cursor up # lines
 [B	move cursor down one line
@@ -72,6 +75,10 @@ roughly ordered by function.  The initial escape character is assumed.
 [#C	move cursor right # characters
 [D	move cursor left one character
 [#D	move cursor left # characters
+[I	move cursor forward one tab
+[#I	move cursor forward # tabs
+[Z	move cursor back one tab
+[#Z	move cursor back # tabs
 
 [k	move cursor up one line
 [#k	move cursor up # lines
@@ -105,8 +112,12 @@ roughly ordered by function.  The initial escape character is assumed.
 [#;#f	move cursor to line #, column #
 
 [s	save cursor position
-[u	move cursor to saved position
+[u	move cursor to saved position (or top-left, if nothing was saved)
 
+[3h	display control characters (LF is also performed)
+[3l	perform control functions (the only such recognised during above)
+[?7h	wrap lines at screen edge
+[?7l	don't wrap lines at screen edge
 [?25h	show cursor
 [?25l	hide cursor
 

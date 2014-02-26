@@ -111,7 +111,7 @@
   v1.66, 20 & 21 September, 2013:
     fix 32-bit process trying to detect 64-bit process.
 
-  v1.70, 25 January to 20 February, 2014:
+  v1.70, 25 January to 26 February, 2014:
     don't hook ourself from LoadLibrary or LoadLibraryEx;
     update the LoadLibraryEx flags that should not cause hooking;
     inject by manipulating the import directory table; for 64-bit AnyCPU use
@@ -127,7 +127,10 @@
     better parsing of escape & CSI sequences;
     ignore xterm 38 & 48 SGR values;
     change G1 blank from space to U+00A0 - No-Break Space;
-    use window height, not buffer.
+    use window height, not buffer;
+    added more sequences;
+    don't add a newline immediately after a wrap;
+    restore cursor visibility on unload.
 */
 
 #include "ansicon.h"
@@ -140,6 +143,8 @@
 
 HANDLE	  hConOut;		// handle to CONOUT$
 WORD	  orgattr;		// original attributes
+DWORD	  orgmode;		// original mode
+CONSOLE_CURSOR_INFO orgcci;	// original cursor state
 
 #define ESC	'\x1B'          // ESCape character
 #define BEL	'\x07'
@@ -258,6 +263,7 @@ typedef struct
   BYTE	rvideo; 	// swap foreground/bold & background/underline
   BYTE	concealed;	// set foreground/bold to background/underline
   BYTE	reverse;	// swap console foreground & background attributes
+  BYTE	crm;		// showing control characters?
   COORD SavePos;	// saved cursor position
 } STATE, *PSTATE;
 
@@ -396,6 +402,8 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
 
 int   nCharInBuffer;
 WCHAR ChBuffer[BUFFER_SIZE];
+WCHAR ChPrev;
+BOOL  fWrapped;
 
 //-----------------------------------------------------------------------------
 //   FlushBuffer()
@@ -405,8 +413,65 @@ WCHAR ChBuffer[BUFFER_SIZE];
 void FlushBuffer( void )
 {
   DWORD nWritten;
+
   if (nCharInBuffer <= 0) return;
-  WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
+
+  if (pState->crm)
+  {
+    DWORD mode;
+    GetConsoleMode( hConOut, &mode );
+    SetConsoleMode( hConOut, mode & ~ENABLE_PROCESSED_OUTPUT );
+    WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
+    SetConsoleMode( hConOut, mode );
+  }
+  else
+  {
+    HANDLE hConWrap;
+    CONSOLE_CURSOR_INFO cci;
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+    if (nCharInBuffer < 4)
+    {
+      LPWSTR b = ChBuffer;
+      do
+      {
+	WriteConsole( hConOut, b, 1, &nWritten, NULL );
+	if (*b != '\r' && *b != '\b' && *b != '\a')
+	{
+	  GetConsoleScreenBufferInfo( hConOut, &csbi );
+	  if (csbi.dwCursorPosition.X == 0)
+	    fWrapped = TRUE;
+	}
+      } while (++b, --nCharInBuffer);
+    }
+    else
+    {
+      // To detect wrapping of multiple characters, create a new buffer, write
+      // to the top of it and see if the cursor changes line.  This doesn't
+      // always work on the normal buffer, since if you're already on the last
+      // line, wrapping scrolls everything up and still leaves you on the last.
+      hConWrap = CreateConsoleScreenBuffer( GENERIC_READ|GENERIC_WRITE, 0, NULL,
+					    CONSOLE_TEXTMODE_BUFFER, NULL );
+      // Even though the buffer isn't visible, the cursor still shows up.
+      cci.dwSize = 1;
+      cci.bVisible = FALSE;
+      SetConsoleCursorInfo( hConWrap, &cci );
+      // Ensure the buffer is the same width (it gets created using the window
+      // width) and more than one line.
+      GetConsoleScreenBufferInfo( hConOut, &csbi );
+      csbi.dwSize.Y = csbi.srWindow.Bottom - csbi.srWindow.Top + 2;
+      SetConsoleScreenBufferSize( hConWrap, csbi.dwSize );
+      // Put the cursor on the top line, in the same column.
+      csbi.dwCursorPosition.Y = 0;
+      SetConsoleCursorPosition( hConWrap, csbi.dwCursorPosition );
+      WriteConsole( hConWrap, ChBuffer, nCharInBuffer, &nWritten, NULL );
+      GetConsoleScreenBufferInfo( hConWrap, &csbi );
+      if (csbi.dwCursorPosition.Y != 0)
+	fWrapped = TRUE;
+      CloseHandle( hConWrap );
+      WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
+    }
+  }
   nCharInBuffer = 0;
 }
 
@@ -417,11 +482,73 @@ void FlushBuffer( void )
 
 void PushBuffer( WCHAR c )
 {
-  if (shifted && c >= FIRST_G1 && c <= LAST_G1)
-    c = G1[c-FIRST_G1];
-  ChBuffer[nCharInBuffer] = c;
-  if (++nCharInBuffer == BUFFER_SIZE)
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  DWORD nWritten;
+
+  ChPrev = c;
+
+  if (c == '\n')
+  {
+    if (pState->crm)
+      ChBuffer[nCharInBuffer++] = c;
     FlushBuffer();
+    // Avoid writing the newline if wrap has already occurred.
+    GetConsoleScreenBufferInfo( hConOut, &csbi );
+    if (pState->crm)
+    {
+      // If we're displaying controls, then the only way we can be on the left
+      // margin is if wrap occurred.
+      if (csbi.dwCursorPosition.X != 0)
+	WriteConsole( hConOut, L"\n", 1, &nWritten, NULL );
+    }
+    else
+    {
+      LPCWSTR nl = L"\n";
+      if (fWrapped)
+      {
+	// It's wrapped, but was anything more written?  Look at the current
+	// row, checking that each character is space in current attributes.
+	// If it's all blank we can drop the newline.  If the cursor isn't
+	// already at the margin, then it was spaces or tabs that caused the
+	// wrap, which can be ignored and overwritten.
+	CHAR_INFO blank;
+	PCHAR_INFO row;
+	row = malloc( csbi.dwSize.X * sizeof(CHAR_INFO) );
+	if (row != NULL)
+	{
+	  COORD s, c;
+	  SMALL_RECT r;
+	  s.X = csbi.dwSize.X;
+	  s.Y = 1;
+	  c.X = c.Y = 0;
+	  r.Left = 0;
+	  r.Right = s.X - 1;
+	  r.Top = r.Bottom = csbi.dwCursorPosition.Y;
+	  ReadConsoleOutput( hConOut, row, s, c, &r );
+	  blank.Char.UnicodeChar = ' ';
+	  blank.Attributes = csbi.wAttributes;
+	  while (*(PDWORD)&row[c.X] == *(PDWORD)&blank)
+	    if (++c.X == s.X)
+	    {
+	      nl = (csbi.dwCursorPosition.X == 0) ? NULL : L"\r";
+	      break;
+	    }
+	  free( row );
+	}
+	fWrapped = FALSE;
+      }
+      if (nl)
+	WriteConsole( hConOut, nl, 1, &nWritten, NULL );
+    }
+  }
+  else
+  {
+    if (shifted && c >= FIRST_G1 && c <= LAST_G1)
+      c = G1[c-FIRST_G1];
+    ChBuffer[nCharInBuffer] = c;
+    if (++nCharInBuffer == BUFFER_SIZE)
+      FlushBuffer();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -474,12 +601,15 @@ void InterpretEscSeq( void )
   COORD Pos;
   SMALL_RECT Rect;
   CHAR_INFO  CharInfo;
+  DWORD      mode;
 
 #define WIDTH  Info.dwSize.X
 #define CUR    Info.dwCursorPosition
 #define WIN    Info.srWindow
 #define TOP    WIN.Top
 #define BOTTOM WIN.Bottom
+#define LEFT   0
+#define RIGHT  (WIDTH - 1)
 
 #define FillBlank( len, Pos ) \
   FillConsoleOutputCharacter( hConOut, ' ', len, Pos, &NumberOfCharsWritten );\
@@ -488,13 +618,21 @@ void InterpretEscSeq( void )
 
   if (prefix == '[')
   {
-    if (prefix2 == '?' && (suffix == 'h' || suffix == 'l'))
+    if (prefix2 == '?' && (suffix == 'h' || suffix == 'l') && es_argc == 1)
     {
-      if (es_argc == 1 && es_argv[0] == 25)
+      switch (es_argv[0])
       {
-	GetConsoleCursorInfo( hConOut, &CursInfo );
-	CursInfo.bVisible = (suffix == 'h');
-	SetConsoleCursorInfo( hConOut, &CursInfo );
+	case 25:
+	  GetConsoleCursorInfo( hConOut, &CursInfo );
+	  CursInfo.bVisible = (suffix == 'h');
+	  SetConsoleCursorInfo( hConOut, &CursInfo );
+	return;
+
+	case 7:
+	  mode = ENABLE_PROCESSED_OUTPUT;
+	  if (suffix == 'h')
+	    mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
+	  SetConsoleMode( hConOut, mode );
 	return;
       }
     }
@@ -506,7 +644,6 @@ void InterpretEscSeq( void )
     switch (suffix)
     {
       case 'm':
-	get_state();
 	if (es_argc == 0) es_argv[es_argc++] = 0;
 	for (i = 0; i < es_argc; i++)
 	{
@@ -653,8 +790,8 @@ void InterpretEscSeq( void )
 	      {
 		BOTTOM = Info.dwSize.Y - 1;
 		TOP = BOTTOM - range;
-		Rect.Left = 0;
-		Rect.Right = WIDTH - 1;
+		Rect.Left = LEFT;
+		Rect.Right = RIGHT;
 		Rect.Top = CUR.Y - TOP;
 		Rect.Bottom = CUR.Y - 1;
 		Pos.X = Pos.Y = 0;
@@ -665,7 +802,7 @@ void InterpretEscSeq( void )
 	      SetConsoleWindowInfo( hConOut, TRUE, &WIN );
 	      screen_top = TOP;
 	    }
-	    Pos.X = 0;
+	    Pos.X = LEFT;
 	    Pos.Y = TOP;
 	    len   = (BOTTOM - TOP + 1) * WIDTH;
 	    FillBlank( len, Pos );
@@ -683,18 +820,18 @@ void InterpretEscSeq( void )
 	switch (es_argv[0])
 	{
 	  case 0:		// ESC[0K Clear to end of line
-	    len = WIDTH - CUR.X + 1;
+	    len = WIDTH - CUR.X;
 	    FillBlank( len, CUR );
 	  return;
 
 	  case 1:		// ESC[1K Clear from start of line to cursor
-	    Pos.X = 0;
+	    Pos.X = LEFT;
 	    Pos.Y = CUR.Y;
 	    FillBlank( CUR.X + 1, Pos );
 	  return;
 
 	  case 2:		// ESC[2K Clear whole line.
-	    Pos.X = 0;
+	    Pos.X = LEFT;
 	    Pos.Y = CUR.Y;
 	    FillBlank( WIDTH, Pos );
 	  return;
@@ -712,11 +849,11 @@ void InterpretEscSeq( void )
       case 'L':                 // ESC[#L Insert # blank lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[L == ESC[1L
 	if (es_argc != 1) return;
-	Rect.Left   = WIN.Left	= 0;
-	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Left   = WIN.Left	= LEFT;
+	Rect.Right  = WIN.Right = RIGHT;
 	Rect.Top    = CUR.Y;
 	Rect.Bottom = BOTTOM;
-	Pos.X = 0;
+	Pos.X = LEFT;
 	Pos.Y = CUR.Y + es_argv[0];
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
@@ -727,11 +864,11 @@ void InterpretEscSeq( void )
       case 'M':                 // ESC[#M Delete # lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[M == ESC[1M
 	if (es_argc != 1) return;
-	Rect.Left   = WIN.Left	= 0;
-	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Left   = WIN.Left	= LEFT;
+	Rect.Right  = WIN.Right = RIGHT;
 	Rect.Bottom = BOTTOM;
 	Rect.Top    = CUR.Y - es_argv[0];
-	Pos.X = 0;
+	Pos.X = LEFT;
 	Pos.Y = TOP = CUR.Y;
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
@@ -743,7 +880,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[P == ESC[1P
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= CUR.X;
-	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Right  = WIN.Right = RIGHT;
 	Pos.X	    = CUR.X - es_argv[0];
 	Pos.Y	    =
 	Rect.Top    =
@@ -757,7 +894,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[@ == ESC[1@
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= CUR.X;
-	Rect.Right  = WIN.Right = WIDTH - 1;
+	Rect.Right  = WIN.Right = RIGHT;
 	Pos.X	    = CUR.X + es_argv[0];
 	Pos.Y	    =
 	Rect.Top    =
@@ -792,7 +929,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[C == ESC[1C
 	if (es_argc != 1) return;
 	Pos.X = CUR.X + es_argv[0];
-	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
+	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -802,7 +939,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[D == ESC[1D
 	if (es_argc != 1) return;
 	Pos.X = CUR.X - es_argv[0];
-	if (Pos.X < 0) Pos.X = 0;
+	if (Pos.X < LEFT) Pos.X = LEFT;
 	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -812,7 +949,7 @@ void InterpretEscSeq( void )
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y + es_argv[0];
 	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
-	Pos.X = 0;
+	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -821,7 +958,7 @@ void InterpretEscSeq( void )
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y - es_argv[0];
 	if (Pos.Y < TOP) Pos.Y = TOP;
-	Pos.X = 0;
+	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -830,8 +967,8 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[G == ESC[1G
 	if (es_argc != 1) return;
 	Pos.X = es_argv[0] - 1;
-	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
-	if (Pos.X < 0) Pos.X = 0;
+	if (Pos.X > RIGHT) Pos.X = RIGHT;
+	if (Pos.X < LEFT) Pos.X = LEFT;
 	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -853,27 +990,53 @@ void InterpretEscSeq( void )
 	  es_argv[es_argc++] = 1; // ESC[#H == ESC[#;1H
 	if (es_argc > 2) return;
 	Pos.X = es_argv[1] - 1;
-	if (Pos.X < 0) Pos.X = 0;
-	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
+	if (Pos.X < LEFT) Pos.X = LEFT;
+	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	Pos.Y = es_argv[0] - 1;
 	if (Pos.Y < TOP) Pos.Y = TOP;
 	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case 'I':                 // ESC[#I Moves cursor forward # tabs
+	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[I == ESC[1I
+	if (es_argc != 1) return;
+	Pos.Y = CUR.Y;
+	Pos.X = (CUR.X & -8) + es_argv[0] * 8;
+	if (Pos.X > RIGHT) Pos.X = RIGHT;
+	SetConsoleCursorPosition( hConOut, Pos );
+      return;
+
+      case 'Z':                 // ESC[#Z Moves cursor back # tabs
+	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[Z == ESC[1Z
+	if (es_argc != 1) return;
+	Pos.Y = CUR.Y;
+	if ((CUR.X & 7) == 0)
+	   Pos.X = CUR.X - es_argv[0] * 8;
+	else
+	   Pos.X = (CUR.X & -8) - (es_argv[0] - 1) * 8;
+	if (Pos.X < LEFT) Pos.X = LEFT;
+	SetConsoleCursorPosition( hConOut, Pos );
+      return;
+
+      case 'b':                 // ESC[#b Repeat character
+	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[b == ESC[1b
+	if (es_argc != 1) return;
+	while (--es_argv[0] >= 0)
+	  PushBuffer( ChPrev );
+      return;
+
       case 's':                 // ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
-	get_state();
 	pState->SavePos.X = CUR.X;
 	pState->SavePos.Y = CUR.Y - TOP;
       return;
 
       case 'u':                 // ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
-	get_state();
 	Pos.X = pState->SavePos.X;
 	Pos.Y = pState->SavePos.Y + TOP;
-	if (Pos.X >= WIDTH) Pos.X = WIDTH - 1;
+	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -914,6 +1077,14 @@ void InterpretEscSeq( void )
 	  SendSequence( buf );
 	}
       return;
+
+      case 'h':                 // ESC[#h Set Mode
+	if (es_argc == 1 && es_argv[0] == 3)
+	  pState->crm = TRUE;
+      return;
+
+      case 'l':                 // ESC[#l Reset Mode
+      return;			// ESC[3l is handled during parsing
 
       default:
       return;
@@ -965,7 +1136,8 @@ ParseAndPrintString( HANDLE hDev,
       if (*s == ESC)
       {
 	suffix2 = 0;
-	state = 2;
+	get_state();
+	state = (pState->crm) ? 7 : 2;
       }
       else if (*s == SO) shifted = TRUE;
       else if (*s == SI) shifted = FALSE;
@@ -1093,6 +1265,39 @@ ParseAndPrintString( HANDLE hDev,
 	state = 1;
       else
 	*Pt_arg = *s;
+    }
+    else if (state == 7)
+    {
+      if (*s == '[') state = 8;
+      else
+      {
+	PushBuffer( ESC );
+	PushBuffer( *s );
+	state = 1;
+      }
+    }
+    else if (state == 8)
+    {
+      if (*s == '3') state = 9;
+      else
+      {
+	PushBuffer( ESC );
+	PushBuffer( '[' );
+	PushBuffer( *s );
+	state = 1;
+      }
+    }
+    else if (state == 9)
+    {
+      if (*s == 'l') pState->crm = FALSE;
+      else
+      {
+	PushBuffer( ESC );
+	PushBuffer( '[' );
+	PushBuffer( '3' );
+	PushBuffer( *s );
+      }
+      state = 1;
     }
   }
   FlushBuffer();
@@ -1953,7 +2158,6 @@ void OriginalAttr( PVOID lpReserved )
 				    NULL, OPEN_EXISTING, 0, 0 );
   if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     csbi.wAttributes = 7;
-  CloseHandle( hConOut );
 
   // If we were loaded dynamically, remember the current attributes to restore
   // upon unloading.  However, if we're the 64-bit DLL, but the image is 32-
@@ -1968,7 +2172,10 @@ void OriginalAttr( PVOID lpReserved )
     if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 #endif
     orgattr = csbi.wAttributes;
+    GetConsoleMode( hConOut, &orgmode );
+    GetConsoleCursorInfo( hConOut, &orgcci );
   }
+  CloseHandle( hConOut );
 
   get_state();
 }
@@ -2044,6 +2251,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 					FILE_SHARE_READ | FILE_SHARE_WRITE,
 					NULL, OPEN_EXISTING, 0, 0 );
       SetConsoleTextAttribute( hConOut, orgattr );
+      SetConsoleMode( hConOut, orgmode );
+      SetConsoleCursorInfo( hConOut, &orgcci );
       CloseHandle( hConOut );
     }
     CloseHandle( pState );

@@ -152,15 +152,21 @@ Sequences Recognised
 	\e[21t			xterm: Report window's title
 	\e[s			ANSI.SYS: Save Cursor Position
 	\e[u			ANSI.SYS: Restore Cursor Position
+	\e[#Z		CBT	Cursor Backward Tabulation
 	\e[#G		CHA	Cursor Character Absolute
+	\e[#I		CHT	Cursor Forward Tabulation
 	\e[#E		CNL	Cursor Next Line
 	\e[#F		CPL	Cursor Preceding Line
+	\e[3h		CRM	Control Representation Mode (display controls)
+	\e[3l		CRM	Control Representation Mode (perform controls)
 	\e[#D		CUB	Cursor Left
 	\e[#B		CUD	Cursor Down
 	\e[#C		CUF	Cursor Right
 	\e[#;#H 	CUP	Cursor Position
 	\e[#A		CUU	Cursor Up
 	\e[#P		DCH	Delete Character
+	\e[?7h		DECAWM	DEC Autowrap Mode (autowrap)
+	\e[?7l		DECAWM	DEC Autowrap Mode (no autowrap) 
 	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -176,6 +182,7 @@ Sequences Recognised
 	\e[#L		IL	Insert Line
 	SI		LS0	Locking-shift Zero (see below)
 	SO		LS1	Locking-shift One
+	\e[#b		REP	Repeat
 	\e[#;#;#m	SGR	Select Graphic Rendition
 	\e[#d		VPA	Line Position Absolute
 	\e[#k		VPB	Line Position Backward
@@ -268,6 +275,7 @@ Limitations
 ===========
 
     Line sequences use the window; column sequences use the buffer.
+    Tabs are fixed at eight columns.
 
     There's a conflict with NVIDIA's drivers, requiring the setting of the
     Environment Variable:
@@ -283,7 +291,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.70 - 20 February, 2014:
+    1.70 - 26 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
     - update the LoadLibraryEx flags that shouldn't hook;
     - restore original attributes on detach (for LoadLibrary/FreeLibrary usage);
@@ -292,13 +300,17 @@ Version History
     - attributes and saved position are local to each console window;
     - improved recognition of unsupported sequences;
     - restore cursor to bounds, if size reduced;
+    - stop \e[K from erasing first character of next line;
+    - restore cursor visibility on unload;
     * inject into a created process by modifying the import descriptor table
       (-p will use CreateRemoteThread);
     * log: remove the quotes around the CreateProcess command line;
 	   add an underscore in 64-bit addresses to distinguish 8-digit groups;
     * ANSICON_EXC can exclude entire programs;
     * switch G1 blank from space (U+0020) to No-Break Space (U+00A0);
-    * use window height, not buffer.
+    * use window height, not buffer;
+    * remove newline after wrap;
+    + recognise more sequences.
 
     1.66 - 20 September, 2013:
     - fix 32-bit process trying to detect 64-bit process.
@@ -486,4 +498,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 20 February, 2014.
+Jason Hood, 26 February, 2014.
