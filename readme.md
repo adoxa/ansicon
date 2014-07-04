@@ -10,8 +10,8 @@ provides much the same functionality as `ANSI.SYS` does for MS-DOS.
 
 ## Installation
 
-Add `x86`(if your OS is 32-bit) or `x64` (if 64-bit) to your PATH, or copy the
-relevant files to a directory already in the PATH.
+Add `x86` (if your OS is 32-bit) or `x64` (if 64-bit) to your `PATH`, or copy
+the relevant files to a directory already in the `PATH`.
 
 Alternatively, use option `-i` (or `-I`, if permitted) to install it
 permanently, by adding an entry to `CMD.EXE`'s AutoRun registry value (current
@@ -254,179 +254,6 @@ will influence them when using a raster font (but of particular interest, 437
 and 850 both show the Box Drawings).
 
 
-## Version History
-
-Legend: `+` added, `-` bug-fixed, `*` changed.
-
-1.66 - 20 September, 2013:
-
-    - fix 32-bit process trying to detect 64-bit process.
-
-1.65 - 4 September, 2013:
-
-    - fix finding 32-bit LoadLibraryW address from 64-bit;
-    - fix \e[K (was using window, not buffer).
-
-1.64 - 2 August, 2013:
-
-    - improved detection of console output.
-
-1.63 - 25 July, 2013:
-
-    - don't write the reset sequence (when it's already installed) if output is
-      redirected.
-
-1.62 - 18 July, 2013:
-
-    - indicate if opening HKLM failed;
-    * removed ANSI-LLW.exe again, properly this time;
-    * add the architecture (32- or 64-bit) to the log.
-
-1.61 - 14 February, 2013:
-
-    * revert back to using ANSI-LLW.exe, as the new method was unreliable.
-
-1.60 - 24 November, 2012:
-
-    * new method to get the 32-bit LoadLibraryW address from 64-bit code.
-      This removes the need for ANSI-LLW.exe, which caused lots of virus
-      warnings, for some reason.
-    - set the code page to display some file names properly;
-    + expand wildcards for -t (ignoring directories and hidden/binary files).
-
-1.53 - 12 June, 2012:
-
-    - fix for multiple simultaneous process creation (e.g. "cl /MP ...").
-
-1.52 - 2 June, 2012:
-
-    + 32-bit processes can inject into 64-bit processes;
-    + implemented \e[39m & \e[49m (set default foreground/background color);
-    + added \e[#X, \e[#`, \e[#a, \e[#d, \e[#e, \[e#j and \e[#k;
-    * changed sequence descriptions to those in ECMA-48, ordered by acronym.
-
-1.51 - 24 February, 2012:
-
-    - fixed installing into a piped/redirected CMD.EXE;
-    - fixed 32-bit process trying to identify a 64-bit process;
-    - ignore version within core API DLL names (now Win8 works);
-    + hook _lwrite & _hwrite (now Silverfrost FTN95 v6.20 works).
-
-1.50 - 14 December, 2011:
-
-    - -u does not imply -p;
-    - return the program's exit code;
-    - -p by itself will not restore original color;
-    - output error messages to stderr;
-    * logging is always available, with various levels; include the pid;
-    * don't automatically hook GUI programs, use 'ansicon' or ANSICON_GUI;
-    * always place first in AutoRun; don't run if already installed;
-    + global reverse video capability;
-    + added ANSICON_VER to provide version/install test;
-    + added ANSICON_EXC to exclude selected modules;
-    + added ANSICON_DEF to explicitly set the default SGM.
-
-1.40 - 1 March, 2011:
-
-    - hook GetProcAddress (now PowerShell works);
-    + add SO/SI, using the DEC Special Graphics Character Set for G1;
-    + add DECTCEM to show/hide the cursor.
-
-1.32 - 22 December, 2010:
-
-    - fixed crash due to NULL lpNumberOfBytesWritten/lpNumberOfCharsWritten;
-    - -p will test the parent process for validity;
-    * hook into GUI processes;
-    + recognise DSR and xterm window title sequences;
-    - fixed MinGW32 binaries (LLW was wrong).
-
-1.31 - 19 November, 2010:
-
-    - fixed multibyte support (no extra junk with UTF-8 files);
-    * provide workaround for API byte/character differences;
-    * fixed potential problem if install path uses Unicode.
-
-1.30 - 7 September, 2010:
-
-    + x64 version.
-
-1.25 - 22 July, 2010:
-
-    - hook LoadLibraryEx (now CScript works);
-    - fixed -i when AutoRun existed, but was empty;
-    + support for Windows 7;
-    + -I (and -U) use HKEY_LOCAL_MACHINE.
-
-1.24 - 7 January, 2010:
-
-    - fix -t and -e when ANSICON was already running;
-    + read standard input if redirected with no arguments, if -t has no
-      files, or if the name is "-" (which also serves as a workaround for
-      programs that don't get hooked, such as CScript).
-
-1.23 - 11 November, 2009:
-
-    - restore hooked functions when unloading;
-    - reverse the "bold" and "underline" settings;
-    * conceal characters by making foreground color same as background.
-
-1.22 - 5 October, 2009:
-
-    - hook LoadLibrary to inject into applications started via association.
-
-1.21 - 23 September, 2009:
-
-    + -i (and -u) option to add (remove) entry to AutoRun value.
-
-1.20 - 21 June, 2009:
-
-    * use another injection method;
-    + create ANSICON environment variable;
-    + -e (and -E) option to echo the command line (without newline);
-    + -t (and -T) option to type (display) files (with file name).
-
-1.15 - 17 May, 2009:
-
-    - fix output corruption for long (over 8192 characters) ANSI strings.
-
-1.14 - 3 April, 2009:
-
-    - fix the test for an empty import section (eg. XCOPY now works).
-
-1.13 - 21 & 27 March, 2009:
-
-    * use a new injection method (to work with DEP);
-    * use Unicode.
-
-1.12 - 9 March, 2009:
-
-    - fix processing child programs (generate a relocatable DLL).
-
-1.11 - 28 February, 2009:
-
-    - fix processing child programs (only use for console executables).
-
-1.10 - 22 February, 2009:
-
-    - fix output corruption (buffer overflow in MyConsoleWriteW);
-    - recognise current screen attributes as current ANSI atrributes;
-    - ignore Ctrl+C and Ctrl+Break;
-    + process child programs.
-
-1.01 - 12 March, 2006:
-
-    * \e[m will restore original color, not set grey on black;
-    + -m option to set default (and initial) color;
-    - restore original color on exit;
-    - disable escape processing when console has disabled processed output;
-    + \e[5m (blink) is the same as \e[4m (underline);
-    - do not conceal control characters (0 to 31).
-
-1.00 - 23 October, 2005:
-
-    + initial release.
-
-
 ## Acknowledgments
 
 - Jean-Louis Morel, for his Perl package `Win32::Console::ANSI`.  It provided
@@ -456,12 +283,6 @@ Legend: `+` added, `-` bug-fixed, `*` changed.
 mailto:jadoxa@yahoo.com.au  
 http://ansicon.adoxa.vze.com/  
 https://github.com/adoxa/ansicon  
-
-Jason Hood  
-11 Buckle Street  
-North Rockhampton  
-Qld 4701  
-Australia  
 
 
 ## Distribution
