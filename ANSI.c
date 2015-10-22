@@ -131,6 +131,9 @@
     added more sequences;
     don't add a newline immediately after a wrap;
     restore cursor visibility on unload.
+
+  v1.71, 22 October 2015:
+    Add macro definition to wrap wcstok.
 */
 
 #include "ansicon.h"
@@ -138,6 +141,17 @@
 #include <tlhelp32.h>
 
 #define is_digit(c) ('0' <= (c) && (c) <= '9')
+
+// Wrapper for wcstok
+#ifdef _MSC_VER
+#  if _MSC_VER < 1900
+#    define WCSTOK(str, del, ptr) wcstok((str), (del))
+#  else
+#    define WCSTOK wcstok
+#  endif
+#else
+#  define WCSTOK wcstok
+#endif
 
 // ========== Global variables and constants
 
@@ -369,6 +383,7 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
   static DWORD	env_len;
   DWORD len;
   BOOL	not;
+  LPTSTR *pContext = NULL;
 
   len = GetEnvironmentVariable( var, env, env_len );
   if (len == 0)
@@ -388,7 +403,7 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
   if (not && env[1] == '\0')
     return TRUE;
 
-  for (var = wcstok( env + not, L";" ); var; var = wcstok( NULL, L";" ))
+  for (var = WCSTOK( env + not, L";", pContext); var; var = WCSTOK( NULL, L";", pContext))
     if (_wcsicmp( val, var ) == 0)
       return !not;
 
