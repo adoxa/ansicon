@@ -131,7 +131,12 @@
     added more sequences;
     don't add a newline immediately after a wrap;
     restore cursor visibility on unload.
+
+  v1.71, 23 October, 2015
+    Add _CRT_NON_CONFORMING_WCSTOK define
 */
+
+#define _CRT_NON_CONFORMING_WCSTOK
 
 #include "ansicon.h"
 #include "version.h"
