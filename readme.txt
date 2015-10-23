@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2014 Jason Hood
 
-			    Version 1.70.  Freeware
+			    Version 1.71.  Freeware
 
 
 Description
@@ -290,6 +290,9 @@ Version History
 ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.71 - 23 October, 2015:
+    + add _CRT_NON_CONFORMING_WCSTOK define
 
     1.70 - 26 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
