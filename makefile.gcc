@@ -33,6 +33,9 @@ IVER = -Wl,--major-image-version,20033,--minor-image-version,18771
 
 ifndef ARCH
 # Use the machine to distinguish between MinGW and MinGW-w64.
+ifneq (,$(findstring i686-w64,$(shell $(CC) -dumpmachine)))
+ARCH = 32
+else
 ifeq (,$(findstring 64,$(shell $(CC) -dumpmachine)))
 ARCH = 32
 else
@@ -41,6 +44,7 @@ ifeq ($(shell $(CC) -m32 -print-libgcc-file-name),$(shell $(CC) -m64 -print-libg
 ARCH = 64
 else
 ARCH = multi
+endif
 endif
 endif
 endif
