@@ -20,7 +20,8 @@
 # * tdm64-gcc-4.8.1-3;
 # * MinGW-builds x64-4.8.1-release-posix-seh-rev1.
 
-CC = gcc
+CC ?= gcc
+WINDRES ?= windres
 CFLAGS = -O2 -Wall -Wno-multichar
 
 # Identify ansicon.exe using "ANSI" as a version number.
@@ -32,11 +33,11 @@ IVER = -Wl,--major-image-version,20033,--minor-image-version,18771
 
 ifndef ARCH
 # Use the machine to distinguish between MinGW and MinGW-w64.
-ifeq (,$(findstring 64,$(shell gcc -dumpmachine)))
+ifeq (,$(findstring 64,$(shell $(CC) -dumpmachine)))
 ARCH = 32
 else
 # It's 64-bit, if it's multi the lib name will be different.
-ifeq ($(shell gcc -m32 -print-libgcc-file-name),$(shell gcc -m64 -print-libgcc-file-name))
+ifeq ($(shell $(CC) -m32 -print-libgcc-file-name),$(shell $(CC) -m64 -print-libgcc-file-name))
 ARCH = 64
 else
 ARCH = multi
@@ -67,13 +68,13 @@ x86/%.o: %.c ansicon.h
 	$(CCmsg)$(CC) -m32 -c $(CFLAGS) $< -o $@
 
 x86/%v.o: %.rc version.h
-	$(RCmsg)windres -U _WIN64 -F pe-i386 $< $@
+	$(RCmsg)$(WINDRES) -U _WIN64 -F pe-i386 $< $@
 
 x64/%.o: %.c ansicon.h
 	$(CCmsg)$(CC) -m64 -g -c $(CFLAGS) $< -o $@
 
 x64/%v.o: %.rc version.h
-	$(RCmsg)windres -F pe-x86-64 $< $@
+	$(RCmsg)$(WINDRES) -F pe-x86-64 $< $@
 
 x64/%32.o: %.c
 	$(CCmsg)$(CC) -m32 -DW32ON64 $(CFLAGS) $< -c -o $@
@@ -90,7 +91,7 @@ ansicon32: x86 x86/ansicon.exe x86/ANSI32.dll x64 x64/ANSI32.dll
 ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll
 
 x86:
-	cmd /c "mkdir x86"
+	mkdir x86
 
 x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/procrva.o x86/ansiconv.o
 	$(LDmsg)$(CC) -m32 $+ -s -o $@ $(IVER)
@@ -99,7 +100,7 @@ x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
 	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
 
 x64:
-	cmd /c "mkdir x64"
+	mkdir x64
 
 x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
 	$(LDmsg)$(CC) -m64 $+ -s -o $@ $(IVER)
@@ -121,5 +122,10 @@ x64/util.o:	version.h
 # Need two commands, because if the directory doesn't exist, it won't delete
 # anything at all.
 clean:
+ifneq ($(wildcard $(SHELL)),)
+	-rm -f x86/*.o 2>/dev/null
+	-rm -f x64/*.o 2>/dev/null
+else
 	-cmd /c "del x86\*.o 2>nul"
 	-cmd /c "del x64\*.o 2>nul"
+endif
