@@ -43,10 +43,10 @@ DWORD GetProcRVA( LPCTSTR module, LPCSTR func )
   if (hMod == NULL)
   {
 #ifdef _WIN64
-    DEBUGSTR( 1, L"Unable to load %d-bit %s (%lu)!",
+    DEBUGSTR( 1, "Unable to load %u-bit %S (%u)!",
 		 bits, module, GetLastError() );
 #else
-    DEBUGSTR( 1, L"Unable to load %s (%lu)!", module, GetLastError() );
+    DEBUGSTR( 1, "Unable to load %S (%u)!", module, GetLastError() );
 #endif
     return 0;
   }
@@ -70,9 +70,9 @@ DWORD GetProcRVA( LPCTSTR module, LPCSTR func )
   if (pFunc == NULL)
   {
 #ifdef _WIN64
-    DEBUGSTR( 1, L"Could not find %d-bit %s!", bits, func );
+    DEBUGSTR( 1, "Could not find %u-bit %s!", bits, func );
 #else
-    DEBUGSTR( 1, L"Could not find %s!", func );
+    DEBUGSTR( 1, "Could not find %s!", func );
 #endif
     rva = 0;
   }

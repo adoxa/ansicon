@@ -5,8 +5,8 @@ provides much the same functionality as `ANSI.SYS` does for MS-DOS.
 
 ## Requirements
 
-* 32-bit: Windows 2000 Professional or later (it won't work with NT or 9X).
-* 64-bit: Vista or later (it won't work with XP64).
+* 32-bit: Windows 2000 Professional and later (it won't work with NT or 9X).
+* 64-bit: AMD64 (it won't work with IA64).
 
 ## Installation
 
@@ -111,15 +111,17 @@ Using `ansicon` after install will always start with the default attributes,
 restoring the originals on exit; all other programs will use the current
 attributes.  The shift state is always reset for a new process.
 
-The Windows API `WriteFile` and `WriteConsoleA` functions will set the number of
-characters written, not the number of bytes.  When using a multibyte character
-set, this results in a smaller number (since multiple bytes are used to
-represent a single character).  Some programs recognise this as a reduced write
-and will inadvertently repeat previous characters.  If you discover such a
-program, use the `ANSICON_API` environment variable to record it and override
-the API, returning the original byte count.  Ruby (prior to 1.9.3) is an example
-of such a program, so use `set ANSICON_API=ruby` to avoid the repitition.  The
-full syntax is:
+My version of `WriteConsoleA` will always set the number of characters written,
+not the number of bytes.  This means writing a double-byte character as two
+bytes will set 0 the first write (nothing was written) and 1 the second (when
+the character was actually written); Windows normally sets 1 for both writes.
+Similarly, writing the individual bytes of a multibyte character will set 0 for
+all but the last byte, then 1 on the last; Windows normally sets 1 for each
+byte, writing the undefined character.  However, my `WriteFile` (and
+`_lwrite`/`_hwrite`) will always set what was received; Windows, using a
+multibyte character set (but not DBCS), would set the characters.  You can have
+`WriteConsoleA` return the original byte count by using the `ANSICON_API`
+environment variable:
 
     ANSICON_API=[!]program;program;program...
 
@@ -127,14 +129,16 @@ PROGRAM is the name of the program, with no path and extension.  The leading
 exclamation inverts the usage, meaning the API will always be overridden, unless
 the program is in the list.  The variable can be made permanent by going to
 _System Properties_, selecting the _Advanced_ tab (with Vista onwards, this can
-be done by running _"SystemPropertiesAdvanced"_) and clicking _Environment
+be done by running `SystemPropertiesAdvanced`) and clicking _Environment
 Variables_.
 
 
 ## Limitations
 
-- The entire console buffer is used, not just the visible window.
-- There's a conflict with NVIDIA's drivers, requiring the setting of the
+- Line sequences use the window; column sequences use the buffer.
+- An application using multiple screen buffers will not have separate
+  attributes in each buffer.
+- There may be a conflict with NVIDIA's drivers, requiring the setting of the
   Environment Variable:
 
         ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
@@ -146,38 +150,46 @@ Variables_.
 
 The following escape sequences are recognised.
 
-    \e]0;titleBEL   Set (xterm) window's title (and icon)
-    \e[21t          Report (xterm) window's title
-    \e[s            Save Cursor
-    \e[u            Restore Cursor
-    \e[#G           CHA Cursor Character Absolute
-    \e[#E           CNL Cursor Next Line
-    \e[#F           CPL Cursor Preceding Line
-    \e[#D           CUB Cursor Left
-    \e[#B           CUD Cursor Down
-    \e[#C           CUF Cursor Right
-    \e[#;#H         CUP Cursor Position
-    \e[#A           CUU Cursor Up
-    \e[#P           DCH Delete Character
+    \e]0;titleBEL           xterm: Set window's title (and icon, ignored)
+    \e]2;titleBEL           xterm: Set window's title
+    \e[21t                  xterm: Report window's title
+    \e[s                    ANSI.SYS: Save Cursor Position
+    \e[u                    ANSI.SYS: Restore Cursor Position
+    \e[#Z           CBT     Cursor Backward Tabulation
+    \e[#G           CHA     Cursor Character Absolute
+    \e[#I           CHT     Cursor Forward Tabulation
+    \e[#E           CNL     Cursor Next Line
+    \e[#F           CPL     Cursor Preceding Line
+    \e[3h           CRM     Control Representation Mode (display controls)
+    \e[3l           CRM     Control Representation Mode (perform controls)
+    \e[#D           CUB     Cursor Left
+    \e[#B           CUD     Cursor Down
+    \e[#C           CUF     Cursor Right
+    \e[#;#H         CUP     Cursor Position
+    \e[#A           CUU     Cursor Up
+    \e[#P           DCH     Delete Character
+    \e[?7h          DECAWM  DEC Autowrap Mode (autowrap)
+    \e[?7l          DECAWM  DEC Autowrap Mode (no autowrap)
     \e[?25h         DECTCEM DEC Text Cursor Enable Mode (show cursor)
     \e[?25l         DECTCEM DEC Text Cursor Enable Mode (hide cursor)
-    \e[#M           DL  Delete Line
-    \e[#n           DSR Device Status Report
-    \e[#X           ECH Erase Character
-    \e[#J           ED  Erase In Page
-    \e[#K           EL  Erase In Line
-    \e[#`           HPA Character Position Absolute
-    \e[#j           HPB Character Position Backward
-    \e[#a           HPR Character Position Forward
-    \e[#;#f         HVP Character And Line Position
-    \e[#@           ICH Insert Character
-    \e[#L           IL  Insert Line
-    SI              LS0 Locking-shift Zero (see below)
-    SO              LS1 Locking-shift One
-    \e[#;#;#m       SGR Select Graphic Rendition
-    \e[#d           VPA Line Position Absolute
-    \e[#k           VPB Line Position Backward
-    \e[#e           VPR Line Position Forward
+    \e[#M           DL      Delete Line
+    \e[#n           DSR     Device Status Report
+    \e[#X           ECH     Erase Character
+    \e[#J           ED      Erase In Page
+    \e[#K           EL      Erase In Line
+    \e[#`           HPA     Character Position Absolute
+    \e[#j           HPB     Character Position Backward
+    \e[#a           HPR     Character Position Forward
+    \e[#;#f         HVP     Character And Line Position
+    \e[#@           ICH     Insert Character
+    \e[#L           IL      Insert Line
+    SI              LS0     Locking-shift Zero (see below)
+    SO              LS1     Locking-shift One
+    \e[#b           REP     Repeat
+    \e[#;#;#m       SGR     Select Graphic Rendition
+    \e[#d           VPA     Line Position Absolute
+    \e[#k           VPB     Line Position Backward
+    \e[#e           VPR     Line Position Forward
 
 - `\e` represents the escape character (ASCII 27).
 - `#` represents a decimal number (optional, in most cases defaulting to 1).
@@ -192,6 +204,12 @@ the former will also restore the original bold and underline attributes, whilst
 the latter will explicitly reset them.  The environment variable `ANSICON_DEF`
 can be used to change the default colors (same value as `-m`; setting the
 variable does not change the current colors).
+
+The first time a program clears the screen (`\e[2J`) will actually scroll in a
+new window (assuming the buffer is bigger than the window, of course).
+Subsequent clears will then blank the window.  However, if the window has
+scrolled, or the cursor is on the last line of the buffer, it will again scroll
+in a new window.
 
 
 ### Ignored Sequences
@@ -214,7 +232,7 @@ http://vt100.net/docs/vt220-rm/table2-4.html.
 
     Char    Unicode Code Point & Name
     ----    -------------------------
-    _       U+0020  Space (blank)
+    _       U+00A0  No-Break Space (blank)
     `       U+2666  Black Diamond Suit
     a       U+2592  Medium Shade
     b       U+2409  Symbol For Horizontal Tabulation
@@ -299,4 +317,4 @@ In particular, the supplied binaries are freely redistributable.
 A formal license (zlib) is available in `LICENSE.txt`.
 
 ---
-Copyright 2005-2014 Jason Hood
+Copyright 2005-2015 Jason Hood

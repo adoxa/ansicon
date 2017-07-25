@@ -35,6 +35,7 @@
 // Macro for adding pointers/DWORDs together without C arithmetic interfering
 #define MakeVA( cast, offset ) (cast)((DWORD_PTR)pDosHeader + (DWORD)(offset))
 
+#define DATADIRS  OptionalHeader.NumberOfRvaAndSizes
 #define EXPORTDIR OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]
 #define IMPORTDIR OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]
 #define BOUNDDIR  OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT]
@@ -61,6 +62,7 @@ DWORD  GetProcRVA( LPCTSTR, LPCSTR, int );
 DWORD  GetProcRVA( LPCTSTR, LPCSTR );
 #endif
 
+extern HANDLE hHeap;
 
 extern TCHAR  prog_path[MAX_PATH];
 extern LPTSTR prog;
@@ -74,6 +76,6 @@ extern char*  ansi_bits;
 void   set_ansi_dll( void );
 
 extern int log_level;
-void   DEBUGSTR( int level, LPTSTR szFormat, ... );
+void   DEBUGSTR( int level, LPCSTR szFormat, ... );
 
 #endif

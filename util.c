@@ -74,99 +74,316 @@ void set_ansi_dll( void )
 }
 
 
-void DEBUGSTR( int level, LPTSTR szFormat, ... )
+static LPSTR buf;
+static DWORD buf_len;
+static BOOL  quote, alt;
+
+static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 {
-  static char  tempfile[MAX_PATH];
-  static DWORD pid;
-
-  TCHAR   szBuffer[1024], szEscape[1024];
-  va_list pArgList;
-  HANDLE  mutex;
-  DWORD   wait;
-  FILE*   file;
-
-  if ((log_level & 3) < level && !(level & 4 & log_level))
-    return;
-
-  if (*tempfile == '\0')
+  static UINT  cp;
+  static DWORD flags;
+  static BOOL  def, *pDef, start_trail;
+  union
   {
-    _snprintf( tempfile, MAX_PATH, "%s\\ansicon.log", getenv( "TEMP" ) );
-    pid = GetCurrentProcessId();
+    LPSTR  a;
+    LPWSTR w;
+  } src;
+  int  ch;
+  BOOL trail;
+
+  src.a = (LPSTR)str;
+  if (len == 0 && str != 0)
+    len = (DWORD)(wide ? wcslen( src.w ) : strlen( src.a ));
+
+  if (pos + len * 6 + 8 >= buf_len)
+  {
+    LPVOID tmp = HeapReAlloc( hHeap, 0, buf, buf_len + len * 6 + 8 );
+    if (tmp == NULL)
+      return 0;
+    buf = tmp;
+    buf_len = (DWORD)HeapSize( hHeap, 0, buf );
   }
-  if (szFormat == NULL)
+
+  if (len == 0)
   {
-    // Explicitly use 't', as _fmode might be binary.
-    file = fopen( tempfile, (log_level & 8) ? "at" : "wt" );
-    if (file != NULL)
+    if (str == 0)
+      pos += wsprintfA( buf + pos, "<null>" );
+    else if (quote)
     {
-      SYSTEMTIME now;
-      GetLocalTime( &now );
-      fseek( file, 0, SEEK_END );
-      if (ftell( file ) != 0)
-	putc( '\n', file );
-      fprintf( file, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d) started "
-		      "%d-%.2d-%.2d %d:%.2d:%.2d\n",
-		     log_level,
-		     now.wYear, now.wMonth, now.wDay,
-		     now.wHour, now.wMinute, now.wSecond );
-      fclose( file );
+      buf[pos++] = '"';
+      buf[pos++] = '"';
     }
-    return;
+    else if (alt)
+      pos += wsprintfA( buf + pos, "<empty>" );
+    return pos;
   }
 
-  va_start( pArgList, szFormat );
-  _vsnwprintf( szBuffer, lenof(szBuffer), szFormat, pArgList );
-  va_end( pArgList );
-
-  szFormat = szBuffer;
-  if (*szFormat == '\33')
+  if (cp != GetConsoleOutputCP())
   {
-    BOOL first = TRUE;
-    LPTSTR pos = szEscape;
-    while (*++szFormat != '\0' && pos < szEscape + lenof(szEscape) - 4)
+    cp = GetConsoleOutputCP();
+    if (wide)
     {
-      if (*szFormat < 32)
+      wchar_t und = L'\xFFFF';
+      flags = WC_NO_BEST_FIT_CHARS;
+      pDef = &def;
+      // Some code pages don't support the default character.
+      if (!WideCharToMultiByte( cp, flags, &und, 1, buf + pos, 12, NULL, pDef ))
       {
-	*pos++ = '\\';
-	switch (*szFormat)
+	flags = 0;
+	pDef = NULL;
+	def = FALSE;
+      }
+    }
+  }
+
+  if (quote)
+    buf[pos++] = '"';
+
+  trail = FALSE;
+  while (len-- != 0)
+  {
+    if (wide)
+      ch = *src.w++;
+    else
+      ch = (BYTE)*src.a++;
+
+    if (ch < 32 || (quote && start_trail))
+    {
+      start_trail = FALSE;
+      if (quote)
+      {
+	buf[pos++] = '\\';
+	switch (ch)
 	{
-	  case '\a': *pos++ = 'a'; break;
-	  case '\b': *pos++ = 'b'; break;
-	  case '\t': *pos++ = 't'; break;
-	  case '\r': *pos++ = 'r'; break;
-	  case '\n': *pos++ = 'n'; break;
-	  case	27 : *pos++ = 'e'; break;
+	  case '\0': buf[pos++] = '0'; break;
+	  case '\a': buf[pos++] = 'a'; break;
+	  case '\b': buf[pos++] = 'b'; break;
+	  case '\t': buf[pos++] = 't'; break;
+	  case '\n': buf[pos++] = 'n'; break;
+	  case '\v': buf[pos++] = 'v'; break;
+	  case '\f': buf[pos++] = 'f'; break;
+	  case '\r': buf[pos++] = 'r'; break;
+	  case	27 : buf[pos++] = 'e'; break;
 	  default:
-	    pos += _snwprintf( pos, 32, L"%.*o",
-			     (szFormat[1] >= '0' && szFormat[1] <= '7') ? 3 : 1,
-			     *szFormat );
+	    pos += wsprintfA( buf + pos, "x%.2X", ch );
 	}
       }
       else
       {
-	if (*szFormat == '"')
-	{
-	  if (first)
-	    first = FALSE;
-	  else if (szFormat[1] != '\0')
-	    *pos++ = '\\';
-	}
-	*pos++ = *szFormat;
+	buf[pos++] = '^';
+	buf[pos++] = ch + '@';
       }
     }
-    *pos = '\0';
-    szFormat = szEscape;
+    else if (quote && ch == '"')
+    {
+      buf[pos++] = '\\';
+      buf[pos++] = ch;
+    }
+    else if (!wide)
+    {
+      if (quote && (cp == 932 || cp == 936 || cp == 949 || cp == 950))
+      {
+	if (trail)
+	  trail = FALSE;
+	else if (IsDBCSLeadByteEx( cp, (char)ch ))
+	{
+	  if (len == 0)
+	    start_trail = TRUE;
+	  else
+	    trail = TRUE;
+	}
+      }
+      if (quote && start_trail)
+	pos += wsprintfA( buf + pos, "\\x%.2X", ch );
+      else
+	buf[pos++] = ch;
+    }
+    else
+    {
+      int mb = WideCharToMultiByte( cp, flags, src.w - 1, 1, buf + pos, 12,
+				    NULL, pDef );
+      if (def)
+	mb = wsprintfA( buf + pos, ch < 0x100 ? "%cx%.2X" : "%cu%.4X",
+			(quote) ? '\\' : '^', ch );
+      pos += mb;
+    }
   }
 
-  mutex = CreateMutex( NULL, FALSE, L"ANSICON_debug_file" );
-  wait	= WaitForSingleObject( mutex, 500 );
-  file	= fopen( tempfile, "at" );
-  if (file != NULL)
+  if (quote)
+    buf[pos++] = '"';
+
+  return pos;
+}
+
+void DEBUGSTR( int level, LPCSTR szFormat, ... )
+{
+  static int	prefix_len;
+  static HANDLE mutex;
+  static DWORD	size;
+
+  WCHAR     temp[MAX_PATH];
+  HANDLE    file;
+  va_list   pArgList;
+  DWORD     len, slen, written;
+  DWORD_PTR num;
+
+  if ((log_level & 3) < level && !(level & 4 & log_level))
+    return;
+
+  if (mutex == NULL)
   {
-    fwprintf( file, L"%s (%lu): %s\n", prog, pid, szFormat );
-    fclose( file );
+    mutex = CreateMutex( NULL, FALSE, L"ANSICON_debug_file" );
+    if (mutex == NULL)
+    {
+      file = INVALID_HANDLE_VALUE;
+      return;
+    }
+    buf = HeapAlloc( hHeap, 0, 2048 );
+    buf_len = (DWORD)HeapSize( hHeap, 0, buf );
+    prefix_len = wsprintfA( buf, "%S (%lu): ", prog, GetCurrentProcessId() );
   }
-  if (wait == WAIT_OBJECT_0)
+  if (WaitForSingleObject( mutex, 500 ) == WAIT_TIMEOUT)
+    return;
+
+  ExpandEnvironmentStrings( L"%TEMP%\\ansicon.log", temp, lenof(temp) );
+  file = CreateFile( temp, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+		     (szFormat != NULL || (log_level & 8)) ? OPEN_ALWAYS
+							   : CREATE_ALWAYS,
+		     0, NULL );
+  if (file == INVALID_HANDLE_VALUE)
+  {
     ReleaseMutex( mutex );
-  CloseHandle( mutex );
+    CloseHandle( mutex );
+    return;
+  }
+
+  len = SetFilePointer( file, 0, NULL, FILE_END );
+  if (len == 0 || szFormat == NULL)
+  {
+    char buf[128];
+    SYSTEMTIME now;
+
+    size = 0;
+
+    if (len != 0)
+    {
+      memset( buf + 2, '=', 72 );
+      buf[0] = buf[74] = buf[76] = '\r';
+      buf[1] = buf[75] = buf[77] = '\n';
+      WriteFile( file, buf, 78, &written, NULL );
+    }
+
+    GetLocalTime( &now );
+    len = wsprintfA( buf, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d)"
+			  " started %d-%.2d-%.2d %d:%.2d:%.2d\r\n",
+			  log_level,
+			  now.wYear, now.wMonth, now.wDay,
+			  now.wHour, now.wMinute, now.wSecond );
+    WriteFile( file, buf, len, &written, NULL );
+    if (szFormat == NULL)
+    {
+      CloseHandle( file );
+      ReleaseMutex( mutex );
+      return;
+    }
+  }
+  if (len != size)
+    WriteFile( file, "\r\n", 2, &written, NULL );
+
+  va_start( pArgList, szFormat );
+
+  // Customized printf, mainly to handle wide-character strings the way I want.
+  // It only supports:
+  //   %u   unsigned 32-bit decimal
+  //   %X   unsigned 32-bit upper case hexadecimal
+  //   %p   native pointer
+  //   %q   native pointer, display as 32 bits
+  //   %P   32-bit pointer, display as 64 bits
+  //   %s   null-terminated byte characters
+  //   %S   null-terminated wide characters
+  //
+  // s & S may be prefixed with (in this order):
+  //   "    quote the string, using C-style escapes and <null> for NULL
+  //   #    use <null> for NULL and <empty> for ""
+  //   <    length of the string is the previous %u
+  //   *    length of the string is the parameter before the string
+  //
+  // Wide strings are converted according to the current code page; if a
+  // character could not be translated, hex is used.
+  //
+  // C-style escapes are the standard backslash sequences, plus '\e' for ESC,
+  // with '\x' used for two hex digits and '\u' for four.  Otherwise, caret
+  // notation is used to represent controls, with '^x'/'^u' for hex.
+
+  num = 0;
+  len = prefix_len;
+  while (*szFormat != '\0')
+  {
+    if (*szFormat != '%')
+      buf[len++] = *szFormat++;
+    else
+    {
+      quote = alt = FALSE;
+      ++szFormat;
+      if (*szFormat == '"')
+      {
+	quote = TRUE;
+	++szFormat;
+      }
+      if (*szFormat == '#')
+      {
+	alt = TRUE;
+	++szFormat;
+      }
+      slen = 0;
+      if (*szFormat == '<')
+      {
+	slen = (DWORD)num;
+	++szFormat;
+      }
+      if (*szFormat == '*')
+      {
+	slen = va_arg( pArgList, DWORD );
+	++szFormat;
+      }
+      num = va_arg( pArgList, DWORD_PTR );
+      switch (*szFormat++)
+      {
+	case 'u': len += wsprintfA( buf + len, "%u", (DWORD)num ); break;
+	case 'X': len += wsprintfA( buf + len, "%X", (DWORD)num ); break;
+	case 'p':
+#ifdef _WIN64
+	  len += wsprintfA( buf + len, "%.8X_%.8X",
+				       (DWORD)(num >> 32), (DWORD)num );
+	  break;
+#endif
+	case 'q': len += wsprintfA( buf + len, "%.8X", (DWORD)num ); break;
+	case 'P': len += wsprintfA( buf + len, "00000000_%.8X", (DWORD)num ); break;
+	case 's': len = str_format( len, FALSE, num, slen ); break;
+	case 'S': len = str_format( len, TRUE, num, slen ); break;
+	default:
+	  buf[len++] = '%';
+	  if (szFormat[-1] == '\0')
+	    --szFormat;
+	  else
+	    buf[len++] = szFormat[-1];
+      }
+      if (len >= buf_len - 20)
+      {
+	LPVOID tmp = HeapReAlloc( hHeap, 0, buf, buf_len + 128 );
+	if (tmp == NULL)
+	  break;
+	buf = tmp;
+	buf_len = (DWORD)HeapSize( hHeap, 0, buf );
+      }
+    }
+  }
+  buf[len++] = '\r';
+  buf[len++] = '\n';
+
+  WriteFile( file, buf, len, &written, NULL );
+
+  size = GetFileSize( file, NULL );
+  CloseHandle( file );
+  ReleaseMutex( mutex );
 }

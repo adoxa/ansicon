@@ -87,7 +87,7 @@
 	 add error codes to some message.
 */
 
-#define PDATE L"26 February, 2014"
+#define PDATE L"24 December, 2015"
 
 #include "ansicon.h"
 #include "version.h"
@@ -169,6 +169,7 @@ int my_fputws( const wchar_t* s, FILE* f )
 #define _putws( s ) my_fputws( s L"\n", stdout )
 
 
+HANDLE hHeap;
 #if defined(_WIN64)
 LPTSTR DllNameType;
 #endif
@@ -183,7 +184,7 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
 #ifdef _WIN64
   if (app != NULL)
 #endif
-  DEBUGSTR( 1, L"%s (%lu)", app, ppi->dwProcessId );
+  DEBUGSTR( 1, "%S (%u)", app, ppi->dwProcessId );
   type = ProcessType( ppi, &base, gui );
   if (type <= 0)
   {
@@ -230,7 +231,7 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
   int	 type;
 #endif
 
-  DEBUGSTR( 1, L"%s (%lu)", app, ppi->dwProcessId );
+  DEBUGSTR( 1, "%S (%u)", app, ppi->dwProcessId );
 
   // Find the base address of kernel32.dll.
   ticks = GetTickCount();
@@ -242,7 +243,7 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
 #ifndef _WIN64
     if (err == ERROR_PARTIAL_COPY)
     {
-      DEBUGSTR( 1, L"  Ignoring 64-bit process (use x64\\ansicon)" );
+      DEBUGSTR( 1, "  Ignoring 64-bit process (use x64\\ansicon)" );
       fputws( L"ANSICON: parent is 64-bit (use x64\\ansicon).\n", stderr );
       return;
     }
@@ -251,10 +252,10 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
     // two seconds to avoid a potentially infinite loop.
     if (err == ERROR_BAD_LENGTH && GetTickCount() - ticks < 2000)
     {
-      Sleep( 0 );
+      Sleep( 1 );
       continue;
     }
-    DEBUGSTR( 1, L"  Unable to create snapshot (%lu)", err );
+    DEBUGSTR( 1, "  Unable to create snapshot (%u)", err );
   no_go:
     fputws( L"ANSICON: unable to inject into parent.\n", stderr );
     return;
@@ -272,7 +273,7 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
   CloseHandle( hSnap );
   if (LLW == NULL)
   {
-    DEBUGSTR( 1, L"  Unable to locate kernel32.dll (%lu)", GetLastError() );
+    DEBUGSTR( 1, "  Unable to locate kernel32.dll" );
     goto no_go;
   }
 
@@ -292,7 +293,7 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
   mem = VirtualAllocEx( ppi->hProcess, NULL, len, MEM_COMMIT, PAGE_READWRITE );
   if (mem == NULL)
   {
-    DEBUGSTR( 1, L"  Unable to allocate virtual memory (%lu)", GetLastError() );
+    DEBUGSTR(1, "  Failed to allocate virtual memory (%u)", GetLastError());
     goto no_go;
   }
   WriteProcMem( mem, DllName, TSIZE(len + 11) );
@@ -357,6 +358,8 @@ int main( void )
     }
   }
 
+  hHeap = HeapCreate( 0, 0, 65 * 1024 );
+
   prog = get_program_name( NULL );
   *buf = '\0';
   GetEnvironmentVariable( L"ANSICON_LOG", buf, lenof(buf) );
@@ -369,7 +372,7 @@ int main( void )
     pi.hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId );
     if (pi.hProcess == NULL)
     {
-      DEBUGSTR( 1, L"  Unable to open process %lu (%lu)",
+      DEBUGSTR( 1, "  Unable to open process %u (%u)",
 		   pi.dwProcessId, GetLastError() );
     }
     else
@@ -738,7 +741,7 @@ BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR name )
   hSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0 );
   if (hSnap == INVALID_HANDLE_VALUE)
   {
-    DEBUGSTR( 1, L"Failed to create snapshot (%lu)", GetLastError() );
+    DEBUGSTR( 1, "Failed to create snapshot (%u)", GetLastError() );
     return FALSE;
   }
 
@@ -747,7 +750,7 @@ BOOL GetParentProcessInfo( LPPROCESS_INFORMATION ppi, LPTSTR name )
   CloseHandle( hSnap );
   if (!fOk)
   {
-    DEBUGSTR( 1, L"Failed to locate parent" );
+    DEBUGSTR( 1, "Failed to locate parent" );
     return FALSE;
   }
 

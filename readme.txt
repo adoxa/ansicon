@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2014 Jason Hood
+			 Copyright 2005-2015 Jason Hood
 
-			    Version 1.71.  Freeware
+			    Version 1.72.  Freeware
 
 
 Description
@@ -110,9 +110,10 @@ Usage
     The variable is updated whenever a program reads it directly (i.e. as an
     individual request, not as part of the entire environment block).  For
     example, 'set an' will not update it, but 'echo %ansicon%' will.  Also
-    created is ANSICON_VER, which contains the version without the point (1.50
-    becomes "150").  This variable does not exist as part of the environment
-    block ('set an' will not show it).
+    created are ANSICON_VER, which contains the version without the point (1.50
+    becomes "150"), and CLICOLOR (see http://bixense.com/clicolors/), which
+    contains "1".  These variables do not exist as part of the environment
+    block (e.g. 'set an' will not show ANSICON_VER).
 
     If installed, GUI programs will not be hooked.  Either start the program
     directly with 'ansicon', or add it to the ANSICON_GUI variable (see
@@ -122,15 +123,17 @@ Usage
     utes, restoring the originals on exit; all other programs will use the cur-
     rent attributes.  The shift state is always reset for a new process.
 
-    The Windows API WriteFile and WriteConsoleA functions will set the number
-    of characters written, not the number of bytes.  When using a multibyte
-    character set, this results in a smaller number (since multiple bytes are
-    used to represent a single character).  Some programs recognise this as a
-    reduced write and will inadvertently repeat previous characters.  If you
-    discover such a program, use the ANSICON_API environment variable to record
-    it and override the API, returning the original byte count.  Ruby (prior to
-    1.9.3) is an example of such a program, so use 'set ANSICON_API=ruby' to
-    avoid the repitition.  The full syntax is:
+    My version of WriteConsoleA will always set the number of characters writt-
+    en, not the number of bytes.  This means writing a double-byte character as
+    two bytes will set 0 the first write (nothing was written) and 1 the second
+    (when the character was actually written); Windows normally sets 1 for both
+    writes.  Similarly, writing the individual bytes of a multibyte character
+    will set 0 for all but the last byte, then 1 on the last; Windows normally
+    sets 1 for each byte, writing the undefined character.  However, my
+    WriteFile (and _lwrite/_hwrite) will always set what was received; Windows,
+    using a multibyte character set (but not DBCS), would set the characters.
+    You can have WriteConsoleA return the original byte count by using the
+    ANSICON_API environment variable:
 
 	ANSICON_API=[!]program;program;program...
 
@@ -277,7 +280,7 @@ Limitations
     Line sequences use the window; column sequences use the buffer.
     Tabs are fixed at eight columns.
 
-    There's a conflict with NVIDIA's drivers, requiring the setting of the
+    There may be a conflict with NVIDIA's drivers, requiring the setting of the
     Environment Variable:
 
 	ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
@@ -291,8 +294,24 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.72 - 24 December, 2015:
+    - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
+    - better handling of unusual PE files;
+    * cache GetConsoleMode for an improvement in speed;
+    * files writing to the console always succeed (should mostly remove the
+       need for ANSICON_API);
+    * log: add a blank line between processes;
+	   remove the separate line for WriteFile & _lwrite;
+	   write byte strings as-is, wide strings using the current code page;
+	   use caret notation for control characters, with hexadecimal "^xNN"
+	    and "^uNNNN" for characters not in the code page (custom printf);
+    * join multibyte characters split across separate writes;
+    * remove wcstok, avoiding potential interference with the host program;
+    * similarly, remove malloc & friends, using a private heap;
+    + add CLICOLOR dynamic environment variable.
+
     1.71 - 23 October, 2015:
-    + add _CRT_NON_CONFORMING_WCSTOK define
+    + add _CRT_NON_CONFORMING_WCSTOK define for VS2015.
 
     1.70 - 26 February, 2014:
     - don't hook again if using LoadLibrary or LoadLibraryEx;
@@ -501,4 +520,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 26 February, 2014.
+Jason Hood, 24 December, 2015.

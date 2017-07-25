@@ -38,11 +38,35 @@ static PVOID FindMem( HANDLE hProcess, PBYTE base, DWORD len )
 }
 
 
+// Count the imports directly (including the terminator), since the size of the
+// import directory is not necessarily correct (Windows doesn't use it at all).
+static DWORD sizeof_imports( LPPROCESS_INFORMATION ppi,
+			     PBYTE pBase, DWORD rImports )
+{
+  IMAGE_IMPORT_DESCRIPTOR  import;
+  PIMAGE_IMPORT_DESCRIPTOR pImports;
+  DWORD cnt;
+
+  if (rImports == 0)
+    return 0;
+
+  pImports = (PIMAGE_IMPORT_DESCRIPTOR)(pBase + rImports);
+  cnt = 0;
+  do
+  {
+    ++cnt;
+    ReadProcVar( pImports++, &import );
+  } while (import.Name != 0);
+
+  return cnt * sizeof(import);
+}
+
+
 void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
 {
   DWORD rva;
   PVOID pMem;
-  DWORD len;
+  DWORD len, import_size;
   DWORD pr;
   IMAGE_DOS_HEADER	   DosHeader;
   IMAGE_NT_HEADERS	   NTHeader, *pNTHeader;
@@ -59,18 +83,19 @@ void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   pNTHeader = (PIMAGE_NT_HEADERS)(pBase + DosHeader.e_lfanew);
   ReadProcVar( pNTHeader, &NTHeader );
 
-  len = 4 * PTRSZ + ansi_len + sizeof(*pImports) + NTHeader.IMPORTDIR.Size;
-  pImports = malloc( len );
+  import_size = sizeof_imports( ppi, pBase, NTHeader.IMPORTDIR.VirtualAddress );
+  len = 2 * PTRSZ + ansi_len + sizeof(*pImports) + import_size;
+  pImports = HeapAlloc( hHeap, 0, len );
   if (pImports == NULL)
   {
-    DEBUGSTR( 1, L"  Failed to allocate memory." );
+    DEBUGSTR( 1, "  Failed to allocate memory" );
     return;
   }
   pMem = FindMem( ppi->hProcess, pBase, len );
   if (pMem == NULL)
   {
-    DEBUGSTR( 1, L"  Failed to allocate virtual memory." );
-    free( pImports );
+    DEBUGSTR( 1, "  Failed to allocate virtual memory (%u)", GetLastError() );
+    HeapFree( hHeap, 0, pImports );
     return;
   }
   rva = (DWORD)((PBYTE)pMem - pBase);
@@ -78,37 +103,39 @@ void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   ip.pL = (PLONG_PTR)pImports;
   *ip.pL++ = IMAGE_ORDINAL_FLAG + 1;
   *ip.pL++ = 0;
-  *ip.pL++ = IMAGE_ORDINAL_FLAG + 1;
-  *ip.pL++ = 0;
   memcpy( ip.pB, ansi_dll, ansi_len );
   ip.pB += ansi_len;
-  ip.pI->OriginalFirstThunk = rva + 2 * PTRSZ;
+  ip.pI->OriginalFirstThunk = 0;
   ip.pI->TimeDateStamp = 0;
   ip.pI->ForwarderChain = 0;
-  ip.pI->Name = rva + 4 * PTRSZ;
+  ip.pI->Name = rva + 2 * PTRSZ;
   ip.pI->FirstThunk = rva;
-  ReadProcMem( pBase + NTHeader.IMPORTDIR.VirtualAddress,
-	       ip.pI + 1, NTHeader.IMPORTDIR.Size );
+  ReadProcMem( pBase+NTHeader.IMPORTDIR.VirtualAddress, ip.pI+1, import_size );
   WriteProcMem( pMem, pImports, len );
-  free( pImports );
+  HeapFree( hHeap, 0, pImports );
 
   // If there's no IAT, copy the original IDT (to allow writable ".idata").
-  if (NTHeader.IATDIR.VirtualAddress == 0)
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_IAT &&
+      NTHeader.IATDIR.VirtualAddress == 0)
     NTHeader.IATDIR = NTHeader.IMPORTDIR;
 
-  NTHeader.IMPORTDIR.VirtualAddress = rva + 4 * PTRSZ + ansi_len;
-  NTHeader.IMPORTDIR.Size += sizeof(*pImports);
+  NTHeader.IMPORTDIR.VirtualAddress = rva + 2 * PTRSZ + ansi_len;
+  //NTHeader.IMPORTDIR.Size += sizeof(*pImports);
 
   // Remove bound imports, so the updated import table is used.
-  NTHeader.BOUNDDIR.VirtualAddress = 0;
-  NTHeader.BOUNDDIR.Size = 0;
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT)
+  {
+    NTHeader.BOUNDDIR.VirtualAddress = 0;
+    //NTHeader.BOUNDDIR.Size = 0;
+  }
 
   VirtProtVar( pNTHeader, PAGE_READWRITE );
   WriteProcVar( pNTHeader, &NTHeader );
   VirtProtVar( pNTHeader, pr );
 
   // Remove the IL-only flag on a managed process.
-  if (NTHeader.COMDIR.VirtualAddress != 0 && NTHeader.COMDIR.Size != 0)
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR &&
+      NTHeader.COMDIR.VirtualAddress != 0)
   {
     pComHeader = (PIMAGE_COR20_HEADER)(pBase + NTHeader.COMDIR.VirtualAddress);
     ReadProcVar( pComHeader, &ComHeader );
@@ -128,7 +155,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
 {
   DWORD rva;
   PVOID pMem;
-  DWORD len;
+  DWORD len, import_size;
   DWORD pr;
   IMAGE_DOS_HEADER	   DosHeader;
   IMAGE_NT_HEADERS32	   NTHeader, *pNTHeader;
@@ -145,18 +172,19 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   pNTHeader = (PIMAGE_NT_HEADERS32)(pBase + DosHeader.e_lfanew);
   ReadProcVar( pNTHeader, &NTHeader );
 
-  len = 16 + ansi_len + sizeof(*pImports) + NTHeader.IMPORTDIR.Size;
-  pImports = malloc( len );
+  import_size = sizeof_imports( ppi, pBase, NTHeader.IMPORTDIR.VirtualAddress );
+  len = 8 + ansi_len + sizeof(*pImports) + import_size;
+  pImports = HeapAlloc( hHeap, 0, len );
   if (pImports == NULL)
   {
-    DEBUGSTR( 1, L"  Failed to allocate memory." );
+    DEBUGSTR( 1, "  Failed to allocate memory" );
     return;
   }
   pMem = FindMem( ppi->hProcess, pBase, len );
   if (pMem == NULL)
   {
-    DEBUGSTR( 1, L"  Failed to allocate virtual memory." );
-    free( pImports );
+    DEBUGSTR( 1, "  Failed to allocate virtual memory" );
+    HeapFree( hHeap, 0, pImports );
     return;
   }
   rva = (DWORD)((PBYTE)pMem - pBase);
@@ -164,31 +192,33 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   ip.pL = (PLONG)pImports;
   *ip.pL++ = IMAGE_ORDINAL_FLAG32 + 1;
   *ip.pL++ = 0;
-  *ip.pL++ = IMAGE_ORDINAL_FLAG32 + 1;
-  *ip.pL++ = 0;
   memcpy( ip.pB, ansi_dll, ansi_len );
   ip.pB += ansi_len;
-  ip.pI->OriginalFirstThunk = rva + 8;
+  ip.pI->OriginalFirstThunk = 0;
   ip.pI->TimeDateStamp = 0;
   ip.pI->ForwarderChain = 0;
-  ip.pI->Name = rva + 16;
+  ip.pI->Name = rva + 8;
   ip.pI->FirstThunk = rva;
-  ReadProcMem( pBase + NTHeader.IMPORTDIR.VirtualAddress,
-	       ip.pI + 1, NTHeader.IMPORTDIR.Size );
+  ReadProcMem( pBase+NTHeader.IMPORTDIR.VirtualAddress, ip.pI+1, import_size );
   WriteProcMem( pMem, pImports, len );
-  free( pImports );
+  HeapFree( hHeap, 0, pImports );
 
-  if (NTHeader.IATDIR.VirtualAddress == 0)
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_IAT &&
+      NTHeader.IATDIR.VirtualAddress == 0)
     NTHeader.IATDIR = NTHeader.IMPORTDIR;
-  NTHeader.IMPORTDIR.VirtualAddress = rva + 16 + ansi_len;
-  NTHeader.IMPORTDIR.Size += sizeof(*pImports);
-  NTHeader.BOUNDDIR.VirtualAddress = 0;
-  NTHeader.BOUNDDIR.Size = 0;
+  NTHeader.IMPORTDIR.VirtualAddress = rva + 8 + ansi_len;
+  //NTHeader.IMPORTDIR.Size += sizeof(*pImports);
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT)
+  {
+    NTHeader.BOUNDDIR.VirtualAddress = 0;
+    //NTHeader.BOUNDDIR.Size = 0;
+  }
   VirtProtVar( pNTHeader, PAGE_READWRITE );
   WriteProcVar( pNTHeader, &NTHeader );
   VirtProtVar( pNTHeader, pr );
 
-  if (NTHeader.COMDIR.VirtualAddress != 0 && NTHeader.COMDIR.Size != 0)
+  if (NTHeader.DATADIRS > IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR &&
+      NTHeader.COMDIR.VirtualAddress != 0)
   {
     pComHeader = (PIMAGE_COR20_HEADER)(pBase + NTHeader.COMDIR.VirtualAddress);
     ReadProcVar( pComHeader, &ComHeader );
@@ -233,7 +263,7 @@ static PBYTE get_ntdll( LPPROCESS_INFORMATION ppi )
     }
   }
 
-  DEBUGSTR( 1, L"  Failed to find ntdll.dll!" );
+  DEBUGSTR( 1, "  Failed to find ntdll.dll!" );
   return NULL;
 }
 
@@ -266,7 +296,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi )
 			 PAGE_EXECUTE_READ );
   if (pMem == NULL)
   {
-    DEBUGSTR( 1, L"  Failed to allocate virtual memory (%lu)", GetLastError() );
+    DEBUGSTR(1, "  Failed to allocate virtual memory (%u)", GetLastError());
     return;
   }
 

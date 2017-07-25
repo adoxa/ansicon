@@ -132,11 +132,26 @@
     don't add a newline immediately after a wrap;
     restore cursor visibility on unload.
 
-  v1.71, 23 October, 2015
-    Add _CRT_NON_CONFORMING_WCSTOK define
-*/
+  v1.71, 23 October, 2015:
+    add _CRT_NON_CONFORMING_WCSTOK define for VS2015.
 
-#define _CRT_NON_CONFORMING_WCSTOK
+  v1.72, 14 to 24 December, 2015:
+    recognize the standard handle defines in WriteFile;
+    minor speed improvement by caching GetConsoleMode;
+    keep track of three handles (ostensibly stdout, stderr and a file);
+    test a DOS header exists before writing to e_oemid;
+    more flexible/robust handling of data directories;
+    files writing to the console will always succeed;
+    log: use API file functions and a custom printf;
+	 add a blank line between processes;
+	 set function name for MyWriteConsoleA;
+    scan imports from "kernel32" (without extension);
+    added dynamic environment variable CLICOLOR;
+    removed _hwrite (it's the same address as _lwrite);
+    join multibyte characters split across separate writes;
+    remove wcstok, avoiding potential interference with the host;
+    similarly, use a private heap instead of malloc.
+*/
 
 #include "ansicon.h"
 #include "version.h"
@@ -146,10 +161,18 @@
 
 // ========== Global variables and constants
 
-HANDLE	  hConOut;		// handle to CONOUT$
-WORD	  orgattr;		// original attributes
-DWORD	  orgmode;		// original mode
+HANDLE	hConOut;		// handle to CONOUT$
+WORD	orgattr;		// original attributes
+DWORD	orgmode;		// original mode
 CONSOLE_CURSOR_INFO orgcci;	// original cursor state
+HANDLE	hHeap;			// local memory heap
+
+#define CACHE	3
+struct
+{
+  HANDLE h;
+  DWORD  mode;
+} cache[CACHE];
 
 #define ESC	'\x1B'          // ESCape character
 #define BEL	'\x07'
@@ -300,7 +323,7 @@ void get_state( void )
   if (hMap == NULL)
   {
   no_go:
-    DEBUGSTR( 1, L"File mapping failed (%lu) - using default state",
+    DEBUGSTR( 1, "File mapping failed (%u) - using default state",
 		 GetLastError() );
     pState = &state;
     goto do_init;
@@ -311,6 +334,7 @@ void get_state( void )
   if (pState == NULL)
   {
     CloseHandle( hMap );
+    hMap = NULL;
     goto no_go;
   }
 
@@ -319,11 +343,11 @@ void get_state( void )
   do_init:
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
-				      NULL, OPEN_EXISTING, 0, 0 );
+				      NULL, OPEN_EXISTING, 0, NULL );
     if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     {
-      DEBUGSTR(1, L"Failed to get screen buffer info (%lu) - assuming defaults",
-		  GetLastError() );
+      DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
+		   GetLastError() );
       csbi.wAttributes	   = 7;
       csbi.dwSize.X	   = 80;
       csbi.dwSize.Y	   = 300;
@@ -372,8 +396,9 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
 {
   static LPTSTR env;
   static DWORD	env_len;
-  DWORD len;
-  BOOL	not;
+  DWORD  len;
+  BOOL	 not;
+  LPTSTR end;
 
   len = GetEnvironmentVariable( var, env, env_len );
   if (len == 0)
@@ -381,11 +406,12 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
 
   if (len > env_len)
   {
-    LPTSTR tmp = realloc( env, TSIZE(len) );
+    LPTSTR tmp = (env == NULL) ? HeapAlloc( hHeap, 0, TSIZE(len) )
+			       : HeapReAlloc( hHeap, 0, env, TSIZE(len) );
     if (tmp == NULL)
       return FALSE;
     env = tmp;
-    env_len = len;
+    env_len = (DWORD)HeapSize( hHeap, 0, env );
     GetEnvironmentVariable( var, env, env_len );
   }
 
@@ -393,9 +419,21 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
   if (not && env[1] == '\0')
     return TRUE;
 
-  for (var = wcstok( env + not, L";" ); var; var = wcstok( NULL, L";" ))
+  end = env + not;
+  while (*end != '\0')
+  {
+    var = end;
+    do
+    {
+      if (*end++ == ';')
+      {
+	end[-1] = '\0';
+	break;
+      }
+    } while (*end != '\0');
     if (_wcsicmp( val, var ) == 0)
       return !not;
+  }
 
   return not;
 }
@@ -518,7 +556,7 @@ void PushBuffer( WCHAR c )
 	// wrap, which can be ignored and overwritten.
 	CHAR_INFO blank;
 	PCHAR_INFO row;
-	row = malloc( csbi.dwSize.X * sizeof(CHAR_INFO) );
+	row = HeapAlloc( hHeap, 0, csbi.dwSize.X * sizeof(CHAR_INFO) );
 	if (row != NULL)
 	{
 	  COORD s, c;
@@ -533,12 +571,14 @@ void PushBuffer( WCHAR c )
 	  blank.Char.UnicodeChar = ' ';
 	  blank.Attributes = csbi.wAttributes;
 	  while (*(PDWORD)&row[c.X] == *(PDWORD)&blank)
+	  {
 	    if (++c.X == s.X)
 	    {
 	      nl = (csbi.dwCursorPosition.X == 0) ? NULL : L"\r";
 	      break;
 	    }
-	  free( row );
+	  }
+	  HeapFree( hHeap, 0, row );
 	}
 	fWrapped = FALSE;
       }
@@ -767,19 +807,19 @@ void InterpretEscSeq( void )
 	if (es_argc != 1) return;
 	switch (es_argv[0])
 	{
-	  case 0:		// ESC[0J erase from cursor to end of display
+	  case 0: // ESC[0J erase from cursor to end of display
 	    len = (BOTTOM - CUR.Y) * WIDTH + WIDTH - CUR.X;
 	    FillBlank( len, CUR );
 	  return;
 
-	  case 1:		// ESC[1J erase from start to cursor.
+	  case 1: // ESC[1J erase from start to cursor.
 	    Pos.X = 0;
 	    Pos.Y = TOP;
 	    len   = (CUR.Y - TOP) * WIDTH + CUR.X + 1;
 	    FillBlank( len, Pos );
 	  return;
 
-	  case 2:		// ESC[2J Clear screen and home cursor
+	  case 2: // ESC[2J Clear screen and home cursor
 	    if (TOP != screen_top || BOTTOM == Info.dwSize.Y - 1)
 	    {
 	      // Rather than clearing the existing window, make the current
@@ -824,18 +864,18 @@ void InterpretEscSeq( void )
 	if (es_argc != 1) return;
 	switch (es_argv[0])
 	{
-	  case 0:		// ESC[0K Clear to end of line
+	  case 0: // ESC[0K Clear to end of line
 	    len = WIDTH - CUR.X;
 	    FillBlank( len, CUR );
 	  return;
 
-	  case 1:		// ESC[1K Clear from start of line to cursor
+	  case 1: // ESC[1K Clear from start of line to cursor
 	    Pos.X = LEFT;
 	    Pos.Y = CUR.Y;
 	    FillBlank( CUR.X + 1, Pos );
 	  return;
 
-	  case 2:		// ESC[2K Clear whole line.
+	  case 2: // ESC[2K Clear whole line.
 	    Pos.X = LEFT;
 	    Pos.Y = CUR.Y;
 	    FillBlank( WIDTH, Pos );
@@ -845,13 +885,13 @@ void InterpretEscSeq( void )
 	  return;
 	}
 
-      case 'X':                 // ESC[#X Erase # characters.
+      case 'X': // ESC[#X Erase # characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[X == ESC[1X
 	if (es_argc != 1) return;
 	FillBlank( es_argv[0], CUR );
       return;
 
-      case 'L':                 // ESC[#L Insert # blank lines.
+      case 'L': // ESC[#L Insert # blank lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[L == ESC[1L
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= LEFT;
@@ -866,7 +906,7 @@ void InterpretEscSeq( void )
 	// Technically should home the cursor, but perhaps not expected.
       return;
 
-      case 'M':                 // ESC[#M Delete # lines.
+      case 'M': // ESC[#M Delete # lines.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[M == ESC[1M
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= LEFT;
@@ -881,7 +921,7 @@ void InterpretEscSeq( void )
 	// Technically should home the cursor, but perhaps not expected.
       return;
 
-      case 'P':                 // ESC[#P Delete # characters.
+      case 'P': // ESC[#P Delete # characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[P == ESC[1P
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= CUR.X;
@@ -895,7 +935,7 @@ void InterpretEscSeq( void )
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
       return;
 
-      case '@':                 // ESC[#@ Insert # blank characters.
+      case '@': // ESC[#@ Insert # blank characters.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[@ == ESC[1@
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= CUR.X;
@@ -909,8 +949,8 @@ void InterpretEscSeq( void )
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
       return;
 
-      case 'k':                 // ESC[#k
-      case 'A':                 // ESC[#A Moves cursor up # lines
+      case 'k': // ESC[#k
+      case 'A': // ESC[#A Moves cursor up # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[A == ESC[1A
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y - es_argv[0];
@@ -919,8 +959,8 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'e':                 // ESC[#e
-      case 'B':                 // ESC[#B Moves cursor down # lines
+      case 'e': // ESC[#e
+      case 'B': // ESC[#B Moves cursor down # lines
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[B == ESC[1B
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y + es_argv[0];
@@ -929,8 +969,8 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'a':                 // ESC[#a
-      case 'C':                 // ESC[#C Moves cursor forward # spaces
+      case 'a': // ESC[#a
+      case 'C': // ESC[#C Moves cursor forward # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[C == ESC[1C
 	if (es_argc != 1) return;
 	Pos.X = CUR.X + es_argv[0];
@@ -939,8 +979,8 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'j':                 // ESC[#j
-      case 'D':                 // ESC[#D Moves cursor back # spaces
+      case 'j': // ESC[#j
+      case 'D': // ESC[#D Moves cursor back # spaces
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[D == ESC[1D
 	if (es_argc != 1) return;
 	Pos.X = CUR.X - es_argv[0];
@@ -949,7 +989,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'E':                 // ESC[#E Moves cursor down # lines, column 1.
+      case 'E': // ESC[#E Moves cursor down # lines, column 1.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[E == ESC[1E
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y + es_argv[0];
@@ -958,7 +998,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'F':                 // ESC[#F Moves cursor up # lines, column 1.
+      case 'F': // ESC[#F Moves cursor up # lines, column 1.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[F == ESC[1F
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y - es_argv[0];
@@ -967,8 +1007,8 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case '`':                 // ESC[#`
-      case 'G':                 // ESC[#G Moves cursor column # in current row.
+      case '`': // ESC[#`
+      case 'G': // ESC[#G Moves cursor column # in current row.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[G == ESC[1G
 	if (es_argc != 1) return;
 	Pos.X = es_argv[0] - 1;
@@ -978,7 +1018,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'd':                 // ESC[#d Moves cursor row #, current column.
+      case 'd': // ESC[#d Moves cursor row #, current column.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[d == ESC[1d
 	if (es_argc != 1) return;
 	Pos.Y = es_argv[0] - 1;
@@ -987,8 +1027,8 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'f':                 // ESC[#;#f
-      case 'H':                 // ESC[#;#H Moves cursor to line #, column #
+      case 'f': // ESC[#;#f
+      case 'H': // ESC[#;#H Moves cursor to line #, column #
 	if (es_argc == 0)
 	  es_argv[es_argc++] = 1; // ESC[H == ESC[1;1H
 	if (es_argc == 1)
@@ -1003,7 +1043,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'I':                 // ESC[#I Moves cursor forward # tabs
+      case 'I': // ESC[#I Moves cursor forward # tabs
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[I == ESC[1I
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y;
@@ -1012,7 +1052,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'Z':                 // ESC[#Z Moves cursor back # tabs
+      case 'Z': // ESC[#Z Moves cursor back # tabs
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[Z == ESC[1Z
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y;
@@ -1024,20 +1064,22 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'b':                 // ESC[#b Repeat character
+      case 'b': // ESC[#b Repeat character
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[b == ESC[1b
 	if (es_argc != 1) return;
 	while (--es_argv[0] >= 0)
 	  PushBuffer( ChPrev );
       return;
 
-      case 's':                 // ESC[s Saves cursor position for recall later
+      case 's': // ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
 	pState->SavePos.X = CUR.X;
 	pState->SavePos.Y = CUR.Y - TOP;
+	DEBUGSTR( 1, "SavePos = %u,%u; CUR = %u,%u; TOP = %u, .Top = %u",
+		  pState->SavePos.X, pState->SavePos.Y, CUR.X, CUR.Y, TOP, Info.srWindow.Top );
       return;
 
-      case 'u':                 // ESC[u Return to saved cursor position
+      case 'u': // ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
 	Pos.X = pState->SavePos.X;
 	Pos.Y = pState->SavePos.Y + TOP;
@@ -1046,15 +1088,15 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'n':                 // ESC[#n Device status report
+      case 'n': // ESC[#n Device status report
 	if (es_argc != 1) return; // ESC[n == ESC[0n -> ignored
 	switch (es_argv[0])
 	{
-	  case 5:		// ESC[5n Report status
+	  case 5: // ESC[5n Report status
 	    SendSequence( L"\33[0n" ); // "OK"
 	  return;
 
-	  case 6:		// ESC[6n Report cursor position
+	  case 6: // ESC[6n Report cursor position
 	  {
 	    TCHAR buf[32];
 	    wsprintf( buf, L"\33[%d;%dR", CUR.Y - TOP + 1, CUR.X + 1 );
@@ -1066,7 +1108,7 @@ void InterpretEscSeq( void )
 	  return;
 	}
 
-      case 't':                 // ESC[#t Window manipulation
+      case 't': // ESC[#t Window manipulation
 	if (es_argc != 1) return;
 	if (es_argv[0] == 21)	// ESC[21t Report xterm window's title
 	{
@@ -1083,12 +1125,12 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'h':                 // ESC[#h Set Mode
+      case 'h': // ESC[#h Set Mode
 	if (es_argc == 1 && es_argv[0] == 3)
 	  pState->crm = TRUE;
       return;
 
-      case 'l':                 // ESC[#l Reset Mode
+      case 'l': // ESC[#l Reset Mode
       return;			// ESC[3l is handled during parsing
 
       default:
@@ -1136,39 +1178,41 @@ ParseAndPrintString( HANDLE hDev,
   }
   for (i = nNumberOfBytesToWrite, s = (LPCTSTR)lpBuffer; i > 0; i--, s++)
   {
+    int c = *s; 		// more efficient to use int than short, fwiw
+
     if (state == 1)
     {
-      if (*s == ESC)
+      if (c == ESC)
       {
 	suffix2 = 0;
 	get_state();
 	state = (pState->crm) ? 7 : 2;
       }
-      else if (*s == SO) shifted = TRUE;
-      else if (*s == SI) shifted = FALSE;
-      else PushBuffer( *s );
+      else if (c == SO) shifted = TRUE;
+      else if (c == SI) shifted = FALSE;
+      else PushBuffer( (WCHAR)c );
     }
     else if (state == 2)
     {
-      if (*s == ESC) ;		// \e\e...\e == \e
-      else if (*s >= '\x20' && *s <= '\x2f')
-	suffix2 = *s;
+      if (c == ESC) ;		// \e\e...\e == \e
+      else if (c >= '\x20' && c <= '\x2f')
+	suffix2 = c;
       else if (suffix2 != 0)
 	state = 1;
-      else if (*s == '[' ||     // CSI Control Sequence Introducer
-	       *s == ']')       // OSC Operating System Command
+      else if (c == '[' ||      // CSI Control Sequence Introducer
+	       c == ']')        // OSC Operating System Command
       {
 	FlushBuffer();
-	prefix = *s;
+	prefix = c;
 	prefix2 = 0;
 	Pt_len = 0;
 	*Pt_arg = '\0';
 	state = 3;
       }
-      else if (*s == 'P' ||     // DCS Device Control String
-	       *s == 'X' ||     // SOS Start Of String
-	       *s == '^' ||     // PM  Privacy Message
-	       *s == '_')       // APC Application Program Command
+      else if (c == 'P' ||      // DCS Device Control String
+	       c == 'X' ||      // SOS Start Of String
+	       c == '^' ||      // PM  Privacy Message
+	       c == '_')        // APC Application Program Command
       {
 	*Pt_arg = '\0';
 	state = 6;
@@ -1177,30 +1221,30 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 3)
     {
-      if (is_digit( *s ))
+      if (is_digit( c ))
       {
         es_argc = 0;
-	es_argv[0] = *s - '0';
+	es_argv[0] = c - '0';
         state = 4;
       }
-      else if (*s == ';')
+      else if (c == ';')
       {
         es_argc = 1;
         es_argv[0] = 0;
 	es_argv[1] = 0;
         state = 4;
       }
-      else if (*s == ':')
+      else if (c == ':')
       {
 	// ignore it
       }
-      else if (*s >= '\x3b' && *s <= '\x3f')
+      else if (c >= '\x3b' && c <= '\x3f')
       {
-	prefix2 = *s;
+	prefix2 = c;
       }
-      else if (*s >= '\x20' && *s <= '\x2f')
+      else if (c >= '\x20' && c <= '\x2f')
       {
-	suffix2 = *s;
+	suffix2 = c;
       }
       else if (suffix2 != 0)
       {
@@ -1209,31 +1253,31 @@ ParseAndPrintString( HANDLE hDev,
       else
       {
         es_argc = 0;
-        suffix = *s;
+        suffix = c;
         InterpretEscSeq();
         state = 1;
       }
     }
     else if (state == 4)
     {
-      if (is_digit( *s ))
+      if (is_digit( c ))
       {
-	es_argv[es_argc] = 10 * es_argv[es_argc] + (*s - '0');
+	es_argv[es_argc] = 10 * es_argv[es_argc] + (c - '0');
       }
-      else if (*s == ';')
+      else if (c == ';')
       {
         if (es_argc < MAX_ARG-1) es_argc++;
 	es_argv[es_argc] = 0;
 	if (prefix == ']')
 	  state = 5;
       }
-      else if (*s >= '\x3a' && *s <= '\x3f')
+      else if (c >= '\x3a' && c <= '\x3f')
       {
 	// ignore 'em
       }
-      else if (*s >= '\x20' && *s <= '\x2f')
+      else if (c >= '\x20' && c <= '\x2f')
       {
-	suffix2 = *s;
+	suffix2 = c;
       }
       else if (suffix2 != 0)
       {
@@ -1242,65 +1286,65 @@ ParseAndPrintString( HANDLE hDev,
       else
       {
 	es_argc++;
-        suffix = *s;
+        suffix = c;
         InterpretEscSeq();
         state = 1;
       }
     }
     else if (state == 5)
     {
-      if (*s == BEL)
+      if (c == BEL)
       {
 	Pt_arg[Pt_len] = '\0';
         InterpretEscSeq();
         state = 1;
       }
-      else if (*s == '\\' && Pt_len > 0 && Pt_arg[Pt_len-1] == ESC)
+      else if (c == '\\' && Pt_len > 0 && Pt_arg[Pt_len-1] == ESC)
       {
 	Pt_arg[--Pt_len] = '\0';
         InterpretEscSeq();
         state = 1;
       }
       else if (Pt_len < lenof(Pt_arg)-1)
-	Pt_arg[Pt_len++] = *s;
+	Pt_arg[Pt_len++] = c;
     }
     else if (state == 6)
     {
-      if (*s == BEL || (*s == '\\' && *Pt_arg == ESC))
+      if (c == BEL || (c == '\\' && *Pt_arg == ESC))
 	state = 1;
       else
-	*Pt_arg = *s;
+	*Pt_arg = c;
     }
     else if (state == 7)
     {
-      if (*s == '[') state = 8;
+      if (c == '[') state = 8;
       else
       {
 	PushBuffer( ESC );
-	PushBuffer( *s );
+	PushBuffer( (WCHAR)c );
 	state = 1;
       }
     }
     else if (state == 8)
     {
-      if (*s == '3') state = 9;
+      if (c == '3') state = 9;
       else
       {
 	PushBuffer( ESC );
 	PushBuffer( '[' );
-	PushBuffer( *s );
+	PushBuffer( (WCHAR)c );
 	state = 1;
       }
     }
     else if (state == 9)
     {
-      if (*s == 'l') pState->crm = FALSE;
+      if (c == 'l') pState->crm = FALSE;
       else
       {
 	PushBuffer( ESC );
 	PushBuffer( '[' );
 	PushBuffer( '3' );
-	PushBuffer( *s );
+	PushBuffer( (WCHAR)c );
       }
       state = 1;
     }
@@ -1361,9 +1405,11 @@ typedef struct
 
 HookFn Hooks[];
 
-const WCHAR zIgnoring[]  = L"Ignoring";
-const WCHAR zHooking[]	 = L"Hooking";
-const WCHAR zUnhooking[] = L"Unhooking";
+const char zIgnoring[]	= "Ignoring";
+const char zScanning[]	= "Scanning";
+const char zSkipping[]	= "Skipping";
+const char zHooking[]	= "Hooking";
+const char zUnhooking[] = "Unhooking";
 
 
 //-----------------------------------------------------------------------------
@@ -1377,7 +1423,7 @@ BOOL HookAPIOneMod(
     HMODULE hFromModule,	// Handle of the module to intercept calls from
     PHookFn Hooks,		// Functions to replace
     BOOL    restore,		// Restore the original functions
-    LPCTSTR sp			// Logging indentation
+    LPCSTR  sp			// Logging indentation
     )
 {
   PIMAGE_DOS_HEADER	   pDosHeader;
@@ -1399,7 +1445,7 @@ BOOL HookAPIOneMod(
   pDosHeader = (PIMAGE_DOS_HEADER)hFromModule;
   if (pDosHeader->e_magic != IMAGE_DOS_SIGNATURE)
   {
-    DEBUGSTR( 1, L"Image has no DOS header!" );
+    DEBUGSTR( 1, "Image has no DOS header!" );
     return FALSE;
   }
 
@@ -1409,7 +1455,7 @@ BOOL HookAPIOneMod(
   // One more test to make sure we're looking at a "PE" image
   if (pNTHeader->Signature != IMAGE_NT_SIGNATURE)
   {
-    DEBUGSTR( 1, L"Image has no NT header!" );
+    DEBUGSTR( 1, "Image has no NT header!" );
     return FALSE;
   }
 
@@ -1428,7 +1474,8 @@ BOOL HookAPIOneMod(
   {
     BOOL kernel = TRUE;
     PSTR pszModName = MakeVA( PSTR, pImportDesc->Name );
-    if (_stricmp( pszModName, APIKernel ) != 0)
+    if (_strnicmp( pszModName, APIKernel, 8 ) != 0 ||
+	(_stricmp( pszModName+8, APIKernel+8 ) != 0 && pszModName[8] != '\0'))
     {
       PAPI_DATA lib;
       for (lib = APIs; lib->name; ++lib)
@@ -1448,13 +1495,13 @@ BOOL HookAPIOneMod(
       if (lib->name == NULL)
       {
 	if (log_level & 16)
-	  DEBUGSTR( 2, L" %s%s %S", sp, zIgnoring, pszModName );
+	  DEBUGSTR( 2, " %s%s %s", sp, zIgnoring, pszModName );
 	continue;
       }
       kernel = FALSE;
     }
     if (log_level & 16)
-      DEBUGSTR( 2, L" %sScanning %S", sp, pszModName );
+      DEBUGSTR( 2, " %s%s %s", sp, zScanning, pszModName );
 
     // Get a pointer to the found module's import address table (IAT).
     pThunk = MakeVA( PIMAGE_THUNK_DATA, pImportDesc->FirstThunk );
@@ -1475,7 +1522,10 @@ BOOL HookAPIOneMod(
 		 (PROC)pThunk->u1.Function == hook->apifunc)
 	{
 	  if (self)
+	  {
 	    hook->myimport = &pThunk->u1.Function;
+	    DEBUGSTR( 3, "  %s%s", sp, hook->name );
+	  }
 	  else
 	  {
 	    // Don't hook if our import already points to the module being
@@ -1490,7 +1540,7 @@ BOOL HookAPIOneMod(
 	{
 	  DWORD pr;
 
-	  DEBUGSTR( 3, L"  %s%S", sp, hook->name );
+	  DEBUGSTR( 3, "  %s%s", sp, hook->name );
 	  // Change the access protection on the region of committed pages in
 	  // the virtual address space of the current process.
 	  VirtualProtect( &pThunk->u1.Function, PTRSZ, PAGE_READWRITE, &pr );
@@ -1521,7 +1571,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
   HANDLE	hModuleSnap;
   MODULEENTRY32 me;
   BOOL		fOk;
-  LPCTSTR	op, sp;
+  LPCSTR	op, sp;
   DWORD 	pr;
 
   // Take a snapshot of all modules in the current process.
@@ -1530,12 +1580,12 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
 
   if (hModuleSnap == INVALID_HANDLE_VALUE)
   {
-    DEBUGSTR( 1, L"Failed to create snapshot (%lu)!", GetLastError() );
+    DEBUGSTR( 1, "Failed to create snapshot (%u)", GetLastError() );
     return FALSE;
   }
 
   op = (restore) ? zUnhooking : zHooking;
-  sp = (indent) ? L"  " : L"";
+  sp = (indent) ? "  " : "";
 
   // Fill the size of the structure before using it.
   me.dwSize = sizeof(MODULEENTRY32);
@@ -1550,19 +1600,26 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
 
     // Don't scan what we've already scanned.
     if (*(PDWORD)((PBYTE)me.hModule + 36) == 'ISNA')    // e_oemid, e_oeminfo
+    {
+      if (log_level & 16)
+	DEBUGSTR( 2, "%s%s %S", sp, zSkipping, me.szModule );
       continue;
-    VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
-    *(PDWORD)((PBYTE)me.hModule + 36) = 'ISNA';
-    VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
-
+    }
+    // It's possible for the PE header to be inside the DOS header.
+    if (*(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
+    {
+      VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
+      *(PDWORD)((PBYTE)me.hModule + 36) = 'ISNA';
+      VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
+    }
     if (search_env( L"ANSICON_EXC", me.szModule ))
     {
-      DEBUGSTR( 2, L"%s%s %s", sp, zIgnoring, me.szModule );
+      DEBUGSTR( 2, "%s%s %S", sp, zIgnoring, me.szModule );
       continue;
     }
 
     // Hook the functions in this module.
-    DEBUGSTR( 2, L"%s%s %s", sp, op, me.szModule );
+    DEBUGSTR( 2, "%s%s %S", sp, op, me.szModule );
     if (!HookAPIOneMod( me.hModule, Hooks, restore, sp ))
     {
       CloseHandle( hModuleSnap );
@@ -1570,7 +1627,7 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
     }
   }
   CloseHandle( hModuleSnap );
-  DEBUGSTR( 2, L"%s%s completed", sp, op );
+  DEBUGSTR( 2, "%s%s completed", sp, op );
   return TRUE;
 }
 
@@ -1634,7 +1691,7 @@ static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
       // tests for a file at each separator ('a name' tries "a.exe" before
       // "a name.exe") which I won't do.
       name = wcspbrk( app, term );
-      if (name)
+      if (name != NULL)
 	*name = '\0';
     }
   }
@@ -1661,10 +1718,10 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   LPTSTR name;
 
   name = get_program( app, child_pi->hProcess, wide, lpApp, lpCmd );
-  DEBUGSTR( 1, L"%s (%lu)", name, child_pi->dwProcessId );
+  DEBUGSTR( 1, "%S (%u)", name, child_pi->dwProcessId );
   if (search_env( L"ANSICON_EXC", name ))
   {
-    DEBUGSTR( 1, L"  Excluded" );
+    DEBUGSTR( 1, "  Excluded" );
     type = 0;
   }
   else
@@ -1674,7 +1731,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
     {
       if (!search_env( L"ANSICON_GUI", name ))
       {
-	DEBUGSTR( 1, L"  %s", zIgnoring );
+	DEBUGSTR( 1, "  %s", zIgnoring );
 	type = 0;
       }
     }
@@ -1717,7 +1774,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 	CloseHandle( pi.hThread );
       }
       else
-	DEBUGSTR(1, L"Could not execute \"%s\" (%lu)", DllName, GetLastError());
+	DEBUGSTR( 1, "Could not execute %\"S (%u)", DllName, GetLastError() );
       wcscpy( DllNameType, L"32.dll" );
     }
     else
@@ -1729,7 +1786,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   if (!(dwCreationFlags & CREATE_SUSPENDED))
     ResumeThread( child_pi->hThread );
 
-  if (lpi)
+  if (lpi != NULL)
   {
     memcpy( lpi, child_pi, sizeof(PROCESS_INFORMATION) );
   }
@@ -1754,12 +1811,7 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 {
   PROCESS_INFORMATION child_pi;
 
-  DEBUGSTR( 1, L"CreateProcessA: %s%S%s, %S",
-	       (lpApplicationName == NULL) ? L"" : L"\"",
-	       (lpApplicationName == NULL) ? "<null>" : lpApplicationName,
-	       (lpApplicationName == NULL) ? L"" : L"\"",
-	       (lpCommandLine == NULL)	? "<null>" :
-	       (*lpCommandLine == '\0') ? "<empty>" : lpCommandLine );
+  DEBUGSTR( 1, "CreateProcessA: %\"s, %#s", lpApplicationName, lpCommandLine );
 
   // May need to initialise the state, to propagate environment variables.
   get_state();
@@ -1774,7 +1826,7 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       lpStartupInfo,
 		       &child_pi ))
   {
-    DEBUGSTR( 1, L"  Failed (%lu)", GetLastError() );
+    DEBUGSTR( 1, "  Failed (%u)", GetLastError() );
     return FALSE;
   }
 
@@ -1798,12 +1850,7 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 {
   PROCESS_INFORMATION child_pi;
 
-  DEBUGSTR( 1, L"CreateProcessW: %s%s%s, %s",
-	       (lpApplicationName == NULL) ? L"" : L"\"",
-	       (lpApplicationName == NULL) ? L"<null>" : lpApplicationName,
-	       (lpApplicationName == NULL) ? L"" : L"\"",
-	       (lpCommandLine == NULL)	? L"<null>" :
-	       (*lpCommandLine == '\0') ? L"<empty>" : lpCommandLine );
+  DEBUGSTR( 1, "CreateProcessW: %\"S, %#S", lpApplicationName, lpCommandLine );
 
   get_state();
   if (!CreateProcessW( lpApplicationName,
@@ -1817,7 +1864,7 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       lpStartupInfo,
 		       &child_pi ))
   {
-    DEBUGSTR( 1, L"  Failed (%lu)", GetLastError() );
+    DEBUGSTR( 1, "  Failed (%u)", GetLastError() );
     return FALSE;
   }
 
@@ -1835,7 +1882,7 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 
   proc = GetProcAddress( hModule, lpProcName );
 
-  if (proc)
+  if (proc != NULL)
   {
     if (hModule == hKernel)
     {
@@ -1843,14 +1890,14 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
       // might end up at a different address).
       if (proc == Hooks[0].oldfunc || proc == Hooks[1].oldfunc)
       {
-	DEBUGSTR( 3, L"GetProcAddress: %S (ignoring)", lpProcName );
+	DEBUGSTR( 3, "GetProcAddress: %s (ignoring)", lpProcName );
 	return proc;
       }
       for (hook = Hooks + 2; hook->name; ++hook)
       {
 	if (proc == hook->oldfunc)
 	{
-	  DEBUGSTR( 3, L"GetProcAddress: %S", lpProcName );
+	  DEBUGSTR( 3, "GetProcAddress: %s", lpProcName );
 	  return hook->newfunc;
 	}
       }
@@ -1864,14 +1911,14 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 	{
 	  if (proc == Hooks[0].apifunc || proc == Hooks[1].apifunc)
 	  {
-	    DEBUGSTR( 3, L"GetProcAddress: %S (ignoring)", lpProcName );
+	    DEBUGSTR( 3, "GetProcAddress: %s (ignoring)", lpProcName );
 	    return proc;
 	  }
 	  for (hook = Hooks + 2; hook->name; ++hook)
 	  {
 	    if (proc == hook->apifunc)
 	    {
-	      DEBUGSTR( 3, L"GetProcAddress: %S", lpProcName );
+	      DEBUGSTR( 3, "GetProcAddress: %s", lpProcName );
 	      return hook->newfunc;
 	    }
 	  }
@@ -1888,7 +1935,7 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryA( lpFileName );
-  DEBUGSTR( 2, L"LoadLibraryA %S", lpFileName );
+  DEBUGSTR( 2, "LoadLibraryA %s", lpFileName );
   HookAPIAllMod( Hooks, FALSE, TRUE );
   return hMod;
 }
@@ -1897,7 +1944,7 @@ HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 HMODULE WINAPI MyLoadLibraryW( LPCWSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryW( lpFileName );
-  DEBUGSTR( 2, L"LoadLibraryW %s", lpFileName );
+  DEBUGSTR( 2, "LoadLibraryW %S", lpFileName );
   HookAPIAllMod( Hooks, FALSE, TRUE );
   return hMod;
 }
@@ -1911,7 +1958,7 @@ HMODULE WINAPI MyLoadLibraryExA( LPCSTR lpFileName, HANDLE hFile,
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
   {
-    DEBUGSTR( 2, L"LoadLibraryExA %S", lpFileName );
+    DEBUGSTR( 2, "LoadLibraryExA %s", lpFileName );
     HookAPIAllMod( Hooks, FALSE, TRUE );
   }
   return hMod;
@@ -1926,7 +1973,7 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
   {
-    DEBUGSTR( 2, L"LoadLibraryExW %s", lpFileName );
+    DEBUGSTR( 2, "LoadLibraryExW %S", lpFileName );
     HookAPIAllMod( Hooks, FALSE, TRUE );
   }
   return hMod;
@@ -1939,16 +1986,49 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
 //-----------------------------------------------------------------------------
 BOOL IsConsoleHandle( HANDLE h )
 {
-  DWORD mode;
+  int c;
 
-  if (!GetConsoleMode( h, &mode ))
+  for (c = 0; c < CACHE; ++c)
+    if (cache[c].h == h)
+      return (cache[c].mode & ENABLE_PROCESSED_OUTPUT);
+
+  while (--c > 0)
+    cache[c] = cache[c-1];
+
+  cache[0].h = h;
+  cache[0].mode = 0;
+  if (!GetConsoleMode( h, &cache[0].mode ))
   {
-    // This fails if the handle isn't opened for reading.  Fortunately, it
-    // seems WriteConsole tests the handle before it tests the length.
-    return WriteConsole( h, NULL, 0, &mode, NULL );
+    // GetConsoleMode could fail if the console was not opened for reading
+    // (which is what Microsoft's conio output does).  Verify the handle with
+    // WriteConsole (processed output is the default).
+    DWORD written;
+    if (WriteConsole( h, NULL, 0, &written, NULL ))
+      cache[0].mode = ENABLE_PROCESSED_OUTPUT;
   }
 
-  return (mode & ENABLE_PROCESSED_OUTPUT);
+  return (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+}
+
+//-----------------------------------------------------------------------------
+//   MySetConsoleMode
+// It seems GetConsoleMode is a relatively slow function, so call it once and
+// keep track of changes directly.
+//-----------------------------------------------------------------------------
+BOOL
+WINAPI MySetConsoleMode( HANDLE hCon, DWORD mode )
+{
+  BOOL rc = SetConsoleMode( hCon, mode );
+  if (rc)
+  {
+    int c;
+    for (c = 0; c < CACHE; ++c)
+    {
+      // The mode is associated with the buffer, not the handle.
+      GetConsoleMode( cache[c].h, &cache[c].mode );
+    }
+  }
+  return rc;
 }
 
 
@@ -1959,31 +2039,167 @@ BOOL IsConsoleHandle( HANDLE h )
 // module is not hooked, so we can still call the original functions ourselves.
 //-----------------------------------------------------------------------------
 
+static LPCSTR write_func;
+
 BOOL
 WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
 			DWORD nNumberOfCharsToWrite,
 			LPDWORD lpNumberOfCharsWritten, LPVOID lpReserved )
 {
   LPWSTR buf;
-  DWORD  len;
+  WCHAR  wBuf[1024];
+  DWORD  len, wlen;
+  UINT	 cp;
   BOOL	 rc = TRUE;
+  LPCSTR aBuf;
+  static char  mb[4];
+  static DWORD mb_len, mb_size;
 
-  if (IsConsoleHandle( hCon ))
+  if (nNumberOfCharsToWrite != 0 && IsConsoleHandle( hCon ))
   {
-    UINT cp = GetConsoleOutputCP();
-    DEBUGSTR( 4, L"\33WriteConsoleA: %lu \"%.*S\"",
-	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
-    len = MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, NULL,0 );
-    buf = malloc( TSIZE(len) );
-    if (buf == NULL)
+    DEBUGSTR( 4, "%s: %u %\"<s",
+		 write_func == NULL ? "WriteConsoleA" : write_func,
+		 nNumberOfCharsToWrite, lpBuffer );
+    write_func = NULL;
+    aBuf = lpBuffer;
+    len = nNumberOfCharsToWrite;
+    wlen = 0;
+    cp = GetConsoleOutputCP();
+    // How to determine a multibyte character set?  Cmd.Exe has IsDBCSCodePage,
+    // which tests code page numbers; ConHost has IsAvailableFarEastCodePage,
+    // which uses TranslateCharsetInfo; I used GetCPInfo in CMDRead.  Let's use
+    // IsDBCSCodePage, as that avoids another API call.
+    if (cp == 932 || cp == 936 || cp == 949 || cp == 950)
+    {
+      if (mb_len == 1)
+      {
+	mb[1] = *aBuf++;
+	--len;
+	DEBUGSTR( 4, "  %strail byte, removing & writing %\"*s",
+		     (len == 0) ? "" : "starts with a ", 2, mb );
+	wlen = MultiByteToWideChar( cp, 0, mb, 2, wBuf, lenof(wBuf) );
+	ParseAndPrintString( hCon, wBuf, wlen, NULL );
+	mb_len = 0;
+      }
+      // A lead byte might also be a trail byte, so count all consecutive lead
+      // bytes - an even number means complete pairs, whilst an odd number
+      // means the last lead byte has been split.
+      if (len != 0 && IsDBCSLeadByteEx( cp, aBuf[len-1] ))
+      {
+	int lead = 1;
+	int pos = len - 1;
+	while (--pos >= 0 && IsDBCSLeadByteEx( cp, aBuf[pos] ))
+	  ++lead;
+	if (lead & 1)
+	{
+	  mb[mb_len++] = aBuf[--len];
+	  DEBUGSTR( 4, "  %slead byte, removing",
+		       (len == 0) ? "" : "ends with a " );
+	}
+      }
+    }
+    else if (cp == CP_UTF8)
+    {
+      if (mb_len != 0)
+      {
+	while ((*aBuf & 0xC0) == 0x80)
+	{
+	  mb[mb_len++] = *aBuf++;
+	  --len;
+	  if (mb_len == mb_size)
+	    break;
+	  if (len == 0)
+	  {
+	    DEBUGSTR( 4, "  trail byte%s, removing",
+			 (nNumberOfCharsToWrite == 1) ? "" : "s" );
+	    if (lpNumberOfCharsWritten != NULL)
+	      *lpNumberOfCharsWritten = 0;
+	    goto check_written;
+	  }
+	}
+	if (log_level & 4)
+	{
+	  DWORD tlen = nNumberOfCharsToWrite - len;
+	  if (tlen == 0)
+	    DEBUGSTR( 4, "  incomplete UTF-8 sequence, writing %\"*s",
+			 mb_len, mb );
+	  else if (len == 0)
+	    DEBUGSTR( 4, "  trail byte%s, removing & writing %\"*s",
+			 (tlen == 1) ? "" : "s", mb_len, mb );
+	  else if (tlen == 1)
+	    DEBUGSTR( 4, "  starts with a trail byte, removing & writing %\"*s",
+			 mb_len, mb );
+	  else
+	    DEBUGSTR( 4, "  starts with %u trail bytes, removing & writing %\"*s",
+			 tlen, mb_len, mb );
+	}
+	wlen = MultiByteToWideChar( cp, 0, mb, mb_len, wBuf, lenof(wBuf) );
+	ParseAndPrintString( hCon, wBuf, wlen, NULL );
+	mb_len = 0;
+      }
+      // In UTF-8, the high bit set means a lead or trail byte; if the next
+      // bit is clear, it's a trail byte; otherwise the number of set high bits
+      // counts the bytes in the sequence.  The maximum legitimate sequence is
+      // four bytes.
+      if (len != 0 && (aBuf[len-1] & 0x80))
+      {
+	int pos = len;
+	while (--pos >= 0 && (aBuf[pos] & 0xC0) == 0x80)
+	  ;
+	if (pos >= 0 && (aBuf[pos] & 0x80) && len - pos < 4 &&
+	    (pos == 0 || (aBuf[pos-1] & 0xC0) != 0xC0))
+	{
+	  char lead = aBuf[pos];
+	  mb_size = 0;
+	  do
+	  {
+	    ++mb_size;
+	    lead <<= 1;
+	  } while (lead & 0x80);
+	  if (mb_size <= 4 && mb_size > len - pos)
+	  {
+	    mb_len = len - pos;
+	    memcpy( mb, aBuf + pos, mb_len );
+	    len = pos;
+	    if (log_level & 4)
+	    {
+	      if (mb_len == nNumberOfCharsToWrite)
+		DEBUGSTR( 4, "  lead byte%s, removing",
+			     (mb_len == 1) ? "" : "s" );
+	      else if (mb_len == 1)
+		DEBUGSTR( 4, "  ends with a lead byte, removing" );
+	      else
+		DEBUGSTR( 4, "  ends with %u lead bytes, removing", mb_len );
+	    }
+	  }
+	}
+      }
+    }
+    if (len == 0)
     {
       if (lpNumberOfCharsWritten != NULL)
-	*lpNumberOfCharsWritten = 0;
-      return (nNumberOfCharsToWrite == 0);
+	*lpNumberOfCharsWritten = wlen;
+      goto check_written;
     }
-    MultiByteToWideChar( cp, 0, lpBuffer, nNumberOfCharsToWrite, buf, len );
+    if (len <= lenof(wBuf))
+      buf = wBuf;
+    else
+    {
+      buf = HeapAlloc( hHeap, 0, TSIZE(len) );
+      if (buf == NULL)
+      {
+	DEBUGSTR( 4, "HeapAlloc failed, using original function" );
+	rc = WriteConsoleA( hCon, aBuf,len, lpNumberOfCharsWritten,lpReserved );
+	goto check_written;
+      }
+    }
+    len = MultiByteToWideChar( cp, 0, aBuf, len, buf, len );
     rc = ParseAndPrintString( hCon, buf, len, lpNumberOfCharsWritten );
-    free( buf );
+    if (wlen != 0 && rc && lpNumberOfCharsWritten != NULL)
+      *lpNumberOfCharsWritten += wlen;
+    if (buf != wBuf)
+      HeapFree( hHeap, 0, buf );
+  check_written:
     if (rc && lpNumberOfCharsWritten != NULL &&
 	      *lpNumberOfCharsWritten != nNumberOfCharsToWrite)
     {
@@ -2006,10 +2222,10 @@ WINAPI MyWriteConsoleW( HANDLE hCon, LPCVOID lpBuffer,
 			DWORD nNumberOfCharsToWrite,
 			LPDWORD lpNumberOfCharsWritten, LPVOID lpReserved )
 {
-  if (IsConsoleHandle( hCon ))
+  if (nNumberOfCharsToWrite != 0 && IsConsoleHandle( hCon ))
   {
-    DEBUGSTR( 4, L"\33WriteConsoleW: %lu \"%.*s\"",
-	      nNumberOfCharsToWrite, nNumberOfCharsToWrite, lpBuffer );
+    DEBUGSTR( 4, "WriteConsoleW: %u %\"<S",
+		 nNumberOfCharsToWrite, lpBuffer );
     return ParseAndPrintString( hCon, lpBuffer,
 				nNumberOfCharsToWrite,
 				lpNumberOfCharsWritten );
@@ -2023,13 +2239,17 @@ BOOL
 WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 		    LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped )
 {
-  if (IsConsoleHandle( hFile ))
+  if (nNumberOfBytesToWrite != 0 && IsConsoleHandle( hFile ))
   {
-    DEBUGSTR( 4, L"WriteFile->" );
-    return MyWriteConsoleA( hFile, lpBuffer,
-			    nNumberOfBytesToWrite,
-			    lpNumberOfBytesWritten,
-			    lpOverlapped );
+    if (HandleToULong( hFile ) == STD_OUTPUT_HANDLE ||
+	HandleToULong( hFile ) == STD_ERROR_HANDLE)
+      hFile = GetStdHandle( HandleToULong( hFile ) );
+
+    write_func = "WriteFile";
+    MyWriteConsoleA( hFile, lpBuffer,nNumberOfBytesToWrite, NULL,lpOverlapped );
+    if (lpNumberOfBytesWritten != NULL)
+      *lpNumberOfBytesWritten = nNumberOfBytesToWrite;
+    return TRUE;
   }
 
   return WriteFile( hFile, lpBuffer, nNumberOfBytesToWrite,
@@ -2042,31 +2262,15 @@ WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 UINT
 WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
 {
-  if (IsConsoleHandle( HHFILE hFile ))
+  if (uBytes != 0 && IsConsoleHandle( HHFILE hFile ))
   {
-    DWORD written;
-    DEBUGSTR( 4, L"_lwrite->" );
-    MyWriteConsoleA( HHFILE hFile, lpBuffer, uBytes, &written, NULL );
-    return written;
+    write_func = "_lwrite";
+    MyWriteConsoleA( HHFILE hFile, lpBuffer, uBytes, NULL, NULL );
+    return uBytes;
   }
 
   return _lwrite( hFile, lpBuffer, uBytes );
 }
-
-long
-WINAPI My_hwrite( HFILE hFile, LPCSTR lpBuffer, long lBytes )
-{
-  if (IsConsoleHandle( HHFILE hFile ))
-  {
-    DWORD written;
-    DEBUGSTR( 4, L"_hwrite->" );
-    MyWriteConsoleA( HHFILE hFile, lpBuffer, lBytes, &written, NULL );
-    return written;
-  }
-
-  return _hwrite( hFile, lpBuffer, lBytes );
-}
-
 
 // ========== Environment variable
 
@@ -2080,7 +2284,7 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
     HANDLE hConOut;
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
-				      NULL, OPEN_EXISTING, 0, 0 );
+				      NULL, OPEN_EXISTING, 0, NULL );
     GetConsoleScreenBufferInfo( hConOut, &csbi );
     CloseHandle( hConOut );
     pcsbi = &csbi;
@@ -2096,7 +2300,7 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
 DWORD
 WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
 {
-  if (lstrcmpiA( lpName, "ANSICON_VER" ) == 0)
+  if (_stricmp( lpName, "ANSICON_VER" ) == 0)
   {
     if (nSize < sizeof(PVEREA))
       return sizeof(PVEREA);
@@ -2104,7 +2308,16 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
     return sizeof(PVEREA) - 1;
   }
 
-  if (lstrcmpiA( lpName, "ANSICON" ) == 0)
+  if (_stricmp( lpName, "CLICOLOR" ) == 0)
+  {
+    if (nSize < 2)
+      return 2;
+    lpBuffer[0] = '1';
+    lpBuffer[1] = '\0';
+    return 1;
+  }
+
+  if (_stricmp( lpName, "ANSICON" ) == 0)
     set_ansicon( NULL );
 
   return GetEnvironmentVariableA( lpName, lpBuffer, nSize );
@@ -2113,7 +2326,7 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
 DWORD
 WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 {
-  if (lstrcmpi( lpName, L"ANSICON_VER" ) == 0)
+  if (_wcsicmp( lpName, L"ANSICON_VER" ) == 0)
   {
     if (nSize < lenof(PVERE))
       return lenof(PVERE);
@@ -2121,7 +2334,16 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
     return lenof(PVERE) - 1;
   }
 
-  if (lstrcmpi( lpName, L"ANSICON" ) == 0)
+  if (_wcsicmp( lpName, L"CLICOLOR" ) == 0)
+  {
+    if (nSize < 2)
+      return 2;
+    lpBuffer[0] = '1';
+    lpBuffer[1] = '\0';
+    return 1;
+  }
+
+  if (_wcsicmp( lpName, L"ANSICON" ) == 0)
     set_ansicon( NULL );
 
   return GetEnvironmentVariableW( lpName, lpBuffer, nSize );
@@ -2141,11 +2363,11 @@ HookFn Hooks[] = {
   { APILibraryLoader,	   "GetProcAddress",          (PROC)MyGetProcAddress,          NULL, NULL, NULL },
   { APILibraryLoader,	   "LoadLibraryExA",          (PROC)MyLoadLibraryExA,          NULL, NULL, NULL },
   { APILibraryLoader,	   "LoadLibraryExW",          (PROC)MyLoadLibraryExW,          NULL, NULL, NULL },
+  { APIConsole, 	   "SetConsoleMode",          (PROC)MySetConsoleMode,          NULL, NULL, NULL },
   { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL, NULL },
   { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL, NULL },
   { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL, NULL },
   { APIKernel,		   "_lwrite",                 (PROC)My_lwrite,                 NULL, NULL, NULL },
-  { APIKernel,		   "_hwrite",                 (PROC)My_hwrite,                 NULL, NULL, NULL },
   { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
@@ -2160,7 +2382,7 @@ void OriginalAttr( PVOID lpReserved )
 
   hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				    FILE_SHARE_READ | FILE_SHARE_WRITE,
-				    NULL, OPEN_EXISTING, 0, 0 );
+				    NULL, OPEN_EXISTING, 0, NULL );
   if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     csbi.wAttributes = 7;
 
@@ -2204,6 +2426,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
   if (dwReason == DLL_PROCESS_ATTACH)
   {
+    hHeap = HeapCreate( 0, 0, 128 * 1024 );
+
     *logstr = '\0';
     GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
     log_level = _wtoi( logstr );
@@ -2215,13 +2439,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     set_ansi_dll();
 
     hDllInstance = hInstance; // save Dll instance handle
-#ifdef _WIN64
-    DEBUGSTR( 1, L"hDllInstance = %.8X_%.8X",
-		 (DWORD)((DWORD_PTR)hDllInstance >> 32),
-		 PtrToUint( hDllInstance ) );
-#else
-    DEBUGSTR( 1, L"hDllInstance = %p", hDllInstance );
-#endif
+    DEBUGSTR( 1, "hDllInstance = %p", hDllInstance );
 
     // Get the entry points to the original functions.
     hKernel = GetModuleHandleA( APIKernel );
@@ -2229,7 +2447,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
       hook->oldfunc = GetProcAddress( hKernel, hook->name );
 
     // Get my import addresses, to detect if anyone's hooked me.
-    HookAPIOneMod( NULL, Hooks, FALSE, L"" );
+    DEBUGSTR( 2, "Storing my imports" );
+    HookAPIOneMod( NULL, Hooks, FALSE, "" );
 
     bResult = HookAPIAllMod( Hooks, FALSE, FALSE );
     OriginalAttr( lpReserved );
@@ -2243,25 +2462,29 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   {
     if (lpReserved == NULL)
     {
-      DEBUGSTR( 1, L"Unloading" );
+      DEBUGSTR( 1, "Unloading" );
       HookAPIAllMod( Hooks, TRUE, FALSE );
     }
     else
     {
-      DEBUGSTR( 1, L"Terminating" );
+      DEBUGSTR( 1, "Terminating" );
     }
     if (orgattr != 0)
     {
       hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 					FILE_SHARE_READ | FILE_SHARE_WRITE,
-					NULL, OPEN_EXISTING, 0, 0 );
+					NULL, OPEN_EXISTING, 0, NULL );
       SetConsoleTextAttribute( hConOut, orgattr );
       SetConsoleMode( hConOut, orgmode );
       SetConsoleCursorInfo( hConOut, &orgcci );
       CloseHandle( hConOut );
     }
-    CloseHandle( pState );
-    CloseHandle( hMap );
+    if (hMap != NULL)
+    {
+      UnmapViewOfFile( pState );
+      CloseHandle( hMap );
+    }
+    HeapDestroy( hHeap );
   }
   else if (dwReason == DLL_THREAD_DETACH)
   {
@@ -2272,7 +2495,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 	&& (start == Hooks[0].oldfunc || start == Hooks[1].oldfunc
 	 || start == Hooks[0].apifunc || start == Hooks[1].apifunc))
     {
-      DEBUGSTR( 2, L"Injection detected" );
+      DEBUGSTR( 2, "Injection detected" );
       HookAPIAllMod( Hooks, FALSE, TRUE );
     }
   }
