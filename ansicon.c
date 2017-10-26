@@ -87,7 +87,7 @@
 	 add error codes to some message.
 */
 
-#define PDATE L"24 December, 2015"
+#define PDATE L"26 October, 2017"
 
 #include "ansicon.h"
 #include "version.h"

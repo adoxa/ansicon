@@ -151,6 +151,9 @@
     join multibyte characters split across separate writes;
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
+
+  v1.80, 26 October, 2017:
+    fix unloading.
 */
 
 #include "ansicon.h"
@@ -1598,19 +1601,32 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
     if (me.hModule == hDllInstance || me.hModule == hKernel)
       continue;
 
-    // Don't scan what we've already scanned.
-    if (*(PDWORD)((PBYTE)me.hModule + 36) == 'ISNA')    // e_oemid, e_oeminfo
+    if (!restore)
     {
-      if (log_level & 16)
-	DEBUGSTR( 2, "%s%s %S", sp, zSkipping, me.szModule );
-      continue;
+      // Don't scan what we've already scanned.
+      if (*(PDWORD)((PBYTE)me.hModule + 36) == 'ISNA')    // e_oemid, e_oeminfo
+      {
+	if (log_level & 16)
+	  DEBUGSTR( 2, "%s%s %S", sp, zSkipping, me.szModule );
+	continue;
+      }
+      // It's possible for the PE header to be inside the DOS header.
+      if (*(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
+      {
+	VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
+	*(PDWORD)((PBYTE)me.hModule + 36) = 'ISNA';
+	VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
+      }
     }
-    // It's possible for the PE header to be inside the DOS header.
-    if (*(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
+    else
     {
-      VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
-      *(PDWORD)((PBYTE)me.hModule + 36) = 'ISNA';
-      VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
+      if (*(PDWORD)((PBYTE)me.hModule + 36) != 'ISNA' &&
+	  *(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
+      {
+	if (log_level & 16)
+	  DEBUGSTR( 2, "%s%s %S", sp, zSkipping, me.szModule );
+	continue;
+      }
     }
     if (search_env( L"ANSICON_EXC", me.szModule ))
     {
