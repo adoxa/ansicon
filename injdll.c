@@ -24,9 +24,10 @@ static PVOID FindMem( HANDLE hProcess, PBYTE base, DWORD len )
     if ((minfo.State & MEM_FREE) && minfo.RegionSize >= len)
     {
 #ifdef _WIN64
-      if ((PBYTE)minfo.BaseAddress - base > 0xFfFfFfFf - len)
+      if ((PBYTE)minfo.BaseAddress - base > 0xFFFFffff - len)
 	return NULL;
 #endif
+      // Round up to the allocation granularity, presumed to be 64Ki.
       mem = VirtualAllocEx( hProcess, (PVOID)
 			    (((DWORD_PTR)minfo.BaseAddress + 0xFFFF) & ~0xFFFF),
 			    len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );

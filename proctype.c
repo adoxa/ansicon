@@ -63,8 +63,8 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
 	&& !(nt_header.FileHeader.Characteristics & IMAGE_FILE_DLL))
     {
       // Don't load into ansicon.exe, it wants to do that itself.
-      if (nt_header.OptionalHeader.MajorImageVersion == 20033 &&
-	  nt_header.OptionalHeader.MinorImageVersion == 18771)
+      if (nt_header.OptionalHeader.MajorImageVersion == 20033 &&    // 'AN'
+	  nt_header.OptionalHeader.MinorImageVersion == 18771)	    // 'SI'
 	return -1;
 
       *pBase = minfo.BaseAddress;
