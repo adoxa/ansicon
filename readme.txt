@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2015 Jason Hood
+			 Copyright 2005-2017 Jason Hood
 
-			    Version 1.72.  Freeware
+			    Version 1.80.  Freeware
 
 
 Description
@@ -24,10 +24,10 @@ Installation
 ============
 
     Add "x86" (if your OS is 32-bit) or "x64" (if 64-bit) to your PATH, or copy
-    the relevant files to a directory already on the PATH.  Alternatively, use
-    option '-i' (or '-I', if permitted) to install it permanently, by adding an
-    entry to CMD.EXE's AutoRun registry value (current user or local machine,
-    respectively).
+    the relevant files to a directory already on the PATH (but NOT System32).
+    Alternatively, use option '-i' (or '-I', if permitted) to install it
+    permanently, by adding an entry to CMD.EXE's AutoRun registry value
+    (current user or local machine, respectively).
 
     Uninstall simply involves closing any programs that are currently using it;
     running with '-u' (and/or '-U') to remove it from AutoRun; removing the
@@ -279,6 +279,7 @@ Limitations
 
     Line sequences use the window; column sequences use the buffer.
     Tabs are fixed at eight columns.
+    The saved position will not be restored correctly if the buffer scrolls.
 
     There may be a conflict with NVIDIA's drivers, requiring the setting of the
     Environment Variable:
@@ -293,6 +294,9 @@ Version History
 ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.80 - 27 October, 2017:
+    - fix unloading.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -519,5 +523,5 @@ Distribution
     in LICENSE.txt.
 
 
-==============================
-Jason Hood, 24 December, 2015.
+=============================
+Jason Hood, 27 October, 2017.
