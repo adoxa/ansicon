@@ -152,8 +152,9 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October, 2017:
-    fix unloading.
+  v1.80, 26 to 28 October, 2017:
+    fix unloading;
+    revert back to (re)storing buffer cursor position.
 */
 
 #include "ansicon.h"
@@ -1076,16 +1077,12 @@ void InterpretEscSeq( void )
 
       case 's': // ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
-	pState->SavePos.X = CUR.X;
-	pState->SavePos.Y = CUR.Y - TOP;
-	DEBUGSTR( 1, "SavePos = %u,%u; CUR = %u,%u; TOP = %u, .Top = %u",
-		  pState->SavePos.X, pState->SavePos.Y, CUR.X, CUR.Y, TOP, Info.srWindow.Top );
+	pState->SavePos = CUR;
       return;
 
       case 'u': // ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
-	Pos.X = pState->SavePos.X;
-	Pos.Y = pState->SavePos.Y + TOP;
+	Pos = pState->SavePos;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
 	SetConsoleCursorPosition( hConOut, Pos );

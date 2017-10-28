@@ -295,8 +295,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 27 October, 2017:
-    - fix unloading.
+    1.80 - 28 October, 2017:
+    - fix unloading;
+    * go back to saving the buffer cursor position.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -524,4 +525,4 @@ Distribution
 
 
 =============================
-Jason Hood, 27 October, 2017.
+Jason Hood, 28 October, 2017.
