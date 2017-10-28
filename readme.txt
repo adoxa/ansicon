@@ -297,6 +297,7 @@ Version History
 
     1.80 - 28 October, 2017:
     - fix unloading;
+    - fix -e et al when redirecting to CON;
     * go back to saving the buffer cursor position.
 
     1.72 - 24 December, 2015:

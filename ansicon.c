@@ -85,6 +85,9 @@
     use Unicode output (_O_U16TEXT, for compilers/systems that support it);
     log: 64-bit addresses get an underscore between the 8-digit groups;
 	 add error codes to some message.
+
+  v1.80, 28 October, 2017:
+    write newline with _putws, not putwchar (fixes redirecting to CON).
 */
 
 #define PDATE L"28 October, 2017"
@@ -522,7 +525,7 @@ arg_out:
 	++cmd;
       fputws( cmd, stdout );
       if (*arg == 'e')
-	putwchar( '\n' );
+	_putws( L"" );
     }
     else // (*arg == 't' || *arg == 'T')
     {
@@ -536,7 +539,7 @@ arg_out:
 	{
 	  wprintf( L"==> %s <==\n", arg );
 	  display( arg, title );
-	  putwchar( '\n' );
+	  _putws( L"" );
 	}
 	else
 	  display( arg, title );
@@ -578,7 +581,7 @@ void display( LPCTSTR name, BOOL title )
   }
   if (title)
   {
-    putwchar( '\n' );
+    _putws( L"" );
     // Need to flush, otherwise it's written *after* STD_OUTPUT_HANDLE should
     // it be redirected.
     fflush( stdout );
