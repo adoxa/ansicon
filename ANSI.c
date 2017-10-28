@@ -154,7 +154,8 @@
 
   v1.80, 26 to 28 October, 2017:
     fix unloading;
-    revert back to (re)storing buffer cursor position.
+    revert back to (re)storing buffer cursor position;
+    increase cache to five handles.
 */
 
 #include "ansicon.h"
@@ -171,7 +172,7 @@ DWORD	orgmode;		// original mode
 CONSOLE_CURSOR_INFO orgcci;	// original cursor state
 HANDLE	hHeap;			// local memory heap
 
-#define CACHE	3
+#define CACHE	5
 struct
 {
   HANDLE h;
