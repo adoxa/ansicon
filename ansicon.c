@@ -90,7 +90,7 @@
     write newline with _putws, not putwchar (fixes redirecting to CON).
 */
 
-#define PDATE L"28 October, 2017"
+#define PDATE L"30 October, 2017"
 
 #include "ansicon.h"
 #include "version.h"

@@ -298,6 +298,8 @@ Version History
     1.80 - 28 October, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
+    - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
+      (fixes redirecting to CON and Microsoft's conio);
     * go back to saving the buffer cursor position.
 
     1.72 - 24 December, 2015:
@@ -526,4 +528,4 @@ Distribution
 
 
 =============================
-Jason Hood, 28 October, 2017.
+Jason Hood, 30 October, 2017.

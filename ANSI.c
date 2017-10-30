@@ -152,10 +152,11 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 to 28 October, 2017:
+  v1.80, 26 to 30 October, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
-    increase cache to five handles.
+    increase cache to five handles;
+    hook CreateFile & CreateConsoleScreenBuffer to enable readable handles.
 */
 
 #include "ansicon.h"
@@ -2286,6 +2287,62 @@ WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
   return _lwrite( hFile, lpBuffer, uBytes );
 }
 
+
+//-----------------------------------------------------------------------------
+//   MyCreate...
+// Add GENERIC_READ access to enable retrieving console info.
+//-----------------------------------------------------------------------------
+
+HANDLE
+WINAPI MyCreateFileA( LPCSTR lpFileName, DWORD dwDesiredAccess,
+		      DWORD dwShareMode,
+		      LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+		      DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes,
+		      HANDLE hTemplateFile )
+{
+  if (dwDesiredAccess == GENERIC_WRITE)
+  {
+    if (_stricmp( lpFileName, "con" ) == 0)
+      lpFileName = "CONOUT$";
+    if (_stricmp( lpFileName, "CONOUT$" ) == 0)
+      dwDesiredAccess |= GENERIC_READ;
+  }
+  return CreateFileA( lpFileName, dwDesiredAccess, dwShareMode,
+		      lpSecurityAttributes, dwCreationDisposition,
+		      dwFlagsAndAttributes, hTemplateFile );
+}
+
+HANDLE
+WINAPI MyCreateFileW( LPCWSTR lpFileName, DWORD dwDesiredAccess,
+		      DWORD dwShareMode,
+		      LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+		      DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes,
+		      HANDLE hTemplateFile )
+{
+  if (dwDesiredAccess == GENERIC_WRITE)
+  {
+    if (_wcsicmp( lpFileName, L"con" ) == 0)
+      lpFileName = L"CONOUT$";
+    if (_wcsicmp( lpFileName, L"CONOUT$" ) == 0)
+      dwDesiredAccess |= GENERIC_READ;
+  }
+  return CreateFileW( lpFileName, dwDesiredAccess, dwShareMode,
+		      lpSecurityAttributes, dwCreationDisposition,
+		      dwFlagsAndAttributes, hTemplateFile );
+}
+
+HANDLE
+WINAPI MyCreateConsoleScreenBuffer( DWORD dwDesiredAccess, DWORD dwShareMode,
+				    const SECURITY_ATTRIBUTES* lpSecurityAttributes,
+				    DWORD dwFlags, LPVOID lpScreenBufferData )
+{
+  dwDesiredAccess |= GENERIC_READ;
+  return CreateConsoleScreenBuffer( dwDesiredAccess, dwShareMode,
+				    lpSecurityAttributes, dwFlags,
+				    lpScreenBufferData );
+}
+
+
 // ========== Environment variable
 
 void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
@@ -2368,20 +2425,23 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 
 HookFn Hooks[] = {
   // These two are expected first!
-  { APILibraryLoader,	   "LoadLibraryA",            (PROC)MyLoadLibraryA,            NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryW",            (PROC)MyLoadLibraryW,            NULL, NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessA",          (PROC)MyCreateProcessA,          NULL, NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessW",          (PROC)MyCreateProcessW,          NULL, NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableA", (PROC)MyGetEnvironmentVariableA, NULL, NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableW", (PROC)MyGetEnvironmentVariableW, NULL, NULL, NULL },
-  { APILibraryLoader,	   "GetProcAddress",          (PROC)MyGetProcAddress,          NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExA",          (PROC)MyLoadLibraryExA,          NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExW",          (PROC)MyLoadLibraryExW,          NULL, NULL, NULL },
-  { APIConsole, 	   "SetConsoleMode",          (PROC)MySetConsoleMode,          NULL, NULL, NULL },
-  { APIConsole, 	   "WriteConsoleA",           (PROC)MyWriteConsoleA,           NULL, NULL, NULL },
-  { APIConsole, 	   "WriteConsoleW",           (PROC)MyWriteConsoleW,           NULL, NULL, NULL },
-  { APIFile,		   "WriteFile",               (PROC)MyWriteFile,               NULL, NULL, NULL },
-  { APIKernel,		   "_lwrite",                 (PROC)My_lwrite,                 NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryA",              (PROC)MyLoadLibraryA,              NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryW",              (PROC)MyLoadLibraryW,              NULL, NULL, NULL },
+  { APIProcessThreads,	   "CreateProcessA",            (PROC)MyCreateProcessA,            NULL, NULL, NULL },
+  { APIProcessThreads,	   "CreateProcessW",            (PROC)MyCreateProcessW,            NULL, NULL, NULL },
+  { APIProcessEnvironment, "GetEnvironmentVariableA",   (PROC)MyGetEnvironmentVariableA,   NULL, NULL, NULL },
+  { APIProcessEnvironment, "GetEnvironmentVariableW",   (PROC)MyGetEnvironmentVariableW,   NULL, NULL, NULL },
+  { APILibraryLoader,	   "GetProcAddress",            (PROC)MyGetProcAddress,            NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryExA",            (PROC)MyLoadLibraryExA,            NULL, NULL, NULL },
+  { APILibraryLoader,	   "LoadLibraryExW",            (PROC)MyLoadLibraryExW,            NULL, NULL, NULL },
+  { APIConsole, 	   "SetConsoleMode",            (PROC)MySetConsoleMode,            NULL, NULL, NULL },
+  { APIConsole, 	   "WriteConsoleA",             (PROC)MyWriteConsoleA,             NULL, NULL, NULL },
+  { APIConsole, 	   "WriteConsoleW",             (PROC)MyWriteConsoleW,             NULL, NULL, NULL },
+  { APIFile,		   "WriteFile",                 (PROC)MyWriteFile,                 NULL, NULL, NULL },
+  { APIKernel,		   "_lwrite",                   (PROC)My_lwrite,                   NULL, NULL, NULL },
+  { APIFile,		   "CreateFileA",               (PROC)MyCreateFileA,               NULL, NULL, NULL },
+  { APIFile,		   "CreateFileW",               (PROC)MyCreateFileW,               NULL, NULL, NULL },
+  { APIKernel,		   "CreateConsoleScreenBuffer", (PROC)MyCreateConsoleScreenBuffer, NULL, NULL, NULL },
   { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
