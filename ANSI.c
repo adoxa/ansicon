@@ -152,11 +152,12 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 to 30 October, 2017:
+  v1.80, 26 October to 3 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
-    hook CreateFile & CreateConsoleScreenBuffer to enable readable handles.
+    hook CreateFile & CreateConsoleScreenBuffer to enable readable handles;
+    fix cursor report with duplicated digits (e.g. "11" was just "1").
 */
 
 #include "ansicon.h"
@@ -610,20 +611,25 @@ void PushBuffer( WCHAR c )
 void SendSequence( LPTSTR seq )
 {
   DWORD out;
-  INPUT_RECORD in;
+  PINPUT_RECORD in;
+  DWORD len;
   HANDLE hStdIn = GetStdHandle( STD_INPUT_HANDLE );
 
-  in.EventType = KEY_EVENT;
-  in.Event.KeyEvent.bKeyDown = TRUE;
-  in.Event.KeyEvent.wRepeatCount = 1;
-  in.Event.KeyEvent.wVirtualKeyCode = 0;
-  in.Event.KeyEvent.wVirtualScanCode = 0;
-  in.Event.KeyEvent.dwControlKeyState = 0;
-  for (; *seq; ++seq)
+  in = HeapAlloc( hHeap, HEAP_ZERO_MEMORY, 2 * wcslen( seq ) * sizeof(*in) );
+  if (in == NULL)
+    return;
+  for (len = 0; *seq; len += 2, ++seq)
   {
-    in.Event.KeyEvent.uChar.UnicodeChar = *seq;
-    WriteConsoleInput( hStdIn, &in, 1, &out );
+    in[len+0].EventType =
+    in[len+1].EventType = KEY_EVENT;
+    in[len+0].Event.KeyEvent.wRepeatCount =
+    in[len+1].Event.KeyEvent.wRepeatCount = 1;
+    in[len+0].Event.KeyEvent.uChar.UnicodeChar =
+    in[len+1].Event.KeyEvent.uChar.UnicodeChar = *seq;
+    in[len+0].Event.KeyEvent.bKeyDown = TRUE;
   }
+  WriteConsoleInput( hStdIn, in, len, &out );
+  HeapFree( hHeap, 0, in );
 }
 
 // ========== Print functions
