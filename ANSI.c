@@ -152,12 +152,14 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 3 November, 2017:
+  v1.80, 26 October to 7 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
     hook CreateFile & CreateConsoleScreenBuffer to enable readable handles;
-    fix cursor report with duplicated digits (e.g. "11" was just "1").
+    fix cursor report with duplicated digits (e.g. "11" was just "1");
+    preserve escape that isn't part of a sequence;
+    fix escape followed by CRM in control mode.
 */
 
 #include "ansicon.h"
@@ -1202,7 +1204,8 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 2)
     {
-      if (c == ESC) ;		// \e\e...\e == \e
+      if (c == ESC)
+	PushBuffer( ESC );
       else if (c >= '\x20' && c <= '\x2f')
 	suffix2 = c;
       else if (suffix2 != 0)
@@ -1225,7 +1228,12 @@ ParseAndPrintString( HANDLE hDev,
 	*Pt_arg = '\0';
 	state = 6;
       }
-      else state = 1;
+      else
+      {
+	PushBuffer( ESC );
+	PushBuffer( (WCHAR)c );
+	state = 1;
+      }
     }
     else if (state == 3)
     {
@@ -1329,8 +1337,11 @@ ParseAndPrintString( HANDLE hDev,
       else
       {
 	PushBuffer( ESC );
-	PushBuffer( (WCHAR)c );
-	state = 1;
+	if (c != ESC)
+	{
+	  PushBuffer( (WCHAR)c );
+	  state = 1;
+	}
       }
     }
     else if (state == 8)
