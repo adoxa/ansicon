@@ -295,7 +295,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 7 November, 2017:
+    1.80 - 17 November, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -303,7 +303,8 @@ Version History
     - fix cursor report with duplicated digits (e.g. "11" was only writing "1");
     - fix escape followed by CRM in control mode;
     * go back to saving the buffer cursor position;
-    * preserve escape that isn't part of a sequence.
+    * preserve escape that isn't part of a sequence;
+    + use the system default sound for the bell.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -532,4 +533,4 @@ Distribution
 
 
 =============================
-Jason Hood, 7 November, 2017.
+Jason Hood, 17 November, 2017.

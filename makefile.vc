@@ -60,7 +60,7 @@ SHARE = /MD
 MT = mt.exe
 
 CFLAGS = /nologo /W3 /O2 $(SHARE) /D_CRT_SECURE_NO_WARNINGS
-LIBS = advapi32.lib user32.lib $(LIBS64)
+LIBS = advapi32.lib user32.lib winmm.lib $(LIBS64)
 
 # Identify ansicon.exe using "ANSI" as a version number.
 LINK = /link /version:20033.18771

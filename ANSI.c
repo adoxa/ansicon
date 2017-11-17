@@ -152,19 +152,25 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 7 November, 2017:
+  v1.80, 26 October to 17 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
     hook CreateFile & CreateConsoleScreenBuffer to enable readable handles;
     fix cursor report with duplicated digits (e.g. "11" was just "1");
     preserve escape that isn't part of a sequence;
-    fix escape followed by CRM in control mode.
+    fix escape followed by CRM in control mode;
+    use the system default sound for the bell.
 */
 
 #include "ansicon.h"
 #include "version.h"
 #include <tlhelp32.h>
+#include <mmsystem.h>
+
+#ifndef SND_SENTRY
+#define SND_SENTRY 0x80000
+#endif
 
 #define is_digit(c) ('0' <= (c) && (c) <= '9')
 
@@ -175,6 +181,7 @@ WORD	orgattr;		// original attributes
 DWORD	orgmode;		// original mode
 CONSOLE_CURSOR_INFO orgcci;	// original cursor state
 HANDLE	hHeap;			// local memory heap
+HANDLE	hBell;
 
 #define CACHE	5
 struct
@@ -1161,6 +1168,17 @@ void InterpretEscSeq( void )
   }
 }
 
+DWORD WINAPI BellThread( LPVOID param )
+{
+  // XP doesn't support SND_SENTRY, so if it fails, try without.
+  if (!PlaySound( (LPTSTR)SND_ALIAS_SYSTEMDEFAULT, NULL,
+		  SND_SENTRY | SND_ALIAS_ID | SND_SYNC ))
+    PlaySound( (LPTSTR)SND_ALIAS_SYSTEMDEFAULT, NULL, SND_ALIAS_ID | SND_SYNC );
+  CloseHandle( hBell );
+  hBell = NULL;
+  return 0;
+}
+
 //-----------------------------------------------------------------------------
 //   ParseAndPrintString(hDev, lpBuffer, nNumberOfBytesToWrite)
 // Parses the string lpBuffer, interprets the escapes sequences and prints the
@@ -1197,6 +1215,11 @@ ParseAndPrintString( HANDLE hDev,
 	suffix2 = 0;
 	get_state();
 	state = (pState->crm) ? 7 : 2;
+      }
+      else if (c == BEL)
+      {
+	if (hBell == NULL)
+	  hBell = CreateThread( NULL, 4096, BellThread, NULL, 0, NULL );
       }
       else if (c == SO) shifted = TRUE;
       else if (c == SI) shifted = FALSE;
@@ -2305,6 +2328,36 @@ WINAPI My_lwrite( HFILE hFile, LPCSTR lpBuffer, UINT uBytes )
 }
 
 
+VOID
+WINAPI MyExitProcess( UINT uExitCode )
+{
+  if (hBell != NULL)
+    WaitForSingleObject( hBell, INFINITE );
+  ExitProcess( uExitCode );
+}
+
+
+DWORD WINAPI FreeLibraryThread( LPVOID param )
+{
+  FreeLibraryAndExitThread( hDllInstance, 0 );
+  return 0;
+}
+
+BOOL
+WINAPI MyFreeLibrary( HMODULE hModule )
+{
+  if (hModule == hDllInstance)
+  {
+    if (hBell != NULL)
+      WaitForSingleObject( hBell, INFINITE );
+    CloseHandle( CreateThread( NULL, 4096, FreeLibraryThread, NULL, 0, NULL ) );
+    return TRUE;
+  }
+
+  return FreeLibrary( hModule );
+}
+
+
 //-----------------------------------------------------------------------------
 //   MyCreate...
 // Add GENERIC_READ access to enable retrieving console info.
@@ -2456,6 +2509,8 @@ HookFn Hooks[] = {
   { APIConsole, 	   "WriteConsoleW",             (PROC)MyWriteConsoleW,             NULL, NULL, NULL },
   { APIFile,		   "WriteFile",                 (PROC)MyWriteFile,                 NULL, NULL, NULL },
   { APIKernel,		   "_lwrite",                   (PROC)My_lwrite,                   NULL, NULL, NULL },
+  { APIProcessThreads,	   "ExitProcess",               (PROC)MyExitProcess,               NULL, NULL, NULL },
+  { APILibraryLoader,	   "FreeLibrary",               (PROC)MyFreeLibrary,               NULL, NULL, NULL },
   { APIFile,		   "CreateFileA",               (PROC)MyCreateFileA,               NULL, NULL, NULL },
   { APIFile,		   "CreateFileW",               (PROC)MyCreateFileW,               NULL, NULL, NULL },
   { APIKernel,		   "CreateConsoleScreenBuffer", (PROC)MyCreateConsoleScreenBuffer, NULL, NULL, NULL },
