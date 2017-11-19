@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 17 November, 2017:
+  v1.80, 26 October to 19 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -160,7 +160,8 @@
     fix cursor report with duplicated digits (e.g. "11" was just "1");
     preserve escape that isn't part of a sequence;
     fix escape followed by CRM in control mode;
-    use the system default sound for the bell.
+    use the system default sound for the bell;
+    add DECPS Play Sound.
 */
 
 #include "ansicon.h"
@@ -1150,6 +1151,41 @@ void InterpretEscSeq( void )
       case 'l': // ESC[#l Reset Mode
       return;			// ESC[3l is handled during parsing
 
+      case '~':
+	if (suffix2 == ',') // ESC[#;#;#...,~ Play Sound
+	{
+	  // Frequencies of notes obtained from:
+	  //	https://pages.mtu.edu/~suits/notefreqs.html
+	  //	http://www.liutaiomottola.com/formulae/freqtab.htm
+	  // This is different to what the VT520 manual has, but since that
+	  // only specifies four frequencies, so be it.  I've also rounded to
+	  // even numbers, as the Beep function seems to stutter on odd.
+	  static const DWORD snd_freq[] = { 0,
+//	C    C#/Db  D	 D#/Eb	E     F    F#/Gb  G    G#/Ab  A    A#/Bb  B
+/* 5 */  524,  554,  588,  622,  660,  698,  740,  784,  830,  880,  932,  988,
+/* 6 */ 1046, 1108, 1174, 1244, 1318, 1396, 1480, 1568, 1662, 1760, 1864, 1976,
+/* 7 */ 2094
+	  };
+	  DWORD dur;
+	  if (es_argc < 2) return;
+	  dur = es_argv[1];
+	  if (dur <= 48)		// use 1/32 second
+	    dur = 1000 * dur / 32;
+	  else if (dur > 8000)		// max out at 8 seconds
+	    dur = 8000;
+	  if (es_argc == 2)		// no notes
+	    Sleep( dur );
+	  else for (i = 2; i < es_argc; ++i)
+	  {
+	    if (es_argv[0] == 0)	// zero volume
+	      Sleep( dur );
+	    else
+	      Beep( (es_argv[i] < lenof(snd_freq)) ? snd_freq[es_argv[i]]
+						   : es_argv[i], dur );
+	  }
+	}
+      return;
+
       default:
       return;
     }
@@ -1285,7 +1321,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0)
+      else if (suffix2 != 0 && suffix2 != ',')
       {
 	state = 1;
       }
@@ -1318,7 +1354,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0)
+      else if (suffix2 != 0 && suffix2 != ',')
       {
 	state = 1;
       }
@@ -2113,7 +2149,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
   if (nNumberOfCharsToWrite != 0 && IsConsoleHandle( hCon ))
   {
     DEBUGSTR( 4, "%s: %u %\"<s",
-		 write_func == NULL ? "WriteConsoleA" : write_func,
+		 (write_func == NULL) ? "WriteConsoleA" : write_func,
 		 nNumberOfCharsToWrite, lpBuffer );
     write_func = NULL;
     aBuf = lpBuffer;

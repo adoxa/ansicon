@@ -169,7 +169,8 @@ Sequences Recognised
 	\e[#A		CUU	Cursor Up
 	\e[#P		DCH	Delete Character
 	\e[?7h		DECAWM	DEC Autowrap Mode (autowrap)
-	\e[?7l		DECAWM	DEC Autowrap Mode (no autowrap) 
+	\e[?7l		DECAWM	DEC Autowrap Mode (no autowrap)
+	\e[#;#;#...,~	DECPS	DEC Play Sound
 	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -304,7 +305,8 @@ Version History
     - fix escape followed by CRM in control mode;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
-    + use the system default sound for the bell.
+    + use the system default sound for the bell;
+    + added Play Sound DECPS.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -533,4 +535,4 @@ Distribution
 
 
 =============================
-Jason Hood, 17 November, 2017.
+Jason Hood, 19 November, 2017.

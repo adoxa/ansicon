@@ -1,6 +1,6 @@
 
 				    ANSICON
-				  Version 1.70
+				  Version 1.80
 
 This is a complete list of the ANSI escape sequences recognised by ANSICON,
 roughly ordered by function.  The initial escape character is assumed.
@@ -128,3 +128,20 @@ roughly ordered by function.  The initial escape character is assumed.
 ]2;TitleST
 	sets the console title to "Title"; ST (string terminator) is either
 	 character 7 (BEL) or escape and backslash
+
+[#;#;#...,~
+	play sound (beep):
+	  the first value is volume: 0 is silence, anything else is ignored
+	  the second value is duration: up to and including 48 is in 1/32 of a
+	   second; anything else is milliseconds (maximum of 8000)
+	  the remaining values (if any; 14 allowed) are notes or frequencies:
+	    Value  Note     Freq   Value  Note	   Freq   Value  Note	  Freq
+		0  silence     0       9  G#5/Ab5   830      18  F6	  1396
+		1  C5	     524      10  A5	    880      19  F#6/Gb6  1480
+		2  C#5/Db5   554      11  A#5/Bb5   932      20  G6	  1568
+		3  D5	     588      12  B5	    988      21  G#6/Ab6  1662
+		4  D#5/Eb5   622      13  C6	   1046      22  A6	  1760
+		5  E5	     660      14  C#6/Db6  1108      23  A#6/Bb6  1864
+		6  F5	     698      15  D6	   1174      24  B6	  1976
+		7  F#5/Gb5   740      16  D#6/Eb6  1244      25  C7	  2094
+		8  G5	     784      17  E6	   1318
