@@ -166,7 +166,6 @@
 
 #include "ansicon.h"
 #include "version.h"
-#include <tlhelp32.h>
 #include <mmsystem.h>
 
 #ifndef SND_SENTRY

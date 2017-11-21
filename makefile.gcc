@@ -21,6 +21,11 @@
 # * MinGW-builds x64-4.8.1-release-posix-seh-rev1.
 
 CC ?= gcc
+ifeq ($(origin CC),default)
+ifeq ($(CC),cc)
+CC = gcc
+endif
+endif
 WINDRES ?= windres
 CFLAGS = -O2 -Wall -Wno-multichar
 
@@ -101,7 +106,7 @@ x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/procrva.o x86/ansiconv.o
 	$(LDmsg)$(CC) -m32 $+ -s -o $@ $(IVER)
 
 x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
-	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
+	$(LDmsg)$(CC) -m32 $+ -lwinmm -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
 
 x64:
 	mkdir x64
@@ -110,10 +115,10 @@ x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
 	$(LDmsg)$(CC) -m64 $+ -s -o $@ $(IVER)
 
 x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o
-	$(LDmsg)$(CC) -m64 $+ -s -o $@ -mdll -Wl,-shared,--image-base,0xAC000000
+	$(LDmsg)$(CC) -m64 $+ -lwinmm -s -o $@ -mdll -Wl,-shared,--image-base,0xAC000000
 
 x64/ANSI32.dll: x64/ANSI32.o x64/proctype32.o x86/injdll.o x86/util.o x86/ansiv.o
-	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll \
+	$(LDmsg)$(CC) -m32 $+ -lwinmm -s -o $@ -mdll \
 		      -Wl,-shared,--image-base,0xAC0000,--large-address-aware
 
 x86/ansicon.o:	version.h

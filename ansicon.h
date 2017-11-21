@@ -17,7 +17,9 @@
 #else
 #define _WIN32_WINNT 0x0500	// at least Windows 2000 required
 #endif
+#define WINVER _WIN32_WINNT
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -26,6 +28,37 @@
 #endif
 #ifndef LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE
 #define LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE 0x20
+#endif
+#ifndef TH32CS_SNAPMODULE32
+#define TH32CS_SNAPMODULE32 0x10
+#endif
+#if !defined(HandleToULong) && !defined(_WIN64)
+#define HandleToULong HandleToUlong
+#endif
+
+#ifndef __IMAGE_COR20_HEADER_DEFINED__
+#define COMIMAGE_FLAGS_ILONLY	     1
+#define COMIMAGE_FLAGS_32BITREQUIRED 2
+
+// CLR 2.0 header structure.
+typedef struct IMAGE_COR20_HEADER
+{
+    DWORD                   cb;
+    WORD                    MajorRuntimeVersion;
+    WORD                    MinorRuntimeVersion;
+    IMAGE_DATA_DIRECTORY    MetaData;
+    DWORD                   Flags;
+    union {
+        DWORD               EntryPointToken;
+        DWORD               EntryPointRVA;
+    } DUMMYUNIONNAME;
+    IMAGE_DATA_DIRECTORY    Resources;
+    IMAGE_DATA_DIRECTORY    StrongNameSignature;
+    IMAGE_DATA_DIRECTORY    CodeManagerTable;
+    IMAGE_DATA_DIRECTORY    VTableFixups;
+    IMAGE_DATA_DIRECTORY    ExportAddressTableJumps;
+    IMAGE_DATA_DIRECTORY    ManagedNativeHeader;
+} IMAGE_COR20_HEADER, *PIMAGE_COR20_HEADER;
 #endif
 
 #define lenof(array) (sizeof(array)/sizeof(*(array)))
