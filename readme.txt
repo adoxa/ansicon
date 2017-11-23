@@ -278,7 +278,6 @@ DEC Special Graphics Character Set
 Limitations
 ===========
 
-    Line sequences use the window; column sequences use the buffer.
     Tabs are fixed at eight columns.
     The saved position will not be restored correctly if the buffer scrolls.
 
@@ -296,7 +295,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 17 November, 2017:
+    1.80 - 23 November, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -306,7 +305,8 @@ Version History
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
     + use the system default sound for the bell;
-    + added Play Sound DECPS.
+    + added Play Sound DECPS;
+    + added '+' intermediate byte to use the buffer, rather than the window.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -535,4 +535,4 @@ Distribution
 
 
 =============================
-Jason Hood, 19 November, 2017.
+Jason Hood, 23 November, 2017.

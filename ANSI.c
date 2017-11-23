@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 19 November, 2017:
+  v1.80, 26 October to 23 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -161,7 +161,8 @@
     preserve escape that isn't part of a sequence;
     fix escape followed by CRM in control mode;
     use the system default sound for the bell;
-    add DECPS Play Sound.
+    add DECPS Play Sound;
+    use intermediate byte '+' to use buffer, not window.
 */
 
 #include "ansicon.h"
@@ -668,12 +669,15 @@ void InterpretEscSeq( void )
   SMALL_RECT Rect;
   CHAR_INFO  CharInfo;
   DWORD      mode;
+  SHORT      top, bottom;
 
 #define WIDTH  Info.dwSize.X
+#define HEIGHT Info.dwSize.Y
 #define CUR    Info.dwCursorPosition
 #define WIN    Info.srWindow
 #define TOP    WIN.Top
 #define BOTTOM WIN.Bottom
+#define LAST   (HEIGHT - 1)
 #define LEFT   0
 #define RIGHT  (WIDTH - 1)
 
@@ -707,6 +711,16 @@ void InterpretEscSeq( void )
       return;
 
     GetConsoleScreenBufferInfo( hConOut, &Info );
+    if (suffix2 == '+')
+    {
+      top    = 0;
+      bottom = LAST;
+    }
+    else
+    {
+      top    = TOP;
+      bottom = BOTTOM;
+    }
     switch (suffix)
     {
       case 'm':
@@ -829,32 +843,32 @@ void InterpretEscSeq( void )
 	switch (es_argv[0])
 	{
 	  case 0: // ESC[0J erase from cursor to end of display
-	    len = (BOTTOM - CUR.Y) * WIDTH + WIDTH - CUR.X;
+	    len = (bottom - CUR.Y) * WIDTH + WIDTH - CUR.X;
 	    FillBlank( len, CUR );
 	  return;
 
 	  case 1: // ESC[1J erase from start to cursor.
-	    Pos.X = 0;
-	    Pos.Y = TOP;
-	    len   = (CUR.Y - TOP) * WIDTH + CUR.X + 1;
+	    Pos.X = LEFT;
+	    Pos.Y = top;
+	    len   = (CUR.Y - top) * WIDTH + CUR.X + 1;
 	    FillBlank( len, Pos );
 	  return;
 
 	  case 2: // ESC[2J Clear screen and home cursor
-	    if (TOP != screen_top || BOTTOM == Info.dwSize.Y - 1)
+	    if (suffix2 != '+' && (TOP != screen_top || CUR.Y == LAST))
 	    {
 	      // Rather than clearing the existing window, make the current
 	      // line the new top of the window (assuming this is the first
 	      // thing a program does).
 	      int range = BOTTOM - TOP;
-	      if (CUR.Y + range < Info.dwSize.Y)
+	      if (CUR.Y + range < HEIGHT)
 	      {
 		TOP = CUR.Y;
 		BOTTOM = TOP + range;
 	      }
 	      else
 	      {
-		BOTTOM = Info.dwSize.Y - 1;
+		BOTTOM = LAST;
 		TOP = BOTTOM - range;
 		Rect.Left = LEFT;
 		Rect.Right = RIGHT;
@@ -867,10 +881,12 @@ void InterpretEscSeq( void )
 	      }
 	      SetConsoleWindowInfo( hConOut, TRUE, &WIN );
 	      screen_top = TOP;
+	      top = TOP;
+	      bottom = BOTTOM;
 	    }
 	    Pos.X = LEFT;
-	    Pos.Y = TOP;
-	    len   = (BOTTOM - TOP + 1) * WIDTH;
+	    Pos.Y = top;
+	    len   = (bottom - top + 1) * WIDTH;
 	    FillBlank( len, Pos );
 	    // Not technically correct, but perhaps expected.
 	    SetConsoleCursorPosition( hConOut, Pos );
@@ -918,7 +934,7 @@ void InterpretEscSeq( void )
 	Rect.Left   = WIN.Left	= LEFT;
 	Rect.Right  = WIN.Right = RIGHT;
 	Rect.Top    = CUR.Y;
-	Rect.Bottom = BOTTOM;
+	Rect.Bottom = bottom;
 	Pos.X = LEFT;
 	Pos.Y = CUR.Y + es_argv[0];
 	CharInfo.Char.UnicodeChar = ' ';
@@ -932,7 +948,7 @@ void InterpretEscSeq( void )
 	if (es_argc != 1) return;
 	Rect.Left   = WIN.Left	= LEFT;
 	Rect.Right  = WIN.Right = RIGHT;
-	Rect.Bottom = BOTTOM;
+	Rect.Bottom = bottom;
 	Rect.Top    = CUR.Y - es_argv[0];
 	Pos.X = LEFT;
 	Pos.Y = TOP = CUR.Y;
@@ -975,7 +991,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[A == ESC[1A
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y - es_argv[0];
-	if (Pos.Y < TOP) Pos.Y = TOP;
+	if (Pos.Y < top) Pos.Y = top;
 	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -985,7 +1001,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[B == ESC[1B
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y + es_argv[0];
-	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	if (Pos.Y > bottom) Pos.Y = bottom;
 	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -1014,7 +1030,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[E == ESC[1E
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y + es_argv[0];
-	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	if (Pos.Y > bottom) Pos.Y = bottom;
 	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -1023,7 +1039,7 @@ void InterpretEscSeq( void )
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[F == ESC[1F
 	if (es_argc != 1) return;
 	Pos.Y = CUR.Y - es_argv[0];
-	if (Pos.Y < TOP) Pos.Y = TOP;
+	if (Pos.Y < top) Pos.Y = top;
 	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -1042,9 +1058,9 @@ void InterpretEscSeq( void )
       case 'd': // ESC[#d Moves cursor row #, current column.
 	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[d == ESC[1d
 	if (es_argc != 1) return;
-	Pos.Y = es_argv[0] - 1;
-	if (Pos.Y < TOP) Pos.Y = TOP;
-	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	Pos.Y = top + es_argv[0] - 1;
+	if (Pos.Y < top) Pos.Y = top;
+	if (Pos.Y > bottom) Pos.Y = bottom;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -1058,9 +1074,9 @@ void InterpretEscSeq( void )
 	Pos.X = es_argv[1] - 1;
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	Pos.Y = es_argv[0] - 1;
-	if (Pos.Y < TOP) Pos.Y = TOP;
-	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	Pos.Y = top + es_argv[0] - 1;
+	if (Pos.Y < top) Pos.Y = top;
+	if (Pos.Y > bottom) Pos.Y = bottom;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -1101,7 +1117,7 @@ void InterpretEscSeq( void )
 	if (es_argc != 0) return;
 	Pos = pState->SavePos;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	if (Pos.Y > BOTTOM) Pos.Y = BOTTOM;
+	if (Pos.Y > bottom) Pos.Y = bottom;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
@@ -1116,7 +1132,9 @@ void InterpretEscSeq( void )
 	  case 6: // ESC[6n Report cursor position
 	  {
 	    TCHAR buf[32];
-	    wsprintf( buf, L"\33[%d;%dR", CUR.Y - TOP + 1, CUR.X + 1 );
+	    wsprintf( buf, L"\33[%d;%d%sR",
+		      CUR.Y - top + 1, CUR.X + 1,
+		      (suffix2 == '+') ? L"+" : L"" );
 	    SendSequence( buf );
 	  }
 	  return;
@@ -1320,7 +1338,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0 && suffix2 != ',')
+      else if (suffix2 != 0 && suffix2 != ',' && suffix2 != '+')
       {
 	state = 1;
       }
@@ -1353,7 +1371,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0 && suffix2 != ',')
+      else if (suffix2 != 0 && suffix2 != ',' && suffix2 != '+')
       {
 	state = 1;
       }

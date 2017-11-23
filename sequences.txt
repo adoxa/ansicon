@@ -3,7 +3,10 @@
 				  Version 1.80
 
 This is a complete list of the ANSI escape sequences recognised by ANSICON,
-roughly ordered by function.  The initial escape character is assumed.
+roughly ordered by function.  The initial escape character is assumed.	The
+display consists of the buffer width and window height; add '+' before the
+final character to use the buffer height (e.g. "[2J" will erase the window,
+whilst "[2+J" will erase the buffer).
 
 
 [m	restore default color (and intensity)
