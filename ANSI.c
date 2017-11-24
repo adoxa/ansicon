@@ -162,7 +162,8 @@
     fix escape followed by CRM in control mode;
     use the system default sound for the bell;
     add DECPS Play Sound;
-    use intermediate byte '+' to use buffer, not window.
+    use intermediate byte '+' to use buffer, not window;
+    ESC followed by a control character will display that character.
 */
 
 #include "ansicon.h"
@@ -185,7 +186,7 @@ HANDLE	hHeap;			// local memory heap
 HANDLE	hBell;
 
 #define CACHE	5
-struct
+struct Cache
 {
   HANDLE h;
   DWORD  mode;
@@ -478,11 +479,9 @@ void FlushBuffer( void )
 
   if (pState->crm)
   {
-    DWORD mode;
-    GetConsoleMode( hConOut, &mode );
-    SetConsoleMode( hConOut, mode & ~ENABLE_PROCESSED_OUTPUT );
+    SetConsoleMode( hConOut, cache[0].mode & ~ENABLE_PROCESSED_OUTPUT );
     WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
-    SetConsoleMode( hConOut, mode );
+    SetConsoleMode( hConOut, cache[0].mode );
   }
   else
   {
@@ -699,9 +698,11 @@ void InterpretEscSeq( void )
 	return;
 
 	case 7:
-	  mode = ENABLE_PROCESSED_OUTPUT;
+	  mode = cache[0].mode;
 	  if (suffix == 'h')
 	    mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
+	  else
+	    mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
 	  SetConsoleMode( hConOut, mode );
 	return;
       }
@@ -1269,6 +1270,7 @@ ParseAndPrintString( HANDLE hDev,
 	get_state();
 	state = (pState->crm) ? 7 : 2;
       }
+      else if (pState->crm) PushBuffer( (WCHAR)c );
       else if (c == BEL)
       {
 	if (hBell == NULL)
@@ -1280,8 +1282,15 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 2)
     {
-      if (c == ESC)
-	PushBuffer( ESC );
+      if (c < '\x20')
+      {
+	FlushBuffer();
+	pState->crm = TRUE;
+	PushBuffer( (WCHAR)c );
+	FlushBuffer();
+	pState->crm = FALSE;
+	state = 1;
+      }
       else if (c >= '\x20' && c <= '\x2f')
 	suffix2 = c;
       else if (suffix2 != 0)
@@ -1433,7 +1442,11 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 9)
     {
-      if (c == 'l') pState->crm = FALSE;
+      if (c == 'l')
+      {
+	FlushBuffer();
+	pState->crm = FALSE;
+      }
       else
       {
 	PushBuffer( ESC );
@@ -2098,7 +2111,15 @@ BOOL IsConsoleHandle( HANDLE h )
 
   for (c = 0; c < CACHE; ++c)
     if (cache[c].h == h)
-      return (cache[c].mode & ENABLE_PROCESSED_OUTPUT);
+    {
+      if (c != 0)
+      {
+	struct Cache tc = cache[c];
+	do cache[c] = cache[c-1]; while (--c > 0);
+	cache[0] = tc;
+      }
+      return (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+    }
 
   while (--c > 0)
     cache[c] = cache[c-1];

@@ -198,6 +198,9 @@ Sequences Recognised
     and underline will set the background intensity; conceal uses background as
     foreground.  See "sequences.txt" for a more complete description.
 
+    Escape followed by a control character will display that character, not
+    perform its function.  An unrecognised sequence will preserve the escape.
+
     I make a distinction between '\e[m' and '\e[0;...m'.  Both will restore the
     original foreground/background colors (and so '0' should be the first para-
     meter); the former will also restore the original bold and underline attri-
@@ -295,15 +298,16 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 23 November, 2017:
+    1.80 - 24 November, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
       (fixes redirecting to CON and Microsoft's conio);
     - fix cursor report with duplicated digits (e.g. "11" was only writing "1");
-    - fix escape followed by CRM in control mode;
+    - fix issues with CRM;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
+    * escape control characters;
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window.
@@ -535,4 +539,4 @@ Distribution
 
 
 =============================
-Jason Hood, 23 November, 2017.
+Jason Hood, 24 November, 2017.
