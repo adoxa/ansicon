@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 23 November, 2017:
+  v1.80, 26 October to 29 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -163,7 +163,8 @@
     use the system default sound for the bell;
     add DECPS Play Sound;
     use intermediate byte '+' to use buffer, not window;
-    ESC followed by a control character will display that character.
+    ESC followed by a control character will display that character;
+    added palette sequences.
 */
 
 #include "ansicon.h"
@@ -287,8 +288,8 @@ const BYTE backgroundcolor[8] =
   BACKGROUND_WHITE,			// white background
 };
 
-const BYTE attr2ansi[8] =		// map console attribute to ANSI number
-{
+const BYTE attr2ansi[16] =		// map console attribute to ANSI number
+{					//  or vice versa
   0,					// black
   4,					// blue
   2,					// green
@@ -296,21 +297,50 @@ const BYTE attr2ansi[8] =		// map console attribute to ANSI number
   1,					// red
   5,					// magenta
   3,					// yellow
-  7					// white
+  7,					// white
+  8,					// bright black
+ 12,					// bright blue
+ 10,					// bright green
+ 14,					// bright cyan
+  9,					// bright red
+ 13,					// bright magenta
+ 11,					// bright yellow
+ 15,					// bright white
 };
+
+
+typedef struct _CONSOLE_SCREEN_BUFFER_INFOX {
+  ULONG      cbSize;
+  COORD      dwSize;
+  COORD      dwCursorPosition;
+  WORD	     wAttributes;
+  SMALL_RECT srWindow;
+  COORD      dwMaximumWindowSize;
+  WORD	     wPopupAttributes;
+  BOOL	     bFullscreenSupported;
+  COLORREF   ColorTable[16];
+} CONSOLE_SCREEN_BUFFER_INFOX, *PCONSOLE_SCREEN_BUFFER_INFOX;
+
+typedef BOOL (WINAPI *PHCSBIX)(
+  HANDLE hConsoleOutput,
+  PCONSOLE_SCREEN_BUFFER_INFOX lpConsoleScreenBufferInfoEx
+);
+
+PHCSBIX GetConsoleScreenBufferInfoX, SetConsoleScreenBufferInfoX;
 
 
 typedef struct
 {
-  BYTE	foreground;	// ANSI base color (0 to 7; add 30)
-  BYTE	background;	// ANSI base color (0 to 7; add 40)
-  BYTE	bold;		// console FOREGROUND_INTENSITY bit
-  BYTE	underline;	// console BACKGROUND_INTENSITY bit
-  BYTE	rvideo; 	// swap foreground/bold & background/underline
-  BYTE	concealed;	// set foreground/bold to background/underline
-  BYTE	reverse;	// swap console foreground & background attributes
-  BYTE	crm;		// showing control characters?
-  COORD SavePos;	// saved cursor position
+  BYTE	   foreground;	// ANSI base color (0 to 7; add 30)
+  BYTE	   background;	// ANSI base color (0 to 7; add 40)
+  BYTE	   bold;	// console FOREGROUND_INTENSITY bit
+  BYTE	   underline;	// console BACKGROUND_INTENSITY bit
+  BYTE	   rvideo;	// swap foreground/bold & background/underline
+  BYTE	   concealed;	// set foreground/bold to background/underline
+  BYTE	   reverse;	// swap console foreground & background attributes
+  BYTE	   crm; 	// showing control characters?
+  COORD    SavePos;	// saved cursor position
+  COLORREF palette[16];
 } STATE, *PSTATE;
 
 PSTATE pState;
@@ -325,7 +355,8 @@ void get_state( void )
   HWND	 hwnd;
   BOOL	 init;
   HANDLE hConOut;
-  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  CONSOLE_SCREEN_BUFFER_INFO  csbi;
+  CONSOLE_SCREEN_BUFFER_INFOX csbix;
   static STATE state;	// on the odd chance file mapping fails
 
   if (pState != NULL)
@@ -362,7 +393,16 @@ void get_state( void )
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
-    if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
+    csbix.cbSize = sizeof(csbix);
+    if (GetConsoleScreenBufferInfoX &&
+	GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+    {
+      csbi.dwSize = csbix.dwSize;
+      csbi.wAttributes = csbix.wAttributes;
+      csbi.srWindow = csbix.srWindow;
+      memcpy( pState->palette, csbix.ColorTable, sizeof(csbix.ColorTable) );
+    }
+    else if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
     {
       DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
 		   GetLastError() );
@@ -641,6 +681,21 @@ void SendSequence( LPTSTR seq )
   HeapFree( hHeap, 0, in );
 }
 
+void send_palette_sequence( COLORREF c )
+{
+  BYTE	r, g, b;
+  TCHAR buf[16];
+
+  r = GetRValue( c );
+  g = GetGValue( c );
+  b = GetBValue( c );
+  if ((c & 0x0F0F0F) == ((c & 0xF0F0F0) >> 4))
+    wsprintf( buf, L"#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
+  else
+    wsprintf( buf, L"#%02X%02X%02X", r, g, b );
+  SendSequence( buf );
+}
+
 // ========== Print functions
 
 //-----------------------------------------------------------------------------
@@ -742,7 +797,7 @@ void InterpretEscSeq( void )
 	    // that's what we do.  According to T.416 (ISO 8613-6), there is
 	    // only one parameter, which is divided into elements.  So where
 	    // xterm does "38;2;R;G;B" it should really be "38;2:I:R:G:B" (I is
-	    // a colour space identifier).
+	    // a color space identifier).
 	    if (i+1 < es_argc)
 	    {
 	      if (es_argv[i+1] == 2)		// rgb
@@ -1211,13 +1266,153 @@ void InterpretEscSeq( void )
   else // (prefix == ']')
   {
     // Ignore any "private" sequences.
-    if (prefix2 != 0)
+    if (prefix2 != 0 || es_argc != 1)
       return;
 
-    if (es_argc == 1 && (es_argv[0] == 0 || // ESC]0;titleST - icon (ignored) &
-			 es_argv[0] == 2))  // ESC]2;titleST - window
+    if (es_argv[0] == 0 || // ESC]0;titleST - icon (ignored) &
+	es_argv[0] == 2)   // ESC]2;titleST - window
     {
       SetConsoleTitle( Pt_arg );
+    }
+    else if (es_argv[0] == 4 || // ESC]4;paletteST - set/get color(s)
+	     es_argv[0] == 104) // ESC]104;paletteST - reset color(s)
+    {
+      CONSOLE_SCREEN_BUFFER_INFOX csbix;
+      csbix.cbSize = sizeof(csbix);
+      if (!GetConsoleScreenBufferInfoX ||
+	  !GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+	return;
+      if (es_argv[0] == 4)
+      {
+	BYTE r, g, b;
+	DWORD c;
+	LPTSTR beg, end;
+	BOOL started = FALSE;
+	for (beg = Pt_arg;; beg = end + 1)
+	{
+	  i = (int)wcstoul( beg, &end, 10 );
+	  if (end == beg || (*end != ';' && *end != '\0') || i >= 16)
+	    break;
+	  if (end[2] == ';' || end[2] == '\0')
+	  {
+	    if (end[1] == '*')
+	    {
+	      SendSequence( L"\33]4;" );
+	      end[1] = '\0';
+	      SendSequence( beg );
+	      for (; i < 16; ++i)
+	      {
+		send_palette_sequence( csbix.ColorTable[attr2ansi[i]] );
+		SendSequence( (i == 15) ? L"\a" : L"," );
+	      }
+	    }
+	    else if (end[1] == '?')
+	    {
+	      if (!started)
+	      {
+		SendSequence( L"\33]4" );
+		started = TRUE;
+	      }
+	      SendSequence( L";" );
+	      end[1] = '\0';
+	      SendSequence( beg );
+	      send_palette_sequence( csbix.ColorTable[attr2ansi[i]] );
+	    }
+	    else
+	      break;
+	    end += (end[2] == '\0') ? 1 : 2;
+	  }
+	  else
+	  {
+	    if (started)
+	    {
+	      started = FALSE;
+	      SendSequence( L"\a" );
+	    }
+	    for (beg = end + 1;; beg = end + 1)
+	    {
+	      BOOL valid;
+	      if (*beg == '#')
+	      {
+		valid = TRUE;
+		c = (DWORD)wcstoul( ++beg, &end, 16 );
+		if (end - beg == 3)
+		{
+		  r = (BYTE)(c >> 8);
+		  g = (BYTE)(c >> 4) & 0xF;
+		  b = (BYTE)c & 0xF;
+		  r |= r << 4;
+		  g |= g << 4;
+		  b |= b << 4;
+		}
+		else if (end - beg == 6)
+		{
+		  r = (BYTE)(c >> 16);
+		  g = (BYTE)(c >> 8);
+		  b = (BYTE)c;
+		}
+		else
+		  valid = FALSE;
+	      }
+	      else
+	      {
+		valid = FALSE;
+		c = (DWORD)wcstoul( beg, &end, 10 );
+		if (*end == ',' && c < 256)
+		{
+		  r = (BYTE)c;
+		  c = (DWORD)wcstoul( end + 1, &end, 10 );
+		  if (*end == ',' && c < 256)
+		  {
+		    g = (BYTE)c;
+		    c = (DWORD)wcstoul( end + 1, &end, 10 );
+		    if ((*end == ',' || *end == ';' || *end == '\0') && c < 256)
+		    {
+		      b = (BYTE)c;
+		      valid = TRUE;
+		    }
+		  }
+		}
+	      }
+	      if (valid)
+		csbix.ColorTable[attr2ansi[i++]] = RGB( r, g, b );
+	      if (*end != ',' || i == 16)
+	      {
+		while (*end != ';' && *end != '\0')
+		  ++end;
+		break;
+	      }
+	    }
+	  }
+	  if (*end != ';')
+	    break;
+	}
+	if (started)
+	  SendSequence( L"\a" );
+      }
+      else // (es_argv[0] == 104)
+      {
+	// Reset each index, or the entire palette.
+	if (Pt_len == 0)
+	  memcpy( csbix.ColorTable, pState->palette, sizeof(csbix.ColorTable) );
+	else
+	{
+	  LPTSTR beg, end;
+	  for (beg = Pt_arg;; beg = end + 1)
+	  {
+	    i = (int)wcstoul( beg, &end, 10 );
+	    if (end == beg || (*end != ';' && *end != '\0') || i >= 16)
+	      break;
+	    i = attr2ansi[i];
+	    csbix.ColorTable[i] = pState->palette[i];
+	    if (*end == '\0')
+	      break;
+	  }
+	}
+      }
+      ++csbix.srWindow.Right;
+      ++csbix.srWindow.Bottom;
+      SetConsoleScreenBufferInfoX( hConOut, &csbix );
     }
   }
 }
@@ -1384,6 +1579,12 @@ ParseAndPrintString( HANDLE hDev,
       {
 	state = 1;
       }
+      else if (prefix == ']')
+      {
+	es_argc++;
+	state = 5;
+	goto state5;
+      }
       else
       {
 	es_argc++;
@@ -1394,6 +1595,7 @@ ParseAndPrintString( HANDLE hDev,
     }
     else if (state == 5)
     {
+    state5:
       if (c == BEL)
       {
 	Pt_arg[Pt_len] = '\0';
@@ -2647,6 +2849,11 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   if (dwReason == DLL_PROCESS_ATTACH)
   {
     hHeap = HeapCreate( 0, 0, 128 * 1024 );
+    hKernel = GetModuleHandleA( APIKernel );
+    GetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
+				     hKernel, "GetConsoleScreenBufferInfoEx" );
+    SetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
+				     hKernel, "SetConsoleScreenBufferInfoEx" );
 
     *logstr = '\0';
     GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
@@ -2662,7 +2869,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     DEBUGSTR( 1, "hDllInstance = %p", hDllInstance );
 
     // Get the entry points to the original functions.
-    hKernel = GetModuleHandleA( APIKernel );
     for (hook = Hooks; hook->name; ++hook)
       hook->oldfunc = GetProcAddress( hKernel, hook->name );
 

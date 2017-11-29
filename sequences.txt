@@ -131,6 +131,18 @@ whilst "[2+J" will erase the buffer).
 ]2;TitleST
 	sets the console title to "Title"; ST (string terminator) is either
 	 character 7 (BEL) or escape and backslash
+]4;#;spec,spec...;#...ST
+	set or query the palette:
+	  # is the ANSI index (0-7, or 8-15 for bold/underline)
+	  spec is:
+		?	send the current value to console input
+		*	send the current and all subsequent values
+		#RGB	set the color (hexadecimal)
+		#RRGGBB set the color (hexadecimal)
+		R,G,B	set the color (decimal)
+]104ST	restore the entire palette
+]104;#...ST
+	restore the color of each index
 
 [#;#;#...,~
 	play sound (beep):

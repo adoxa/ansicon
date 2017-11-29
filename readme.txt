@@ -152,6 +152,8 @@ Sequences Recognised
 
 	\e]0;titleBEL		xterm: Set window's title (and icon, ignored)
 	\e]2;titleBEL		xterm: Set window's title
+	\e]4;...BEL		xterm: Change color(s)
+	\e]104;...BEL		xterm: Reset color(s)
 	\e[21t			xterm: Report window's title
 	\e[s			ANSI.SYS: Save Cursor Position
 	\e[u			ANSI.SYS: Restore Cursor Position
@@ -283,6 +285,7 @@ Limitations
 
     Tabs are fixed at eight columns.
     The saved position will not be restored correctly if the buffer scrolls.
+    Palette sequences only work from Vista.
 
     There may be a conflict with NVIDIA's drivers, requiring the setting of the
     Environment Variable:
@@ -298,7 +301,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 24 November, 2017:
+    1.80 - 29 November, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -310,7 +313,8 @@ Version History
     * escape control characters;
     + use the system default sound for the bell;
     + added Play Sound DECPS;
-    + added '+' intermediate byte to use the buffer, rather than the window.
+    + added '+' intermediate byte to use the buffer, rather than the window;
+    + added palette sequences.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -539,4 +543,4 @@ Distribution
 
 
 =============================
-Jason Hood, 24 November, 2017.
+Jason Hood, 29 November, 2017.
