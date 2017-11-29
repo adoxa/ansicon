@@ -256,11 +256,11 @@ DEC Special Graphics Character Set
 	l	U+250C	Box Drawings Light Down And Right
 	m	U+2514	Box Drawings Light Up And Right
 	n	U+253C	Box Drawings Light Vertical And Horizontal
-	o	U+00AF	Macron (SCAN 1)
-	p	U+25AC	Black Rectangle (SCAN 3)
+	o	U+23BA	Horizontal Scan Line-1
+	p	U+23BB	Horizontal Scan Line-3
 	q	U+2500	Box Drawings Light Horizontal (SCAN 5)
-	r	U+005F	Low Line (SCAN 7)
-	s	U+005F	Low Line (SCAN 9)
+	r	U+23BC	Horizontal Scan Line-7
+	s	U+23BD	Horizontal Scan Line-9
 	t	U+251C	Box Drawings Light Vertical And Right
 	u	U+2524	Box Drawings Light Vertical And Left
 	v	U+2534	Box Drawings Light Up And Horizontal
@@ -311,6 +311,7 @@ Version History
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
     * escape control characters;
+    * change the graphics SCAN characters to their Unicode equivalents;
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;

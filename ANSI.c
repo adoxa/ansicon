@@ -164,7 +164,8 @@
     add DECPS Play Sound;
     use intermediate byte '+' to use buffer, not window;
     ESC followed by a control character will display that character;
-    added palette sequences.
+    added palette sequences;
+    change the scan lines in the graphics set to their actual Unicode chars.
 */
 
 #include "ansicon.h"
@@ -234,11 +235,11 @@ const WCHAR G1[] =
   L'\x250c',    // l - Box Drawings Light Down And Right
   L'\x2514',    // m - Box Drawings Light Up And Right
   L'\x253c',    // n - Box Drawings Light Vertical And Horizontal
-  L'\x00af',    // o - SCAN 1 - Macron
-  L'\x25ac',    // p - SCAN 3 - Black Rectangle
-  L'\x2500',    // q - SCAN 5 - Box Drawings Light Horizontal
-  L'_',         // r - SCAN 7 - Low Line
-  L'_',         // s - SCAN 9 - Low Line
+  L'\x23ba',    // o - Horizontal Scan Line-1
+  L'\x23bb',    // p - Horizontal Scan Line-3
+  L'\x2500',    // q - Box Drawings Light Horizontal (SCAN 5)
+  L'\x23bc',    // r - Horizontal Scan Line-7
+  L'\x23bd',    // s - Horizontal Scan Line-9
   L'\x251c',    // t - Box Drawings Light Vertical And Right
   L'\x2524',    // u - Box Drawings Light Vertical And Left
   L'\x2534',    // v - Box Drawings Light Up And Horizontal
