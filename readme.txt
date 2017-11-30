@@ -157,6 +157,7 @@ Sequences Recognised
 	\e[21t			xterm: Report window's title
 	\e[s			ANSI.SYS: Save Cursor Position
 	\e[u			ANSI.SYS: Restore Cursor Position
+	BEL		BEL	Bell
 	\e[#Z		CBT	Cursor Backward Tabulation
 	\e[#G		CHA	Cursor Character Absolute
 	\e[#I		CHT	Cursor Forward Tabulation
@@ -301,7 +302,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 29 November, 2017:
+    1.80 - 30 November, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -544,4 +545,4 @@ Distribution
 
 
 =============================
-Jason Hood, 29 November, 2017.
+Jason Hood, 30 November, 2017.

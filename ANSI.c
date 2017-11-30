@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 29 November, 2017:
+  v1.80, 26 October to 30 November, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -1482,7 +1482,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	FlushBuffer();
 	pState->crm = TRUE;
-	PushBuffer( (WCHAR)c );
+	ChBuffer[nCharInBuffer++] = c;	// skip newline handling
 	FlushBuffer();
 	pState->crm = FALSE;
 	state = 1;
@@ -1543,7 +1543,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0 && suffix2 != ',' && suffix2 != '+')
+      else if (suffix2 != 0 && suffix2 != '+' && (suffix2 != ',' || c != '~'))
       {
 	state = 1;
       }
@@ -1576,7 +1576,7 @@ ParseAndPrintString( HANDLE hDev,
       {
 	suffix2 = c;
       }
-      else if (suffix2 != 0 && suffix2 != ',' && suffix2 != '+')
+      else if (suffix2 != 0 && suffix2 != '+' && (suffix2 != ',' || c != '~'))
       {
 	state = 1;
       }

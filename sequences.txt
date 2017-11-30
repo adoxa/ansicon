@@ -6,7 +6,8 @@ This is a complete list of the ANSI escape sequences recognised by ANSICON,
 roughly ordered by function.  The initial escape character is assumed.	The
 display consists of the buffer width and window height; add '+' before the
 final character to use the buffer height (e.g. "[2J" will erase the window,
-whilst "[2+J" will erase the buffer).
+whilst "[2+J" will erase the buffer).  BEL will also be recognised, playing
+the Windows default beep (but only if it's not already playing).
 
 
 [m	restore default color (and intensity)
@@ -160,3 +161,11 @@ whilst "[2+J" will erase the buffer).
 		6  F5	     698      15  D6	   1174      24  B6	  1976
 		7  F#5/Gb5   740      16  D#6/Eb6  1244      25  C7	  2094
 		8  G5	     784      17  E6	   1318
+
+P...ST	ignored (Device Control String)
+X...ST	ignored (Start Of String)
+^...ST	ignored (Privacy Message)
+_...ST	ignored (Application Program Command)
+
+Any of space and !"#$%&'()*+,-./, possibly repeated, followed by anything else,
+will be ignored.
