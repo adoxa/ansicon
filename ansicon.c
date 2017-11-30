@@ -86,8 +86,9 @@
     log: 64-bit addresses get an underscore between the 8-digit groups;
 	 add error codes to some message.
 
-  v1.80, 28 October, 2017:
-    write newline with _putws, not putwchar (fixes redirecting to CON).
+  v1.80, 28 October & 30 November, 2017:
+    write newline with _putws, not putwchar (fixes redirecting to CON);
+    use -pu to unload from the parent.
 */
 
 #define PDATE L"30 November, 2017"
@@ -217,15 +218,16 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
 }
 
 
-// Use CreateRemoteThread to load our DLL in the target process.
-void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
+// Use CreateRemoteThread to (un)load our DLL in the target process.
+void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app, BOOL unload )
 {
   HANDLE hSnap;
   MODULEENTRY32 me;
-  PBYTE  LLW;
+  PBYTE  proc;
+  DWORD  rva;
   BOOL	 fOk;
   DWORD  len;
-  LPVOID mem;
+  LPVOID param;
   HANDLE thread;
   DWORD  ticks;
 #ifdef _WIN64
@@ -262,48 +264,71 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app )
     fputws( L"ANSICON: unable to inject into parent.\n", stderr );
     return;
   }
-  LLW = NULL;
-  me.dwSize = sizeof(MODULEENTRY32);
-  for (fOk = Module32First( hSnap, &me ); fOk; fOk = Module32Next( hSnap, &me ))
-  {
-    if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
-    {
-      LLW = me.modBaseAddr;
-      break;
-    }
-  }
-  CloseHandle( hSnap );
-  if (LLW == NULL)
-  {
-    DEBUGSTR( 1, "  Unable to locate kernel32.dll" );
-    goto no_go;
-  }
-
+  proc = param = NULL;
   len = (DWORD)(prog - prog_path);
   memcpy( DllName, prog_path, TSIZE(len) );
 #ifdef _WIN64
   type = (IsWow64Process( ppi->hProcess, &WOW64 ) && WOW64) ? 32 : 64;
   wsprintf( DllName + len, L"ANSI%d.dll", type );
-  LLW += GetProcRVA( L"kernel32.dll", "LoadLibraryW", type );
-#else
-  wcscpy( DllName + len, L"ANSI32.dll" );
-  LLW += GetProcRVA( L"kernel32.dll", "LoadLibraryW" );
 #endif
-  if (LLW == me.modBaseAddr)
-    goto no_go;
-
-  mem = VirtualAllocEx( ppi->hProcess, NULL, len, MEM_COMMIT, PAGE_READWRITE );
-  if (mem == NULL)
+  me.dwSize = sizeof(MODULEENTRY32);
+  for (fOk = Module32First( hSnap, &me ); fOk; fOk = Module32Next( hSnap, &me ))
   {
-    DEBUGSTR(1, "  Failed to allocate virtual memory (%u)", GetLastError());
+    if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
+    {
+      proc = me.modBaseAddr;
+      if (!unload)
+	break;
+    }
+    else if (unload)
+    {
+#ifdef _WIN64
+      if (_wcsicmp( me.szModule, DllName + len ) == 0)
+#else
+      if (_wcsicmp( me.szModule, L"ANSI32.dll" ) == 0)
+#endif
+	param = me.modBaseAddr;
+    }
+  }
+  CloseHandle( hSnap );
+  if (proc == NULL)
+  {
+    DEBUGSTR( 1, "  Unable to locate kernel32.dll" );
     goto no_go;
   }
-  WriteProcMem( mem, DllName, TSIZE(len + 11) );
+  if (unload && param == NULL)
+  {
+    DEBUGSTR( 1, "  Unable to locate ANSICON's DLL" );
+    return;
+  }
+
+#ifdef _WIN64
+  rva = GetProcRVA( L"kernel32.dll", (unload) ? "FreeLibrary"
+					      : "LoadLibraryW", type );
+#else
+  wcscpy( DllName + len, L"ANSI32.dll" );
+  rva = GetProcRVA( L"kernel32.dll", unload ? "FreeLibrary" : "LoadLibraryW" );
+#endif
+  if (rva == 0)
+    goto no_go;
+  proc += rva;
+
+  if (!unload)
+  {
+    param = VirtualAllocEx(ppi->hProcess, NULL, len, MEM_COMMIT,PAGE_READWRITE);
+    if (param == NULL)
+    {
+      DEBUGSTR(1, "  Failed to allocate virtual memory (%u)", GetLastError());
+      goto no_go;
+    }
+    WriteProcMem( param, DllName, TSIZE(len + 11) );
+  }
   thread = CreateRemoteThread( ppi->hProcess, NULL, 4096,
-			       (LPTHREAD_START_ROUTINE)LLW, mem, 0, NULL );
+			       (LPTHREAD_START_ROUTINE)proc, param, 0, NULL );
   WaitForSingleObject( thread, INFINITE );
   CloseHandle( thread );
-  VirtualFreeEx( ppi->hProcess, mem, 0, MEM_RELEASE );
+  if (!unload)
+    VirtualFreeEx( ppi->hProcess, param, 0, MEM_RELEASE );
 }
 
 
@@ -412,11 +437,13 @@ int main( void )
 	// else fall through
 
       case 'p':
+      {
+	BOOL unload = (arg[1] == 'p' && arg[2] == 'u');
 	shell = FALSE;
 	if (GetParentProcessInfo( &pi, arg ))
 	{
 	  pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
-	  RemoteLoad( &pi, arg );
+	  RemoteLoad( &pi, arg, unload );
 	  CloseHandle( pi.hProcess );
 	}
 	else
@@ -425,6 +452,7 @@ int main( void )
 	  rc = 1;
 	}
 	break;
+      }
 
       case 'm':
       {
@@ -918,7 +946,7 @@ L"http://ansicon.adoxa.vze.com/\n"
 L"\n"
 L"Process ANSI escape sequences in " WINTYPE L" console programs.\n"
 L"\n"
-L"ansicon [-l<level>] [-i] [-I] [-u] [-U] [-m[<attr>]] [-p]\n"
+L"ansicon [-l<level>] [-i] [-I] [-u] [-U] [-m[<attr>]] [-p[u]]\n"
 L"        [-e|E string | -t|T [file(s)] | program [args]]\n"
 L"\n"
 L"  -l\t\tset the logging level (1=process, 2=module, 3=function,\n"
@@ -928,6 +956,7 @@ L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
 L"  -I -U\t\tuse local machine instead of current user\n"
 L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"
 L"  -p\t\thook into the parent process\n"
+L"  -pu\t\tunhook from the parent process\n"
 L"  -e\t\techo string\n"
 L"  -E\t\techo string, don't append newline\n"
 L"  -t\t\tdisplay files (\"-\" for stdin), combined as a single stream\n"

@@ -52,6 +52,8 @@ Usage
 	-p	Enable the parent process (i.e. the command shell used to run
 		ANSICON) to recognise escapes.
 
+	-pu	Unload from the parent process, restoring it.
+
 	-m	Set the current (and default) attribute to grey on black
 		("monochrome"), or the attribute following the 'm' (please
 		use 'COLOR /?' for attribute values).
@@ -316,7 +318,8 @@ Version History
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;
-    + added palette sequences.
+    + added palette sequences;
+    + added -pu to unload from the parent.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;

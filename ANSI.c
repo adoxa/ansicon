@@ -1928,8 +1928,13 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
     }
     else
     {
-      if (*(PDWORD)((PBYTE)me.hModule + 36) != 'ISNA' &&
-	  *(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
+      if (*(PDWORD)((PBYTE)me.hModule + 36) == 'ISNA')
+      {
+	VirtualProtect( (PBYTE)me.hModule + 36, 4, PAGE_READWRITE, &pr );
+	*((PBYTE)me.hModule + 36+3) = 'U';
+	VirtualProtect( (PBYTE)me.hModule + 36, 4, pr, &pr );
+      }
+      else if (*(PDWORD)((PBYTE)me.hModule + 0x3C) >= 0x40)
       {
 	if (log_level & 16)
 	  DEBUGSTR( 2, "%s%s %S", sp, zSkipping, me.szModule );
