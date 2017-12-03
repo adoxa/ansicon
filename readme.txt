@@ -189,9 +189,12 @@ Sequences Recognised
 	\e[#;#f 	HVP	Character And Line Position
 	\e[#@		ICH	Insert Character
 	\e[#L		IL	Insert Line
+	\eD		IND	Index
 	SI		LS0	Locking-shift Zero (see below)
 	SO		LS1	Locking-shift One
+	\eE		NEL	Next Line
 	\e[#b		REP	Repeat
+	\eM		RI	Reverse Index
 	\e[#;#;#m	SGR	Select Graphic Rendition
 	\e[#d		VPA	Line Position Absolute
 	\e[#k		VPB	Line Position Backward
@@ -304,7 +307,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 30 November, 2017:
+    1.80 - 3 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -319,7 +322,8 @@ Version History
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;
     + added palette sequences;
-    + added -pu to unload from the parent.
+    + added -pu to unload from the parent;
+    + added IND, NEL and RI.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -547,5 +551,5 @@ Distribution
     in LICENSE.txt.
 
 
-=============================
-Jason Hood, 30 November, 2017.
+============================
+Jason Hood, 3 December, 2017.

@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 30 November, 2017:
+  v1.80, 26 October to 3 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -165,7 +165,8 @@
     use intermediate byte '+' to use buffer, not window;
     ESC followed by a control character will display that character;
     added palette sequences;
-    change the scan lines in the graphics set to their actual Unicode chars.
+    change the scan lines in the graphics set to their actual Unicode chars;
+    added IND, NEL & RI (using buffer, in keeping with LF).
 */
 
 #include "ansicon.h"
@@ -1418,6 +1419,61 @@ void InterpretEscSeq( void )
   }
 }
 
+
+void ScrollDown( void )
+{
+  CONSOLE_SCREEN_BUFFER_INFO Info;
+  SMALL_RECT Rect;
+  COORD      Pos;
+  CHAR_INFO  CharInfo;
+
+  GetConsoleScreenBufferInfo( hConOut, &Info );
+  if (CUR.Y == LAST)
+  {
+    Rect.Left = LEFT;
+    Rect.Right = RIGHT;
+    Rect.Top = 1;
+    Rect.Bottom = LAST;
+    Pos.X = Pos.Y = 0;
+    CharInfo.Char.UnicodeChar = ' ';
+    CharInfo.Attributes = Info.wAttributes;
+    ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
+  }
+  else
+  {
+    ++CUR.Y;
+    SetConsoleCursorPosition( hConOut, CUR );
+  }
+}
+
+void ScrollUp( void )
+{
+  CONSOLE_SCREEN_BUFFER_INFO Info;
+  SMALL_RECT Rect;
+  COORD      Pos;
+  CHAR_INFO  CharInfo;
+
+  GetConsoleScreenBufferInfo( hConOut, &Info );
+  if (CUR.Y == 0)
+  {
+    Rect.Left = LEFT;
+    Rect.Right = RIGHT;
+    Rect.Top = 0;
+    Rect.Bottom = LAST - 1;
+    Pos.X = 0;
+    Pos.Y = 1;
+    CharInfo.Char.UnicodeChar = ' ';
+    CharInfo.Attributes = Info.wAttributes;
+    ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
+  }
+  else
+  {
+    --CUR.Y;
+    SetConsoleCursorPosition( hConOut, CUR );
+  }
+}
+
+
 DWORD WINAPI BellThread( LPVOID param )
 {
   // XP doesn't support SND_SENTRY, so if it fails, try without.
@@ -1491,6 +1547,23 @@ ParseAndPrintString( HANDLE hDev,
 	suffix2 = c;
       else if (suffix2 != 0)
 	state = 1;
+      else if (c == 'E')        // NEL Next Line
+      {
+	PushBuffer( '\n' );
+	state = 1;
+      }
+      else if (c == 'D')        // IND Index
+      {
+	FlushBuffer();
+	ScrollDown();
+	state = 1;
+      }
+      else if (c == 'M')        // RI  Reverse Index
+      {
+	FlushBuffer();
+	ScrollUp();
+        state = 1;
+      }
       else if (c == '[' ||      // CSI Control Sequence Introducer
 	       c == ']')        // OSC Operating System Command
       {

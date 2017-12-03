@@ -71,6 +71,10 @@ the Windows default beep (but only if it's not already playing).
 [b	repeat the previous character
 [#b	repeat the previous character # times
 
+D	move cursor down one line (scroll if necessary; always uses buffer)
+E	same as LF
+M	move cursor up one line (scroll if necessary; always uses buffer)
+
 [A	move cursor up one line
 [#A	move cursor up # lines
 [B	move cursor down one line

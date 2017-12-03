@@ -91,7 +91,7 @@
     use -pu to unload from the parent.
 */
 
-#define PDATE L"30 November, 2017"
+#define PDATE L"3 December, 2017"
 
 #include "ansicon.h"
 #include "version.h"
