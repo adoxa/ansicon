@@ -124,6 +124,9 @@ M	move cursor up one line (scroll if necessary; always uses buffer)
 [u	move cursor to saved position (or top-left, if nothing was saved)
 8	as above
 
+(0	select the DEC Special Graphics Character Set
+(B	select ASCII
+
 [3h	display control characters (LF is also performed)
 [3l	perform control functions (the only such recognised during above)
 [?3h	set 132 columns

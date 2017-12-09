@@ -202,6 +202,8 @@ Sequences Recognised
 	\eE		NEL	Next Line
 	\e[#b		REP	Repeat
 	\eM		RI	Reverse Index
+	\e(0		SCS	Select Character Set (DEC special graphics)
+	\e(B		SCS	Select Character Set (ASCII)
 	\e[#;#;#m	SGR	Select Graphic Rendition
 	\e[#d		VPA	Line Position Absolute
 	\e[#k		VPB	Line Position Backward
@@ -209,12 +211,14 @@ Sequences Recognised
 
     '\e' represents the escape character (ASCII 27); '#' represents a decimal
     number (optional, in most cases defaulting to 1); BEL, SO and SI are ASCII
-    7, 14 and 15.  Regarding SGR: bold will set the foreground intensity; blink
-    and underline will set the background intensity; conceal uses background as
-    foreground.  See "sequences.txt" for a more complete description.
+    7, 14 and 15.  See "sequences.txt" for a more complete description.
 
     Escape followed by a control character will display that character, not
-    perform its function.  An unrecognised sequence will preserve the escape.
+    perform its function; an unrecognised character will preserve the escape.
+
+    SO will select the G1 character set; SI will select the G0 set.  The G0
+    character set is set by SCS; the G1 character set is always the DEC
+    Special Graphics Character Set.
 
     I make a distinction between '\e[m' and '\e[0;...m'.  Both will restore the
     original foreground/background colors (and so '0' should be the first para-
@@ -230,20 +234,6 @@ Sequences Recognised
     scroll in a new window.
 
 
-Sequences Ignored
-=================
-
-    The following escape sequences are explicitly ignored.
-
-	\e(?		Designate G0 character set ('?' is any character).
-	\e)?		Designate G1 character set ('?' is any character).
-	\e[?... 	Private sequence
-	\e[>... 	Private sequence
-
-    The G0 character set is always ASCII; the G1 character set is always the
-    DEC Special Graphics Character Set.
-
-
 DEC Special Graphics Character Set
 ==================================
 
@@ -253,7 +243,7 @@ DEC Special Graphics Character Set
 
 	Char	Unicode Code Point & Name
 	----	-------------------------
-	_	U+00A0	No-Break Space (blank)
+	_	U+00A0	No-Break Space
 	`	U+2666	Black Diamond Suit
 	a	U+2592	Medium Shade
 	b	U+2409	Symbol For Horizontal Tabulation
@@ -330,7 +320,8 @@ Version History
     + added '+' intermediate byte to use the buffer, rather than the window;
     + added palette sequences;
     + added -pu to unload from the parent;
-    + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC.
+    + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
+    + added SCS, but only for special/ASCII (same as Win10).
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;

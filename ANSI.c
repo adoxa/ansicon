@@ -211,7 +211,7 @@ int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
-BOOL  shifted;
+BOOL  shifted, G0_special;
 int   screen_top = -1;		// initial window top when cleared
 
 
@@ -1573,7 +1573,7 @@ ParseAndPrintString( HANDLE hDev,
   {
     hConOut = hDev;
     state = 1;
-    shifted = FALSE;
+    shifted = G0_special = FALSE;
   }
   for (i = nNumberOfBytesToWrite, s = (LPCTSTR)lpBuffer; i > 0; i--, s++)
   {
@@ -1594,7 +1594,7 @@ ParseAndPrintString( HANDLE hDev,
 	  hBell = CreateThread( NULL, 4096, BellThread, NULL, 0, NULL );
       }
       else if (c == SO) shifted = TRUE;
-      else if (c == SI) shifted = FALSE;
+      else if (c == SI) shifted = G0_special;
       else PushBuffer( (WCHAR)c );
     }
     else if (state == 2)
@@ -1611,7 +1611,16 @@ ParseAndPrintString( HANDLE hDev,
       else if (c >= '\x20' && c <= '\x2f')
 	suffix2 = c;
       else if (suffix2 != 0)
+      {
+	if (suffix2 == '(')     // Designate G0 character set
+	{
+	  if (c == '0')
+	    shifted = G0_special = TRUE;
+	  else if (c == 'B')
+	    shifted = G0_special = FALSE;
+	}
 	state = 1;
+      }
       else if (c == 'E')        // NEL Next Line
       {
 	PushBuffer( '\n' );
