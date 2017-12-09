@@ -311,6 +311,8 @@ Version History
       (fixes redirecting to CON and Microsoft's conio);
     - fix cursor report with duplicated digits (e.g. "11" was only writing "1");
     - fix issues with CRM;
+    - fix explicit zero parameters not defaulting to 1;
+    * limit parameters to a maximum value of 32767;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
     * escape control characters;

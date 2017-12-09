@@ -167,7 +167,9 @@
     added palette sequences;
     change the scan lines in the graphics set to their actual Unicode chars;
     added IND, NEL & RI (using buffer, in keeping with LF);
-    added DA, DECCOLM, DECNCSM, DECSC & DECRC.
+    added DA, DECCOLM, DECNCSM, DECSC & DECRC;
+    an explicit zero parameter should still default to one;
+    restrict parameters to a maximum value of 32767.
 */
 
 #include "ansicon.h"
@@ -721,6 +723,7 @@ void send_palette_sequence( COLORREF c )
 void InterpretEscSeq( void )
 {
   int  i;
+  int  p1, p2;
   WORD attribut;
   CONSOLE_SCREEN_BUFFER_INFO Info;
   CONSOLE_CURSOR_INFO CursInfo;
@@ -827,6 +830,10 @@ void InterpretEscSeq( void )
     if (prefix2 != 0)
       return;
 
+    // Even an explicit parameter of 0 should be defaulted to 1.
+    p1 = (es_argv[0] == 0) ? 1 : es_argv[0];
+    p2 = (es_argv[1] == 0) ? 1 : es_argv[1];
+
     GetConsoleScreenBufferInfo( hConOut, &Info );
     if (suffix2 == '+')
     {
@@ -841,7 +848,7 @@ void InterpretEscSeq( void )
     switch (suffix)
     {
       case 'm':
-	if (es_argc == 0) es_argv[es_argc++] = 0;
+	if (es_argc == 0) es_argc++; // ESC[m == ESC[0m
 	for (i = 0; i < es_argc; i++)
 	{
 	  if (30 <= es_argv[i] && es_argv[i] <= 37)
@@ -955,8 +962,7 @@ void InterpretEscSeq( void )
       return;
 
       case 'J':
-	if (es_argc == 0) es_argv[es_argc++] = 0; // ESC[J == ESC[0J
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[J == ESC[0J
 	switch (es_argv[0])
 	{
 	  case 0: // ESC[0J erase from cursor to end of display
@@ -1014,8 +1020,7 @@ void InterpretEscSeq( void )
 	}
 
       case 'K':
-	if (es_argc == 0) es_argv[es_argc++] = 0; // ESC[K == ESC[0K
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[K == ESC[0K
 	switch (es_argv[0])
 	{
 	  case 0: // ESC[0K Clear to end of line
@@ -1040,20 +1045,18 @@ void InterpretEscSeq( void )
 	}
 
       case 'X': // ESC[#X Erase # characters.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[X == ESC[1X
-	if (es_argc != 1) return;
-	FillBlank( es_argv[0], CUR );
+	if (es_argc > 1) return; // ESC[X == ESC[1X
+	FillBlank( p1, CUR );
       return;
 
       case 'L': // ESC[#L Insert # blank lines.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[L == ESC[1L
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[L == ESC[1L
 	Rect.Left   = WIN.Left	= LEFT;
 	Rect.Right  = WIN.Right = RIGHT;
 	Rect.Top    = CUR.Y;
 	Rect.Bottom = bottom;
 	Pos.X = LEFT;
-	Pos.Y = CUR.Y + es_argv[0];
+	Pos.Y = CUR.Y + p1;
 	CharInfo.Char.UnicodeChar = ' ';
 	CharInfo.Attributes = Info.wAttributes;
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &WIN, Pos, &CharInfo );
@@ -1061,12 +1064,11 @@ void InterpretEscSeq( void )
       return;
 
       case 'M': // ESC[#M Delete # lines.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[M == ESC[1M
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[M == ESC[1M
 	Rect.Left   = WIN.Left	= LEFT;
 	Rect.Right  = WIN.Right = RIGHT;
 	Rect.Bottom = bottom;
-	Rect.Top    = CUR.Y - es_argv[0];
+	Rect.Top    = CUR.Y - p1;
 	Pos.X = LEFT;
 	Pos.Y = TOP = CUR.Y;
 	CharInfo.Char.UnicodeChar = ' ';
@@ -1076,11 +1078,10 @@ void InterpretEscSeq( void )
       return;
 
       case 'P': // ESC[#P Delete # characters.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[P == ESC[1P
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[P == ESC[1P
 	Rect.Left   = WIN.Left	= CUR.X;
 	Rect.Right  = WIN.Right = RIGHT;
-	Pos.X	    = CUR.X - es_argv[0];
+	Pos.X	    = CUR.X - p1;
 	Pos.Y	    =
 	Rect.Top    =
 	Rect.Bottom = CUR.Y;
@@ -1090,11 +1091,10 @@ void InterpretEscSeq( void )
       return;
 
       case '@': // ESC[#@ Insert # blank characters.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[@ == ESC[1@
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[@ == ESC[1@
 	Rect.Left   = WIN.Left	= CUR.X;
 	Rect.Right  = WIN.Right = RIGHT;
-	Pos.X	    = CUR.X + es_argv[0];
+	Pos.X	    = CUR.X + p1;
 	Pos.Y	    =
 	Rect.Top    =
 	Rect.Bottom = CUR.Y;
@@ -1105,9 +1105,8 @@ void InterpretEscSeq( void )
 
       case 'k': // ESC[#k
       case 'A': // ESC[#A Moves cursor up # lines
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[A == ESC[1A
-	if (es_argc != 1) return;
-	Pos.Y = CUR.Y - es_argv[0];
+	if (es_argc > 1) return; // ESC[A == ESC[1A
+	Pos.Y = CUR.Y - p1;
 	if (Pos.Y < top) Pos.Y = top;
 	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
@@ -1115,9 +1114,8 @@ void InterpretEscSeq( void )
 
       case 'e': // ESC[#e
       case 'B': // ESC[#B Moves cursor down # lines
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[B == ESC[1B
-	if (es_argc != 1) return;
-	Pos.Y = CUR.Y + es_argv[0];
+	if (es_argc > 1) return; // ESC[B == ESC[1B
+	Pos.Y = CUR.Y + p1;
 	if (Pos.Y > bottom) Pos.Y = bottom;
 	Pos.X = CUR.X;
 	SetConsoleCursorPosition( hConOut, Pos );
@@ -1125,9 +1123,8 @@ void InterpretEscSeq( void )
 
       case 'a': // ESC[#a
       case 'C': // ESC[#C Moves cursor forward # spaces
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[C == ESC[1C
-	if (es_argc != 1) return;
-	Pos.X = CUR.X + es_argv[0];
+	if (es_argc > 1) return; // ESC[C == ESC[1C
+	Pos.X = CUR.X + p1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
@@ -1135,27 +1132,24 @@ void InterpretEscSeq( void )
 
       case 'j': // ESC[#j
       case 'D': // ESC[#D Moves cursor back # spaces
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[D == ESC[1D
-	if (es_argc != 1) return;
-	Pos.X = CUR.X - es_argv[0];
+	if (es_argc > 1) return; // ESC[D == ESC[1D
+	Pos.X = CUR.X - p1;
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	Pos.Y = CUR.Y;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'E': // ESC[#E Moves cursor down # lines, column 1.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[E == ESC[1E
-	if (es_argc != 1) return;
-	Pos.Y = CUR.Y + es_argv[0];
+	if (es_argc > 1) return; // ESC[E == ESC[1E
+	Pos.Y = CUR.Y + p1;
 	if (Pos.Y > bottom) Pos.Y = bottom;
 	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'F': // ESC[#F Moves cursor up # lines, column 1.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[F == ESC[1F
-	if (es_argc != 1) return;
-	Pos.Y = CUR.Y - es_argv[0];
+	if (es_argc > 1) return; // ESC[F == ESC[1F
+	Pos.Y = CUR.Y - p1;
 	if (Pos.Y < top) Pos.Y = top;
 	Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
@@ -1163,9 +1157,8 @@ void InterpretEscSeq( void )
 
       case '`': // ESC[#`
       case 'G': // ESC[#G Moves cursor column # in current row.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[G == ESC[1G
-	if (es_argc != 1) return;
-	Pos.X = es_argv[0] - 1;
+	if (es_argc > 1) return; // ESC[G == ESC[1G
+	Pos.X = p1 - 1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	Pos.Y = CUR.Y;
@@ -1173,9 +1166,8 @@ void InterpretEscSeq( void )
       return;
 
       case 'd': // ESC[#d Moves cursor row #, current column.
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[d == ESC[1d
-	if (es_argc != 1) return;
-	Pos.Y = top + es_argv[0] - 1;
+	if (es_argc > 1) return; // ESC[d == ESC[1d
+	Pos.Y = top + p1 - 1;
 	if (Pos.Y < top) Pos.Y = top;
 	if (Pos.Y > bottom) Pos.Y = bottom;
 	SetConsoleCursorPosition( hConOut, Pos );
@@ -1183,45 +1175,38 @@ void InterpretEscSeq( void )
 
       case 'f': // ESC[#;#f
       case 'H': // ESC[#;#H Moves cursor to line #, column #
-	if (es_argc == 0)
-	  es_argv[es_argc++] = 1; // ESC[H == ESC[1;1H
-	if (es_argc == 1)
-	  es_argv[es_argc++] = 1; // ESC[#H == ESC[#;1H
-	if (es_argc > 2) return;
-	Pos.X = es_argv[1] - 1;
+	if (es_argc > 2) return; // ESC[H == ESC[1;1H  ESC[#H == ESC[#;1H
+	Pos.X = p2 - 1;
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	Pos.Y = top + es_argv[0] - 1;
+	Pos.Y = top + p1 - 1;
 	if (Pos.Y < top) Pos.Y = top;
 	if (Pos.Y > bottom) Pos.Y = bottom;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'I': // ESC[#I Moves cursor forward # tabs
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[I == ESC[1I
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[I == ESC[1I
 	Pos.Y = CUR.Y;
-	Pos.X = (CUR.X & -8) + es_argv[0] * 8;
+	Pos.X = (CUR.X & -8) + p1 * 8;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'Z': // ESC[#Z Moves cursor back # tabs
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[Z == ESC[1Z
-	if (es_argc != 1) return;
+	if (es_argc > 1) return; // ESC[Z == ESC[1Z
 	Pos.Y = CUR.Y;
 	if ((CUR.X & 7) == 0)
-	   Pos.X = CUR.X - es_argv[0] * 8;
+	   Pos.X = CUR.X - p1 * 8;
 	else
-	   Pos.X = (CUR.X & -8) - (es_argv[0] - 1) * 8;
+	   Pos.X = (CUR.X & -8) - (p1 - 1) * 8;
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'b': // ESC[#b Repeat character
-	if (es_argc == 0) es_argv[es_argc++] = 1; // ESC[b == ESC[1b
-	if (es_argc != 1) return;
-	while (--es_argv[0] >= 0)
+	if (es_argc > 1) return; // ESC[b == ESC[1b
+	while (--p1 >= 0)
 	  PushBuffer( ChPrev );
       return;
 
@@ -1239,8 +1224,7 @@ void InterpretEscSeq( void )
       return;
 
       case 'c': // ESC[#c Device attributes
-	if (es_argc == 0) es_argv[es_argc++] = 0; // ESC[c == ESC[0c
-	if (es_argc != 1 || es_argv[0] != 0) return;
+	if (es_argc > 1 || es_argv[0] != 0) return; // ESC[c == ESC[0c
 	SendSequence( L"\33[?62;1c" ); // VT220 with 132 columns
       return;
 
@@ -1655,6 +1639,8 @@ ParseAndPrintString( HANDLE hDev,
 	FlushBuffer();
 	prefix = c;
 	prefix2 = 0;
+	es_argc = 0;
+	es_argv[0] = es_argv[1] = 0;
 	Pt_len = 0;
 	*Pt_arg = '\0';
 	state = 3;
@@ -1678,15 +1664,12 @@ ParseAndPrintString( HANDLE hDev,
     {
       if (is_digit( c ))
       {
-        es_argc = 0;
 	es_argv[0] = c - '0';
         state = 4;
       }
       else if (c == ';')
       {
         es_argc = 1;
-        es_argv[0] = 0;
-	es_argv[1] = 0;
         state = 4;
       }
       else if (c == ':')
@@ -1718,6 +1701,7 @@ ParseAndPrintString( HANDLE hDev,
       if (is_digit( c ))
       {
 	es_argv[es_argc] = 10 * es_argv[es_argc] + (c - '0');
+	if (es_argv[es_argc] > 32767) es_argv[es_argc] = 32767;
       }
       else if (c == ';')
       {
