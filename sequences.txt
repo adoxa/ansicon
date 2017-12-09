@@ -120,16 +120,24 @@ M	move cursor up one line (scroll if necessary; always uses buffer)
 [#;#f	move cursor to line #, column #
 
 [s	save cursor position
+7	as above
 [u	move cursor to saved position (or top-left, if nothing was saved)
+8	as above
 
 [3h	display control characters (LF is also performed)
 [3l	perform control functions (the only such recognised during above)
+[?3h	set 132 columns
+[?3l	restore original columns
 [?7h	wrap lines at screen edge
 [?7l	don't wrap lines at screen edge
 [?25h	show cursor
 [?25l	hide cursor
+[?95h	don't clear screen when changing columns
+[?95l	clear screen when changing columns
 
-[5n	sends "\e[0n" to console input (where \e is escape)
+[c	sends "\e[?62;1c" to console input (where \e is escape)
+[0c	as above
+[5n	sends "\e[0n" to console input
 [6n	sends "\e[#;#R" (line & column) to console input
 [21t	sends "\e]lTitle\e\" (the console's window title) to console input
 ]0;TitleST

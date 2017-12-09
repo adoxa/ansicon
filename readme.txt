@@ -172,10 +172,17 @@ Sequences Recognised
 	\e[#C		CUF	Cursor Right
 	\e[#;#H 	CUP	Cursor Position
 	\e[#A		CUU	Cursor Up
+	\e[c		DA	Device Attributes
 	\e[#P		DCH	Delete Character
 	\e[?7h		DECAWM	DEC Autowrap Mode (autowrap)
 	\e[?7l		DECAWM	DEC Autowrap Mode (no autowrap)
+	\e[?3h		DECCOLM DEC Selecting 80 or 132 Columns per Page (132)
+	\e[?3l		DECCOLM DEC Selecting 80 or 132 Columns per Page (prior)
+	\e[?3h		DECNCSM DEC No Clearing Screen On Column Change Mode (keep)
+	\e[?3l		DECNCSM DEC No Clearing Screen On Column Change Mode (clear)
 	\e[#;#;#...,~	DECPS	DEC Play Sound
+	\e8		DECRC	DEC Restore Cursor
+	\e7		DECSC	DEC Save Cursor
 	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -307,7 +314,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 3 December, 2017:
+    1.80 - 9 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -323,7 +330,7 @@ Version History
     + added '+' intermediate byte to use the buffer, rather than the window;
     + added palette sequences;
     + added -pu to unload from the parent;
-    + added IND, NEL and RI.
+    + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -552,4 +559,4 @@ Distribution
 
 
 ============================
-Jason Hood, 3 December, 2017.
+Jason Hood, 9 December, 2017.

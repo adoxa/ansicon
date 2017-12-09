@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 3 December, 2017:
+  v1.80, 26 October to 9 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -166,7 +166,8 @@
     ESC followed by a control character will display that character;
     added palette sequences;
     change the scan lines in the graphics set to their actual Unicode chars;
-    added IND, NEL & RI (using buffer, in keeping with LF).
+    added IND, NEL & RI (using buffer, in keeping with LF);
+    added DA, DECCOLM, DECNCSM, DECSC & DECRC.
 */
 
 #include "ansicon.h"
@@ -343,6 +344,9 @@ typedef struct
   BYTE	   crm; 	// showing control characters?
   COORD    SavePos;	// saved cursor position
   COLORREF palette[16];
+  SHORT    buf_width;	// buffer width prior to setting 132 columns
+  SHORT    win_width;	// window width prior to setting 132 columns
+  BYTE	   noclear;	// don't clear the screen on column mode change
 } STATE, *PSTATE;
 
 PSTATE pState;
@@ -762,6 +766,61 @@ void InterpretEscSeq( void )
 	    mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
 	  SetConsoleMode( hConOut, mode );
 	return;
+
+	case 95:
+	  pState->noclear = (suffix == 'h');
+	return;
+
+	case 3:
+	{
+	  COORD buf;
+	  SMALL_RECT win;
+	  buf.X = (suffix == 'l') ? pState->buf_width : 132;
+	  if (buf.X == 0)
+	    return;
+	  GetConsoleScreenBufferInfo( hConOut, &Info );
+	  buf.Y = HEIGHT;
+	  win.Left = 0;
+	  win.Top = TOP;
+	  win.Bottom = BOTTOM;
+	  if (suffix == 'h')
+	  {
+	    pState->buf_width = WIDTH;
+	    pState->win_width = WIN.Right - WIN.Left;
+	    win.Right = 131;
+	  }
+	  else
+	  {
+	    win.Right = pState->win_width;
+	    pState->buf_width = 0;
+	  }
+	  // The buffer cannot be smaller than the window; the window cannot
+	  // be bigger than the buffer.
+	  if (WIN.Right - WIN.Left > win.Right)
+	  {
+	    SetConsoleWindowInfo( hConOut, TRUE, &win );
+	    SetConsoleScreenBufferSize( hConOut, buf );
+	  }
+	  else
+	  {
+	    SetConsoleScreenBufferSize( hConOut, buf );
+	    SetConsoleWindowInfo( hConOut, TRUE, &win );
+	  }
+	  // Even if the screen is not cleared, scroll in a new window the
+	  // first time this is used.
+	  if (pState->noclear &&
+	      (suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
+	  {
+	    CUR.X = LEFT;
+	    CUR.Y = (suffix2 == '+') ? 0 : TOP;
+	    SetConsoleCursorPosition( hConOut, CUR );
+	    return;
+	  }
+	  prefix2 = 0;
+	  es_argv[0] = 2;
+	  suffix = 'J';
+	  break;
+	}
       }
     }
     // Ignore any other private sequences.
@@ -1175,8 +1234,14 @@ void InterpretEscSeq( void )
 	if (es_argc != 0) return;
 	Pos = pState->SavePos;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	if (Pos.Y > bottom) Pos.Y = bottom;
+	if (Pos.Y > LAST) Pos.Y = LAST;
 	SetConsoleCursorPosition( hConOut, Pos );
+      return;
+
+      case 'c': // ESC[#c Device attributes
+	if (es_argc == 0) es_argv[es_argc++] = 0; // ESC[c == ESC[0c
+	if (es_argc != 1 || es_argv[0] != 0) return;
+	SendSequence( L"\33[?62;1c" ); // VT220 with 132 columns
       return;
 
       case 'n': // ESC[#n Device status report
@@ -1563,6 +1628,17 @@ ParseAndPrintString( HANDLE hDev,
 	FlushBuffer();
 	ScrollUp();
         state = 1;
+      }
+      else if (c == '7' ||      // DECSC Save Cursor
+	       c == '8')        // DECRC Restore Cursor
+      {
+	es_argc = 0;
+	prefix = '[';
+	prefix2 = 0;
+	suffix = (c == '7') ? 's' : 'u';
+	FlushBuffer();
+	InterpretEscSeq();
+	state = 1;
       }
       else if (c == '[' ||      // CSI Control Sequence Introducer
 	       c == ']')        // OSC Operating System Command
