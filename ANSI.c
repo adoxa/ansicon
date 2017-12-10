@@ -169,7 +169,8 @@
     added IND, NEL & RI (using buffer, in keeping with LF);
     added DA, DECCOLM, DECNCSM, DECSC & DECRC;
     an explicit zero parameter should still default to one;
-    restrict parameters to a maximum value of 32767.
+    restrict parameters to a maximum value of 32767;
+    added tab handling.
 */
 
 #include "ansicon.h"
@@ -199,7 +200,8 @@ struct Cache
 } cache[CACHE];
 
 #define ESC	'\x1B'          // ESCape character
-#define BEL	'\x07'
+#define BEL	'\x07'          // BELl
+#define HT	'\x09'          // Horizontal Tabulation
 #define SO	'\x0E'          // Shift Out
 #define SI	'\x0F'          // Shift In
 
@@ -334,6 +336,8 @@ typedef BOOL (WINAPI *PHCSBIX)(
 PHCSBIX GetConsoleScreenBufferInfoX, SetConsoleScreenBufferInfoX;
 
 
+#define MAX_TABS 2048
+
 typedef struct
 {
   BYTE	   foreground;	// ANSI base color (0 to 7; add 30)
@@ -349,6 +353,8 @@ typedef struct
   SHORT    buf_width;	// buffer width prior to setting 132 columns
   SHORT    win_width;	// window width prior to setting 132 columns
   BYTE	   noclear;	// don't clear the screen on column mode change
+  BYTE	   tabs;	// handle tabs directly
+  BYTE	   tab_stop[MAX_TABS];
 } STATE, *PSTATE;
 
 PSTATE pState;
@@ -704,6 +710,19 @@ void send_palette_sequence( COLORREF c )
   SendSequence( buf );
 }
 
+
+// Clear existing tabs and set tab stops at every size columns.
+void init_tabs( int size )
+{
+  int i;
+
+  memset( pState->tab_stop, FALSE, MAX_TABS );
+  for (i = 0; i < MAX_TABS; i += size)
+    pState->tab_stop[i] = TRUE;
+  pState->tabs = TRUE;
+}
+
+
 // ========== Print functions
 
 //-----------------------------------------------------------------------------
@@ -751,79 +770,90 @@ void InterpretEscSeq( void )
 
   if (prefix == '[')
   {
-    if (prefix2 == '?' && (suffix == 'h' || suffix == 'l') && es_argc == 1)
+    if (prefix2 == '?')
     {
-      switch (es_argv[0])
+      if (suffix == 'h' || suffix == 'l')
       {
-	case 25:
-	  GetConsoleCursorInfo( hConOut, &CursInfo );
-	  CursInfo.bVisible = (suffix == 'h');
-	  SetConsoleCursorInfo( hConOut, &CursInfo );
-	return;
-
-	case 7:
-	  mode = cache[0].mode;
-	  if (suffix == 'h')
-	    mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
-	  else
-	    mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
-	  SetConsoleMode( hConOut, mode );
-	return;
-
-	case 95:
-	  pState->noclear = (suffix == 'h');
-	return;
-
-	case 3:
+	if (es_argc != 1) return;
+	switch (es_argv[0])
 	{
-	  COORD buf;
-	  SMALL_RECT win;
-	  buf.X = (suffix == 'l') ? pState->buf_width : 132;
-	  if (buf.X == 0)
-	    return;
-	  GetConsoleScreenBufferInfo( hConOut, &Info );
-	  buf.Y = HEIGHT;
-	  win.Left = 0;
-	  win.Top = TOP;
-	  win.Bottom = BOTTOM;
-	  if (suffix == 'h')
+	  case 25:
+	    GetConsoleCursorInfo( hConOut, &CursInfo );
+	    CursInfo.bVisible = (suffix == 'h');
+	    SetConsoleCursorInfo( hConOut, &CursInfo );
+	  return;
+
+	  case 7:
+	    mode = cache[0].mode;
+	    if (suffix == 'h')
+	      mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
+	    else
+	      mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
+	    SetConsoleMode( hConOut, mode );
+	  return;
+
+	  case 95:
+	    pState->noclear = (suffix == 'h');
+	  return;
+
+	  case 3:
 	  {
-	    pState->buf_width = WIDTH;
-	    pState->win_width = WIN.Right - WIN.Left;
-	    win.Right = 131;
+	    COORD buf;
+	    SMALL_RECT win;
+	    buf.X = (suffix == 'l') ? pState->buf_width : 132;
+	    if (buf.X == 0)
+	      return;
+	    GetConsoleScreenBufferInfo( hConOut, &Info );
+	    buf.Y = HEIGHT;
+	    win.Left = 0;
+	    win.Top = TOP;
+	    win.Bottom = BOTTOM;
+	    if (suffix == 'h')
+	    {
+	      pState->buf_width = WIDTH;
+	      pState->win_width = WIN.Right - WIN.Left;
+	      win.Right = 131;
+	    }
+	    else
+	    {
+	      win.Right = pState->win_width;
+	      pState->buf_width = 0;
+	    }
+	    // The buffer cannot be smaller than the window; the window cannot
+	    // be bigger than the buffer.
+	    if (WIN.Right - WIN.Left > win.Right)
+	    {
+	      SetConsoleWindowInfo( hConOut, TRUE, &win );
+	      SetConsoleScreenBufferSize( hConOut, buf );
+	    }
+	    else
+	    {
+	      SetConsoleScreenBufferSize( hConOut, buf );
+	      SetConsoleWindowInfo( hConOut, TRUE, &win );
+	    }
+	    // Even if the screen is not cleared, scroll in a new window the
+	    // first time this is used.
+	    if (pState->noclear &&
+		(suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
+	    {
+	      CUR.X = LEFT;
+	      CUR.Y = (suffix2 == '+') ? 0 : TOP;
+	      SetConsoleCursorPosition( hConOut, CUR );
+	      return;
+	    }
+	    prefix2 = 0;
+	    es_argv[0] = 2;
+	    suffix = 'J';
+	    break;
 	  }
-	  else
-	  {
-	    win.Right = pState->win_width;
-	    pState->buf_width = 0;
-	  }
-	  // The buffer cannot be smaller than the window; the window cannot
-	  // be bigger than the buffer.
-	  if (WIN.Right - WIN.Left > win.Right)
-	  {
-	    SetConsoleWindowInfo( hConOut, TRUE, &win );
-	    SetConsoleScreenBufferSize( hConOut, buf );
-	  }
-	  else
-	  {
-	    SetConsoleScreenBufferSize( hConOut, buf );
-	    SetConsoleWindowInfo( hConOut, TRUE, &win );
-	  }
-	  // Even if the screen is not cleared, scroll in a new window the
-	  // first time this is used.
-	  if (pState->noclear &&
-	      (suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
-	  {
-	    CUR.X = LEFT;
-	    CUR.Y = (suffix2 == '+') ? 0 : TOP;
-	    SetConsoleCursorPosition( hConOut, CUR );
-	    return;
-	  }
-	  prefix2 = 0;
-	  es_argv[0] = 2;
-	  suffix = 'J';
-	  break;
 	}
+      }
+      else if (suffix == 'W')
+      {
+	if (es_argv[0] != 5 || es_argc > 2) return;
+	if (es_argc == 1) es_argv[1] = 8;
+	init_tabs( es_argv[1] );
+	return;
       }
     }
     // Ignore any other private sequences.
@@ -1185,10 +1215,38 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
+      case 'g':
+	if (es_argc > 1) return; // ESC[g == ESC[0g
+	switch (es_argv[0])
+	{
+	  case 0: // ESC[0g Clear tab at cursor
+	    if (!pState->tabs) init_tabs( 8 );
+	    if (CUR.X < MAX_TABS) pState->tab_stop[CUR.X] = FALSE;
+	  return;
+
+	  case 3: // ESC[3g Clear all tabs
+	    memset( pState->tab_stop, FALSE, MAX_TABS );
+	    pState->tabs = TRUE;
+	  return;
+
+	  case 8: // ESC[8g Let console handle tabs
+	    pState->tabs = FALSE;
+	  return;
+
+	  default:
+	  return;
+	}
+
       case 'I': // ESC[#I Moves cursor forward # tabs
 	if (es_argc > 1) return; // ESC[I == ESC[1I
 	Pos.Y = CUR.Y;
-	Pos.X = (CUR.X & -8) + p1 * 8;
+	if (pState->tabs)
+	{
+	  Pos.X = CUR.X;
+	  while (++Pos.X < MAX_TABS && (!pState->tab_stop[Pos.X] || --p1 > 0)) ;
+	}
+	else
+	  Pos.X = (CUR.X & -8) + p1 * 8;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -1196,10 +1254,18 @@ void InterpretEscSeq( void )
       case 'Z': // ESC[#Z Moves cursor back # tabs
 	if (es_argc > 1) return; // ESC[Z == ESC[1Z
 	Pos.Y = CUR.Y;
-	if ((CUR.X & 7) == 0)
-	   Pos.X = CUR.X - p1 * 8;
+	if (pState->tabs)
+	{
+	  Pos.X = (CUR.X < MAX_TABS) ? CUR.X : MAX_TABS;
+	  while (--Pos.X > 0 && (!pState->tab_stop[Pos.X] || --p1 > 0)) ;
+	}
 	else
-	   Pos.X = (CUR.X & -8) - (p1 - 1) * 8;
+	{
+	  if ((CUR.X & 7) == 0)
+	     Pos.X = CUR.X - p1 * 8;
+	  else
+	     Pos.X = (CUR.X & -8) - (p1 - 1) * 8;
+	}
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
@@ -1579,6 +1645,15 @@ ParseAndPrintString( HANDLE hDev,
       }
       else if (c == SO) shifted = TRUE;
       else if (c == SI) shifted = G0_special;
+      else if (c == HT && pState != NULL && pState->tabs)
+      {
+	CONSOLE_SCREEN_BUFFER_INFO Info;
+	FlushBuffer();
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	while (++CUR.X < MAX_TABS && !pState->tab_stop[CUR.X]) ;
+	if (CUR.X > RIGHT) CUR.X = RIGHT;
+	SetConsoleCursorPosition( hConOut, CUR );
+      }
       else PushBuffer( (WCHAR)c );
     }
     else if (state == 2)
@@ -1621,6 +1696,15 @@ ParseAndPrintString( HANDLE hDev,
 	FlushBuffer();
 	ScrollUp();
         state = 1;
+      }
+      else if (c == 'H')        // HTS Character Tabulation Set
+      {
+	CONSOLE_SCREEN_BUFFER_INFO Info;
+	if (!pState->tabs) init_tabs( 8 );
+	FlushBuffer();
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	if (CUR.X < MAX_TABS) pState->tab_stop[CUR.X] = TRUE;
+	state = 1;
       }
       else if (c == '7' ||      // DECSC Save Cursor
 	       c == '8')        // DECRC Restore Cursor

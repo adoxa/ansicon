@@ -150,7 +150,8 @@ Usage
 Sequences Recognised
 ====================
 
-    The following escape sequences are recognised.
+    The following escape sequences are recognised (see "sequences.txt" for a
+    more complete description).
 
 	\e]0;titleBEL		xterm: Set window's title (and icon, ignored)
 	\e]2;titleBEL		xterm: Set window's title
@@ -183,6 +184,8 @@ Sequences Recognised
 	\e[#;#;#...,~	DECPS	DEC Play Sound
 	\e8		DECRC	DEC Restore Cursor
 	\e7		DECSC	DEC Save Cursor
+	\e[?5W		DECST8C DEC Set Tab at Every 8 Columns
+	\e[?5;#W	DECST8C DEC Set Tab at Every # Columns (ANSICON extension)
 	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -193,6 +196,8 @@ Sequences Recognised
 	\e[#`		HPA	Character Position Absolute
 	\e[#j		HPB	Character Position Backward
 	\e[#a		HPR	Character Position Forward
+	HT		HT	Character Tabulation
+	\eH		HTS	Character Tabulation Set
 	\e[#;#f 	HVP	Character And Line Position
 	\e[#@		ICH	Insert Character
 	\e[#L		IL	Insert Line
@@ -205,13 +210,14 @@ Sequences Recognised
 	\e(0		SCS	Select Character Set (DEC special graphics)
 	\e(B		SCS	Select Character Set (ASCII)
 	\e[#;#;#m	SGR	Select Graphic Rendition
+	\e[#g		TBC	Tabulation Clear
 	\e[#d		VPA	Line Position Absolute
 	\e[#k		VPB	Line Position Backward
 	\e[#e		VPR	Line Position Forward
 
     '\e' represents the escape character (ASCII 27); '#' represents a decimal
-    number (optional, in most cases defaulting to 1); BEL, SO and SI are ASCII
-    7, 14 and 15.  See "sequences.txt" for a more complete description.
+    number (optional, in most cases defaulting to 1); BEL, HT, SO and SI are
+    ASCII 7, 9, 14 and 15.
 
     Escape followed by a control character will display that character, not
     perform its function; an unrecognised character will preserve the escape.
@@ -286,7 +292,7 @@ DEC Special Graphics Character Set
 Limitations
 ===========
 
-    Tabs are fixed at eight columns.
+    Tabs can only be set up to column 2048.
     The saved position will not be restored correctly if the buffer scrolls.
     Palette sequences only work from Vista.
 
@@ -304,7 +310,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 9 December, 2017:
+    1.80 - 10 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -323,7 +329,8 @@ Version History
     + added palette sequences;
     + added -pu to unload from the parent;
     + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
-    + added SCS, but only for special/ASCII (same as Win10).
+    + added SCS, but only for special/ASCII (same as Win10);
+    + added tab handling (HT, HTS, TBC & DECST8C).
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -551,5 +558,5 @@ Distribution
     in LICENSE.txt.
 
 
-============================
-Jason Hood, 9 December, 2017.
+==============================
+Jason Hood, 10 December, 2017.

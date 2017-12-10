@@ -83,6 +83,14 @@ M	move cursor up one line (scroll if necessary; always uses buffer)
 [#C	move cursor right # characters
 [D	move cursor left one character
 [#D	move cursor left # characters
+
+H	set tab stop
+[g	remove tab stop at cursor
+[0g	as above
+[3g	remove all tab stops
+[8g	restore console tab handling (ANSICON extension)
+[?5W	set tab stops every 8 columns
+[?5;#W	set tab stops every # columns (ANSICON extension)
 [I	move cursor forward one tab
 [#I	move cursor forward # tabs
 [Z	move cursor back one tab
