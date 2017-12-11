@@ -179,8 +179,8 @@ Sequences Recognised
 	\e[?7l		DECAWM	Autowrap Mode (no autowrap)
 	\e[?3h		DECCOLM Selecting 80 or 132 Columns per Page (132)
 	\e[?3l		DECCOLM Selecting 80 or 132 Columns per Page (prior)
-	\e[?3h		DECNCSM No Clearing Screen On Column Change Mode (keep)
-	\e[?3l		DECNCSM No Clearing Screen On Column Change Mode (clear)
+	\e[?95h 	DECNCSM No Clearing Screen On Column Change Mode (keep)
+	\e[?95l 	DECNCSM No Clearing Screen On Column Change Mode (clear)
 	\e[#;#;#...,~	DECPS	Play Sound
 	\e8		DECRC	Restore Cursor
 	\e7		DECSC	Save Cursor
