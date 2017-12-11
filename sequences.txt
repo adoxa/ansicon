@@ -127,10 +127,10 @@ H	set tab stop
 [#f	move cursor to line # and first column
 [#;#f	move cursor to line #, column #
 
-[s	save cursor position
-7	as above
+[s	save cursor position (buffer only)
 [u	move cursor to saved position (or top-left, if nothing was saved)
-8	as above
+7	save cursor position (buffer only), attributes and G0 character set
+8	restore above (if nothing was saved only moves cursor to top-left)
 
 (0	select the DEC Special Graphics Character Set
 (B	select ASCII

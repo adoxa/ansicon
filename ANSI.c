@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 9 December, 2017:
+  v1.80, 26 October to 11 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -167,7 +167,8 @@
     added palette sequences;
     change the scan lines in the graphics set to their actual Unicode chars;
     added IND, NEL & RI (using buffer, in keeping with LF);
-    added DA, DECCOLM, DECNCSM, DECSC & DECRC;
+    added DA, DECCOLM, DECNCSM, DECSC & DECRC (with SGR & G0);
+    partially support SCS (just G0 as DEC special & ASCII);
     an explicit zero parameter should still default to one;
     restrict parameters to a maximum value of 32767;
     added tab handling.
@@ -215,7 +216,7 @@ int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
-BOOL  shifted, G0_special;
+BOOL  shifted, G0_special, SaveG0;
 int   screen_top = -1;		// initial window top when cleared
 
 
@@ -340,13 +341,19 @@ PHCSBIX GetConsoleScreenBufferInfoX, SetConsoleScreenBufferInfoX;
 
 typedef struct
 {
-  BYTE	   foreground;	// ANSI base color (0 to 7; add 30)
-  BYTE	   background;	// ANSI base color (0 to 7; add 40)
-  BYTE	   bold;	// console FOREGROUND_INTENSITY bit
-  BYTE	   underline;	// console BACKGROUND_INTENSITY bit
-  BYTE	   rvideo;	// swap foreground/bold & background/underline
-  BYTE	   concealed;	// set foreground/bold to background/underline
-  BYTE	   reverse;	// swap console foreground & background attributes
+  BYTE	foreground;	// ANSI base color (0 to 7; add 30)
+  BYTE	background;	// ANSI base color (0 to 7; add 40)
+  BYTE	bold;		// console FOREGROUND_INTENSITY bit
+  BYTE	underline;	// console BACKGROUND_INTENSITY bit
+  BYTE	rvideo; 	// swap foreground/bold & background/underline
+  BYTE	concealed;	// set foreground/bold to background/underline
+  BYTE	reverse;	// swap console foreground & background attributes
+} SGR;
+
+typedef struct
+{
+  SGR	   sgr, SaveSgr;
+  WORD	   SaveAttr;
   BYTE	   crm; 	// showing control characters?
   COORD    SavePos;	// saved cursor position
   COLORREF palette[16];
@@ -431,24 +438,24 @@ void get_state( void )
     if (GetEnvironmentVariable( L"ANSICON_REVERSE", NULL, 0 ))
     {
       SetEnvironmentVariable( L"ANSICON_REVERSE", NULL );
-      pState->reverse	 = TRUE;
-      pState->foreground = attr2ansi[(csbi.wAttributes >> 4) & 7];
-      pState->background = attr2ansi[csbi.wAttributes & 7];
-      pState->bold	 = (csbi.wAttributes & BACKGROUND_INTENSITY) >> 4;
-      pState->underline  = (csbi.wAttributes & FOREGROUND_INTENSITY) << 4;
+      pState->sgr.reverse  = TRUE;
+      pState->sgr.foreground = attr2ansi[(csbi.wAttributes >> 4) & 7];
+      pState->sgr.background = attr2ansi[csbi.wAttributes & 7];
+      pState->sgr.bold	     = (csbi.wAttributes & BACKGROUND_INTENSITY) >> 4;
+      pState->sgr.underline  = (csbi.wAttributes & FOREGROUND_INTENSITY) << 4;
     }
     else
     {
-      pState->foreground = attr2ansi[csbi.wAttributes & 7];
-      pState->background = attr2ansi[(csbi.wAttributes >> 4) & 7];
-      pState->bold	 = csbi.wAttributes & FOREGROUND_INTENSITY;
-      pState->underline  = csbi.wAttributes & BACKGROUND_INTENSITY;
+      pState->sgr.foreground = attr2ansi[csbi.wAttributes & 7];
+      pState->sgr.background = attr2ansi[(csbi.wAttributes >> 4) & 7];
+      pState->sgr.bold	     = csbi.wAttributes & FOREGROUND_INTENSITY;
+      pState->sgr.underline  = csbi.wAttributes & BACKGROUND_INTENSITY;
     }
     if (!GetEnvironmentVariable( L"ANSICON_DEF", NULL, 0 ))
     {
       TCHAR  def[4];
       LPTSTR a = def;
-      if (pState->reverse)
+      if (pState->sgr.reverse)
       {
 	*a++ = '-';
 	csbi.wAttributes = ((csbi.wAttributes >> 4) & 15)
@@ -883,11 +890,11 @@ void InterpretEscSeq( void )
 	{
 	  if (30 <= es_argv[i] && es_argv[i] <= 37)
 	  {
-	    pState->foreground = es_argv[i] - 30;
+	    pState->sgr.foreground = es_argv[i] - 30;
 	  }
 	  else if (40 <= es_argv[i] && es_argv[i] <= 47)
 	  {
-	    pState->background = es_argv[i] - 40;
+	    pState->sgr.background = es_argv[i] - 40;
 	  }
 	  else if (es_argv[i] == 38 || es_argv[i] == 48)
 	  {
@@ -915,78 +922,78 @@ void InterpretEscSeq( void )
 	      *def = '7'; def[1] = '\0';
 	      GetEnvironmentVariable( L"ANSICON_DEF", def, lenof(def) );
 	      a = wcstol( def, NULL, 16 );
-	      pState->reverse = FALSE;
+	      pState->sgr.reverse = FALSE;
 	      if (a < 0)
 	      {
-		pState->reverse = TRUE;
+		pState->sgr.reverse = TRUE;
 		a = -a;
 	      }
 	      if (es_argv[i] != 49)
-		pState->foreground = attr2ansi[a & 7];
+		pState->sgr.foreground = attr2ansi[a & 7];
 	      if (es_argv[i] != 39)
-		pState->background = attr2ansi[(a >> 4) & 7];
+		pState->sgr.background = attr2ansi[(a >> 4) & 7];
 	      if (es_argv[i] == 0)
 	      {
 		if (es_argc == 1)
 		{
-		  pState->bold	    = a & FOREGROUND_INTENSITY;
-		  pState->underline = a & BACKGROUND_INTENSITY;
+		  pState->sgr.bold	= a & FOREGROUND_INTENSITY;
+		  pState->sgr.underline = a & BACKGROUND_INTENSITY;
 		}
 		else
 		{
-		  pState->bold	    = 0;
-		  pState->underline = 0;
+		  pState->sgr.bold	= 0;
+		  pState->sgr.underline = 0;
 		}
-		pState->rvideo    = 0;
-		pState->concealed = 0;
+		pState->sgr.rvideo    = 0;
+		pState->sgr.concealed = 0;
 	      }
 	    }
 	    break;
 
-	    case  1: pState->bold      = FOREGROUND_INTENSITY; break;
+	    case  1: pState->sgr.bold	   = FOREGROUND_INTENSITY; break;
 	    case  5: // blink
-	    case  4: pState->underline = BACKGROUND_INTENSITY; break;
-	    case  7: pState->rvideo    = 1; break;
-	    case  8: pState->concealed = 1; break;
+	    case  4: pState->sgr.underline = BACKGROUND_INTENSITY; break;
+	    case  7: pState->sgr.rvideo    = 1; break;
+	    case  8: pState->sgr.concealed = 1; break;
 	    case 21: // oops, this actually turns on double underline
 		     // but xterm turns off bold too, so that's alright
-	    case 22: pState->bold      = 0; break;
+	    case 22: pState->sgr.bold	   = 0; break;
 	    case 25:
-	    case 24: pState->underline = 0; break;
-	    case 27: pState->rvideo    = 0; break;
-	    case 28: pState->concealed = 0; break;
+	    case 24: pState->sgr.underline = 0; break;
+	    case 27: pState->sgr.rvideo    = 0; break;
+	    case 28: pState->sgr.concealed = 0; break;
 	  }
 	}
-	if (pState->concealed)
+	if (pState->sgr.concealed)
 	{
-	  if (pState->rvideo)
+	  if (pState->sgr.rvideo)
 	  {
-	    attribut = foregroundcolor[pState->foreground]
-		     | backgroundcolor[pState->foreground];
-	    if (pState->bold)
+	    attribut = foregroundcolor[pState->sgr.foreground]
+		     | backgroundcolor[pState->sgr.foreground];
+	    if (pState->sgr.bold)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	  else
 	  {
-	    attribut = foregroundcolor[pState->background]
-		     | backgroundcolor[pState->background];
-	    if (pState->underline)
+	    attribut = foregroundcolor[pState->sgr.background]
+		     | backgroundcolor[pState->sgr.background];
+	    if (pState->sgr.underline)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	}
-	else if (pState->rvideo)
+	else if (pState->sgr.rvideo)
 	{
-	  attribut = foregroundcolor[pState->background]
-		   | backgroundcolor[pState->foreground];
-	  if (pState->bold)
+	  attribut = foregroundcolor[pState->sgr.background]
+		   | backgroundcolor[pState->sgr.foreground];
+	  if (pState->sgr.bold)
 	    attribut |= BACKGROUND_INTENSITY;
-	  if (pState->underline)
+	  if (pState->sgr.underline)
 	    attribut |= FOREGROUND_INTENSITY;
 	}
 	else
-	  attribut = foregroundcolor[pState->foreground] | pState->bold
-		   | backgroundcolor[pState->background] | pState->underline;
-	if (pState->reverse)
+	  attribut = foregroundcolor[pState->sgr.foreground] | pState->sgr.bold
+		   | backgroundcolor[pState->sgr.background] | pState->sgr.underline;
+	if (pState->sgr.reverse)
 	  attribut = ((attribut >> 4) & 15) | ((attribut & 15) << 4);
 	SetConsoleTextAttribute( hConOut, attribut );
       return;
@@ -1706,15 +1713,32 @@ ParseAndPrintString( HANDLE hDev,
 	if (CUR.X < MAX_TABS) pState->tab_stop[CUR.X] = TRUE;
 	state = 1;
       }
-      else if (c == '7' ||      // DECSC Save Cursor
-	       c == '8')        // DECRC Restore Cursor
+      else if (c == '7')        // DECSC Save Cursor
       {
-	es_argc = 0;
-	prefix = '[';
-	prefix2 = 0;
-	suffix = (c == '7') ? 's' : 'u';
+	CONSOLE_SCREEN_BUFFER_INFO Info;
 	FlushBuffer();
-	InterpretEscSeq();
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	pState->SavePos = CUR;
+	pState->SaveSgr = pState->sgr;
+	pState->SaveAttr = Info.wAttributes;
+	SaveG0 = G0_special;
+	state = 1;
+      }
+      else if (c == '8')        // DECRC Restore Cursor
+      {
+	CONSOLE_SCREEN_BUFFER_INFO Info;
+	FlushBuffer();
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	CUR = pState->SavePos;
+	if (CUR.X > RIGHT) CUR.X = RIGHT;
+	if (CUR.Y > LAST)  CUR.Y = LAST;
+	SetConsoleCursorPosition( hConOut, CUR );
+	if (pState->SaveAttr != 0)  // assume 0 means not saved
+	{
+	  pState->sgr = pState->SaveSgr;
+	  SetConsoleTextAttribute( hConOut, pState->SaveAttr );
+	  shifted = G0_special = SaveG0;
+	}
 	state = 1;
       }
       else if (c == '[' ||      // CSI Control Sequence Introducer

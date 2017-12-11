@@ -175,19 +175,19 @@ Sequences Recognised
 	\e[#A		CUU	Cursor Up
 	\e[c		DA	Device Attributes
 	\e[#P		DCH	Delete Character
-	\e[?7h		DECAWM	DEC Autowrap Mode (autowrap)
-	\e[?7l		DECAWM	DEC Autowrap Mode (no autowrap)
-	\e[?3h		DECCOLM DEC Selecting 80 or 132 Columns per Page (132)
-	\e[?3l		DECCOLM DEC Selecting 80 or 132 Columns per Page (prior)
-	\e[?3h		DECNCSM DEC No Clearing Screen On Column Change Mode (keep)
-	\e[?3l		DECNCSM DEC No Clearing Screen On Column Change Mode (clear)
-	\e[#;#;#...,~	DECPS	DEC Play Sound
-	\e8		DECRC	DEC Restore Cursor
-	\e7		DECSC	DEC Save Cursor
-	\e[?5W		DECST8C DEC Set Tab at Every 8 Columns
-	\e[?5;#W	DECST8C DEC Set Tab at Every # Columns (ANSICON extension)
-	\e[?25h 	DECTCEM DEC Text Cursor Enable Mode (show cursor)
-	\e[?25l 	DECTCEM DEC Text Cursor Enable Mode (hide cursor)
+	\e[?7h		DECAWM	Autowrap Mode (autowrap)
+	\e[?7l		DECAWM	Autowrap Mode (no autowrap)
+	\e[?3h		DECCOLM Selecting 80 or 132 Columns per Page (132)
+	\e[?3l		DECCOLM Selecting 80 or 132 Columns per Page (prior)
+	\e[?3h		DECNCSM No Clearing Screen On Column Change Mode (keep)
+	\e[?3l		DECNCSM No Clearing Screen On Column Change Mode (clear)
+	\e[#;#;#...,~	DECPS	Play Sound
+	\e8		DECRC	Restore Cursor
+	\e7		DECSC	Save Cursor
+	\e[?5W		DECST8C Set Tab at Every 8 Columns
+	\e[?5;#W	DECST8C Set Tab at Every # Columns (ANSICON extension)
+	\e[?25h 	DECTCEM Text Cursor Enable Mode (show cursor)
+	\e[?25l 	DECTCEM Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
 	\e[#n		DSR	Device Status Report
 	\e[#X		ECH	Erase Character
@@ -310,7 +310,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 10 December, 2017:
+    1.80 - 11 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -559,4 +559,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 10 December, 2017.
+Jason Hood, 11 December, 2017.
