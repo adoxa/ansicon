@@ -32,6 +32,8 @@ the Windows default beep (but only if it's not already playing).
 		35	foreground magenta
 		36	foreground cyan
 		37	foreground white
+		38;2;#	foreground & bold based on index (0-15)
+		38;5;#;#;# ignored (RGB)
 		39	default foreground (using current intensity)
 		40	background black
 		41	background red
@@ -41,7 +43,25 @@ the Windows default beep (but only if it's not already playing).
 		45	background magenta
 		46	background cyan
 		47	background white
+		48;2;#	background & underline based on index (0-15)
+		48;5;#;#;# ignored (RGB)
 		49	default background (using current intensity)
+		90	foreground bright black
+		91	foreground bright red
+		92	foreground bright green
+		93	foreground bright yellow
+		94	foreground bright blue
+		95	foreground bright magenta
+		96	foreground bright cyan
+		97	foreground bright white
+	       100	background bright black
+	       101	background bright red
+	       102	background bright green
+	       103	background bright yellow
+	       104	background bright blue
+	       105	background bright magenta
+	       106	background bright cyan
+	       107	background bright white
 
 [J	erase from cursor to the end of display
 [0J	as above
@@ -159,11 +179,13 @@ H	set tab stop
 	set or query the palette:
 	  # is the ANSI index (0-7, or 8-15 for bold/underline)
 	  spec is:
-		?	send the current value to console input
-		*	send the current and all subsequent values
-		#RGB	set the color (hexadecimal)
-		#RRGGBB set the color (hexadecimal)
-		R,G,B	set the color (decimal)
+		?		    send the current value to console input
+		*		    send the current and all subsequent values
+		#RGB		    set the color (hexadecimal)
+		#RRGGBB 	    set the color (hexadecimal)
+		R,G,B		    set the color (decimal)
+		rgb:RR/GG/BB	    set the color (hexadecimal)
+		rgb:RRRR/GGGG/BBBB  set the color (hexadecimal, high byte)
 ]104ST	restore the entire palette
 ]104;#...ST
 	restore the color of each index

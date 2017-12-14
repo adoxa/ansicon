@@ -310,7 +310,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 11 December, 2017:
+    1.80 - 16 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -318,15 +318,17 @@ Version History
     - fix cursor report with duplicated digits (e.g. "11" was only writing "1");
     - fix issues with CRM;
     - fix explicit zero parameters not defaulting to 1;
+    - set color by index (also setting bold/underline);
     * limit parameters to a maximum value of 32767;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
-    * escape control characters;
+    * escaped control characters will display the control;
     * change the graphics SCAN characters to their Unicode equivalents;
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;
     + added palette sequences;
+    + added the bright SGR colors;
     + added -pu to unload from the parent;
     + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
     + added SCS, but only for special/ASCII (same as Win10);
@@ -559,4 +561,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 11 December, 2017.
+Jason Hood, 16 December, 2017.

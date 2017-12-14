@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 11 December, 2017:
+  v1.80, 26 October to 16 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -171,7 +171,8 @@
     partially support SCS (just G0 as DEC special & ASCII);
     an explicit zero parameter should still default to one;
     restrict parameters to a maximum value of 32767;
-    added tab handling.
+    added tab handling;
+    added the bright SGR colors, recognised the system indices.
 */
 
 #include "ansicon.h"
@@ -272,7 +273,7 @@ const WCHAR G1[] =
 #define BACKGROUND_BLACK 0
 #define BACKGROUND_WHITE BACKGROUND_RED|BACKGROUND_GREEN|BACKGROUND_BLUE
 
-const BYTE foregroundcolor[8] =
+const BYTE foregroundcolor[16] =
 {
   FOREGROUND_BLACK,			// black foreground
   FOREGROUND_RED,			// red foreground
@@ -281,10 +282,18 @@ const BYTE foregroundcolor[8] =
   FOREGROUND_BLUE,			// blue foreground
   FOREGROUND_BLUE | FOREGROUND_RED,	// magenta foreground
   FOREGROUND_BLUE | FOREGROUND_GREEN,	// cyan foreground
-  FOREGROUND_WHITE			// white foreground
+  FOREGROUND_WHITE,			// white foreground
+  FOREGROUND_INTENSITY | FOREGROUND_BLACK,
+  FOREGROUND_INTENSITY | FOREGROUND_RED,
+  FOREGROUND_INTENSITY | FOREGROUND_GREEN,
+  FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
+  FOREGROUND_INTENSITY | FOREGROUND_BLUE,
+  FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED,
+  FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN,
+  FOREGROUND_INTENSITY | FOREGROUND_WHITE
 };
 
-const BYTE backgroundcolor[8] =
+const BYTE backgroundcolor[16] =
 {
   BACKGROUND_BLACK,			// black background
   BACKGROUND_RED,			// red background
@@ -294,6 +303,14 @@ const BYTE backgroundcolor[8] =
   BACKGROUND_BLUE | BACKGROUND_RED,	// magenta background
   BACKGROUND_BLUE | BACKGROUND_GREEN,	// cyan background
   BACKGROUND_WHITE,			// white background
+  BACKGROUND_INTENSITY | BACKGROUND_BLACK,
+  BACKGROUND_INTENSITY | BACKGROUND_RED,
+  BACKGROUND_INTENSITY | BACKGROUND_GREEN,
+  BACKGROUND_INTENSITY | BACKGROUND_RED | BACKGROUND_GREEN,
+  BACKGROUND_INTENSITY | BACKGROUND_BLUE,
+  BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_RED,
+  BACKGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_GREEN,
+  BACKGROUND_INTENSITY | BACKGROUND_WHITE
 };
 
 const BYTE attr2ansi[16] =		// map console attribute to ANSI number
@@ -896,19 +913,42 @@ void InterpretEscSeq( void )
 	  {
 	    pState->sgr.background = es_argv[i] - 40;
 	  }
+	  else if (90 <= es_argv[i] && es_argv[i] <= 97)
+	  {
+	    pState->sgr.foreground = es_argv[i] - 90 + 8;
+	  }
+	  else if (100 <= es_argv[i] && es_argv[i] <= 107)
+	  {
+	    pState->sgr.background = es_argv[i] - 100 + 8;
+	  }
 	  else if (es_argv[i] == 38 || es_argv[i] == 48)
 	  {
 	    // This is technically incorrect, but it's what xterm does, so
 	    // that's what we do.  According to T.416 (ISO 8613-6), there is
 	    // only one parameter, which is divided into elements.  So where
-	    // xterm does "38;2;R;G;B" it should really be "38;2:I:R:G:B" (I is
+	    // xterm does "38;2;R;G;B" it should really be "38:2:I:R:G:B" (I is
 	    // a color space identifier).
 	    if (i+1 < es_argc)
 	    {
 	      if (es_argv[i+1] == 2)		// rgb
 		i += 4;
 	      else if (es_argv[i+1] == 5)	// index
+	      {
+		if (i+2 < es_argc && es_argv[i+2] < 16)
+		{
+		  if (es_argv[i] == 38)
+		  {
+		    pState->sgr.foreground = es_argv[i+2];
+		    pState->sgr.bold = es_argv[i+2] & FOREGROUND_INTENSITY;
+		  }
+		  else
+		  {
+		    pState->sgr.background = es_argv[i+2];
+		    pState->sgr.underline = es_argv[i+2] & BACKGROUND_INTENSITY;
+		  }
+		}
 		i += 2;
+	      }
 	    }
 	  }
 	  else switch (es_argv[i])
@@ -1477,6 +1517,27 @@ void InterpretEscSeq( void )
 		}
 		else
 		  valid = FALSE;
+	      }
+	      else if (wcsncmp( beg, L"rgb:", 4 ) == 0)
+	      {
+		valid = FALSE;
+		c = (DWORD)wcstoul( beg += 4, &end, 16 );
+		if (*end == '/' && (end - beg == 2 || end - beg == 4))
+		{
+		  r = (BYTE)(end - beg == 2 ? c : c >> 8);
+		  c = (DWORD)wcstoul( beg = end + 1, &end, 16 );
+		  if (*end == '/' && (end - beg == 2 || end - beg == 4))
+		  {
+		    g = (BYTE)(end - beg == 2 ? c : c >> 8);
+		    c = (DWORD)wcstoul( beg = end + 1, &end, 16 );
+		    if ((*end == ',' || *end == ';' || *end == '\0') &&
+			(end - beg == 2 || end - beg == 4))
+		    {
+		      b = (BYTE)(end - beg == 2 ? c : c >> 8);
+		      valid = TRUE;
+		    }
+		  }
+		}
 	      }
 	      else
 	      {
