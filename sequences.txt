@@ -157,6 +157,8 @@ H	set tab stop
 
 [3h	display control characters (LF is also performed)
 [3l	perform control functions (the only such recognised during above)
+[4h	insert characters
+[4l	replace characters
 [?3h	set 132 columns
 [?3l	restore original columns
 [?7h	wrap lines at screen edge

@@ -202,6 +202,8 @@ Sequences Recognised
 	\e[#@		ICH	Insert Character
 	\e[#L		IL	Insert Line
 	\eD		IND	Index
+	\e[4h		IRM	Insertion Replacement Mode (insert)
+	\e[4l		IRM	Insertion Replacement Mode (replace)
 	SI		LS0	Locking-shift Zero (see below)
 	SO		LS1	Locking-shift One
 	\eE		NEL	Next Line
@@ -310,7 +312,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 16 December, 2017:
+    1.80 - 17 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -332,7 +334,8 @@ Version History
     + added -pu to unload from the parent;
     + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
     + added SCS, but only for special/ASCII (same as Win10);
-    + added tab handling (HT, HTS, TBC & DECST8C).
+    + added tab handling (HT, HTS, TBC & DECST8C);
+    + added IRM.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -561,4 +564,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 16 December, 2017.
+Jason Hood, 17 December, 2017.

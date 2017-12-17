@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 16 December, 2017:
+  v1.80, 26 October to 17 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -172,7 +172,8 @@
     an explicit zero parameter should still default to one;
     restrict parameters to a maximum value of 32767;
     added tab handling;
-    added the bright SGR colors, recognised the system indices.
+    added the bright SGR colors, recognised the system indices;
+    added insert mode.
 */
 
 #include "ansicon.h"
@@ -218,6 +219,7 @@ int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
 BOOL  shifted, G0_special, SaveG0;
+BOOL  im;			// insert mode?
 int   screen_top = -1;		// initial window top when cleared
 
 
@@ -555,7 +557,7 @@ void FlushBuffer( void )
 
   if (nCharInBuffer <= 0) return;
 
-  if (pState->crm)
+  if (pState->crm && !im)
   {
     SetConsoleMode( hConOut, cache[0].mode & ~ENABLE_PROCESSED_OUTPUT );
     WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
@@ -566,8 +568,9 @@ void FlushBuffer( void )
     HANDLE hConWrap;
     CONSOLE_CURSOR_INFO cci;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
+    COORD here;
 
-    if (nCharInBuffer < 4)
+    if (nCharInBuffer < 4 && !im)
     {
       LPWSTR b = ChBuffer;
       do
@@ -596,17 +599,39 @@ void FlushBuffer( void )
       // Ensure the buffer is the same width (it gets created using the window
       // width) and more than one line.
       GetConsoleScreenBufferInfo( hConOut, &csbi );
+      here = csbi.dwCursorPosition;
       csbi.dwSize.Y = csbi.srWindow.Bottom - csbi.srWindow.Top + 2;
       SetConsoleScreenBufferSize( hConWrap, csbi.dwSize );
       // Put the cursor on the top line, in the same column.
       csbi.dwCursorPosition.Y = 0;
       SetConsoleCursorPosition( hConWrap, csbi.dwCursorPosition );
+      if (pState->crm)
+	SetConsoleMode( hConWrap, ENABLE_WRAP_AT_EOL_OUTPUT );
       WriteConsole( hConWrap, ChBuffer, nCharInBuffer, &nWritten, NULL );
       GetConsoleScreenBufferInfo( hConWrap, &csbi );
       if (csbi.dwCursorPosition.Y != 0)
 	fWrapped = TRUE;
       CloseHandle( hConWrap );
-      WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
+      if (im && !fWrapped)
+      {
+	SMALL_RECT sr, cr;
+	CHAR_INFO  ci;		// unused, but necessary
+
+	sr.Top = sr.Bottom = csbi.dwCursorPosition.Y = here.Y;
+	sr.Left = here.X;
+	sr.Right = csbi.dwSize.X - 1;
+	cr = sr;
+	cr.Left = csbi.dwCursorPosition.X;
+	ScrollConsoleScreenBuffer(hConOut, &sr,&cr, csbi.dwCursorPosition, &ci);
+      }
+      if (pState->crm)
+      {
+	SetConsoleMode( hConOut, cache[0].mode & ~ENABLE_PROCESSED_OUTPUT );
+	WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
+	SetConsoleMode( hConOut, cache[0].mode );
+      }
+      else
+	WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
     }
   }
   nCharInBuffer = 0;
@@ -747,6 +772,15 @@ void init_tabs( int size )
 }
 
 
+// Set the cursor position, resetting the wrap flag.
+void set_pos( SHORT x, SHORT y )
+{
+  COORD pos = { x, y };
+  SetConsoleCursorPosition( hConOut, pos );
+  fWrapped = FALSE;
+}
+
+
 // ========== Print functions
 
 //-----------------------------------------------------------------------------
@@ -798,78 +832,76 @@ void InterpretEscSeq( void )
     {
       if (suffix == 'h' || suffix == 'l')
       {
-	if (es_argc != 1) return;
-	switch (es_argv[0])
-	{
-	  case 25:
-	    GetConsoleCursorInfo( hConOut, &CursInfo );
-	    CursInfo.bVisible = (suffix == 'h');
-	    SetConsoleCursorInfo( hConOut, &CursInfo );
-	  return;
-
-	  case 7:
-	    mode = cache[0].mode;
-	    if (suffix == 'h')
-	      mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
-	    else
-	      mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
-	    SetConsoleMode( hConOut, mode );
-	  return;
-
-	  case 95:
-	    pState->noclear = (suffix == 'h');
-	  return;
-
-	  case 3:
+	for (i = 0; i < es_argc; i++)
+	  switch (es_argv[i])
 	  {
-	    COORD buf;
-	    SMALL_RECT win;
-	    buf.X = (suffix == 'l') ? pState->buf_width : 132;
-	    if (buf.X == 0)
-	      return;
-	    GetConsoleScreenBufferInfo( hConOut, &Info );
-	    buf.Y = HEIGHT;
-	    win.Left = 0;
-	    win.Top = TOP;
-	    win.Bottom = BOTTOM;
-	    if (suffix == 'h')
-	    {
-	      pState->buf_width = WIDTH;
-	      pState->win_width = WIN.Right - WIN.Left;
-	      win.Right = 131;
-	    }
-	    else
-	    {
-	      win.Right = pState->win_width;
-	      pState->buf_width = 0;
-	    }
-	    // The buffer cannot be smaller than the window; the window cannot
-	    // be bigger than the buffer.
-	    if (WIN.Right - WIN.Left > win.Right)
-	    {
-	      SetConsoleWindowInfo( hConOut, TRUE, &win );
-	      SetConsoleScreenBufferSize( hConOut, buf );
-	    }
-	    else
-	    {
-	      SetConsoleScreenBufferSize( hConOut, buf );
-	      SetConsoleWindowInfo( hConOut, TRUE, &win );
-	    }
-	    // Even if the screen is not cleared, scroll in a new window the
-	    // first time this is used.
-	    if (pState->noclear &&
-		(suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
-	    {
-	      CUR.X = LEFT;
-	      CUR.Y = (suffix2 == '+') ? 0 : TOP;
-	      SetConsoleCursorPosition( hConOut, CUR );
-	      return;
-	    }
-	    prefix2 = 0;
-	    es_argv[0] = 2;
-	    suffix = 'J';
+	    case 25:
+	      GetConsoleCursorInfo( hConOut, &CursInfo );
+	      CursInfo.bVisible = (suffix == 'h');
+	      SetConsoleCursorInfo( hConOut, &CursInfo );
 	    break;
-	  }
+
+	    case 7:
+	      mode = cache[0].mode;
+	      if (suffix == 'h')
+		mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
+	      else
+		mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT;
+	      SetConsoleMode( hConOut, mode );
+	    break;
+
+	    case 95:
+	      pState->noclear = (suffix == 'h');
+	    break;
+
+	    case 3:
+	    {
+	      COORD buf;
+	      SMALL_RECT win;
+	      buf.X = (suffix == 'l') ? pState->buf_width : 132;
+	      if (buf.X == 0)
+		break;
+	      GetConsoleScreenBufferInfo( hConOut, &Info );
+	      buf.Y = HEIGHT;
+	      win.Left = 0;
+	      win.Top = TOP;
+	      win.Bottom = BOTTOM;
+	      if (suffix == 'h')
+	      {
+		pState->buf_width = WIDTH;
+		pState->win_width = WIN.Right - WIN.Left;
+		win.Right = 131;
+	      }
+	      else
+	      {
+		win.Right = pState->win_width;
+		pState->buf_width = 0;
+	      }
+	      // The buffer cannot be smaller than the window; the window
+	      // cannot be bigger than the buffer.
+	      if (WIN.Right - WIN.Left > win.Right)
+	      {
+		SetConsoleWindowInfo( hConOut, TRUE, &win );
+		SetConsoleScreenBufferSize( hConOut, buf );
+	      }
+	      else
+	      {
+		SetConsoleScreenBufferSize( hConOut, buf );
+		SetConsoleWindowInfo( hConOut, TRUE, &win );
+	      }
+	      // Even if the screen is not cleared, scroll in a new window the
+	      // first time this is used.
+	      if (pState->noclear &&
+		  (suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
+	      {
+		set_pos( LEFT, (SHORT)(suffix2 == '+' ? 0 : TOP) );
+		break;
+	      }
+	      prefix2 = 0;
+	      es_argv[0] = 2;
+	      suffix = 'J';
+	      break;
+	    }
 	}
       }
       else if (suffix == 'W')
@@ -1089,12 +1121,10 @@ void InterpretEscSeq( void )
 	    len   = (bottom - top + 1) * WIDTH;
 	    FillBlank( len, Pos );
 	    // Not technically correct, but perhaps expected.
-	    SetConsoleCursorPosition( hConOut, Pos );
-	  return;
-
-	  default:
+	    set_pos( Pos.X, Pos.Y );
 	  return;
 	}
+      return;
 
       case 'K':
 	if (es_argc > 1) return; // ESC[K == ESC[0K
@@ -1116,10 +1146,8 @@ void InterpretEscSeq( void )
 	    Pos.Y = CUR.Y;
 	    FillBlank( WIDTH, Pos );
 	  return;
-
-	  default:
-	  return;
 	}
+      return;
 
       case 'X': // ESC[#X Erase # characters.
 	if (es_argc > 1) return; // ESC[X == ESC[1X
@@ -1185,8 +1213,7 @@ void InterpretEscSeq( void )
 	if (es_argc > 1) return; // ESC[A == ESC[1A
 	Pos.Y = CUR.Y - p1;
 	if (Pos.Y < top) Pos.Y = top;
-	Pos.X = CUR.X;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( CUR.X, Pos.Y );
       return;
 
       case 'e': // ESC[#e
@@ -1194,8 +1221,7 @@ void InterpretEscSeq( void )
 	if (es_argc > 1) return; // ESC[B == ESC[1B
 	Pos.Y = CUR.Y + p1;
 	if (Pos.Y > bottom) Pos.Y = bottom;
-	Pos.X = CUR.X;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( CUR.X, Pos.Y );
       return;
 
       case 'a': // ESC[#a
@@ -1203,8 +1229,7 @@ void InterpretEscSeq( void )
 	if (es_argc > 1) return; // ESC[C == ESC[1C
 	Pos.X = CUR.X + p1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	Pos.Y = CUR.Y;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, CUR.Y );
       return;
 
       case 'j': // ESC[#j
@@ -1212,24 +1237,21 @@ void InterpretEscSeq( void )
 	if (es_argc > 1) return; // ESC[D == ESC[1D
 	Pos.X = CUR.X - p1;
 	if (Pos.X < LEFT) Pos.X = LEFT;
-	Pos.Y = CUR.Y;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, CUR.Y );
       return;
 
       case 'E': // ESC[#E Moves cursor down # lines, column 1.
 	if (es_argc > 1) return; // ESC[E == ESC[1E
 	Pos.Y = CUR.Y + p1;
 	if (Pos.Y > bottom) Pos.Y = bottom;
-	Pos.X = LEFT;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( LEFT, Pos.Y );
       return;
 
       case 'F': // ESC[#F Moves cursor up # lines, column 1.
 	if (es_argc > 1) return; // ESC[F == ESC[1F
 	Pos.Y = CUR.Y - p1;
 	if (Pos.Y < top) Pos.Y = top;
-	Pos.X = LEFT;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( LEFT, Pos.Y );
       return;
 
       case '`': // ESC[#`
@@ -1237,9 +1259,7 @@ void InterpretEscSeq( void )
 	if (es_argc > 1) return; // ESC[G == ESC[1G
 	Pos.X = p1 - 1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
-	if (Pos.X < LEFT) Pos.X = LEFT;
-	Pos.Y = CUR.Y;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, CUR.Y );
       return;
 
       case 'd': // ESC[#d Moves cursor row #, current column.
@@ -1247,19 +1267,18 @@ void InterpretEscSeq( void )
 	Pos.Y = top + p1 - 1;
 	if (Pos.Y < top) Pos.Y = top;
 	if (Pos.Y > bottom) Pos.Y = bottom;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( CUR.X, Pos.Y );
       return;
 
       case 'f': // ESC[#;#f
       case 'H': // ESC[#;#H Moves cursor to line #, column #
 	if (es_argc > 2) return; // ESC[H == ESC[1;1H  ESC[#H == ESC[#;1H
 	Pos.X = p2 - 1;
-	if (Pos.X < LEFT) Pos.X = LEFT;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	Pos.Y = top + p1 - 1;
 	if (Pos.Y < top) Pos.Y = top;
 	if (Pos.Y > bottom) Pos.Y = bottom;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, Pos.Y );
       return;
 
       case 'g':
@@ -1279,10 +1298,8 @@ void InterpretEscSeq( void )
 	  case 8: // ESC[8g Let console handle tabs
 	    pState->tabs = FALSE;
 	  return;
-
-	  default:
-	  return;
 	}
+      return;
 
       case 'I': // ESC[#I Moves cursor forward # tabs
 	if (es_argc > 1) return; // ESC[I == ESC[1I
@@ -1295,12 +1312,12 @@ void InterpretEscSeq( void )
 	else
 	  Pos.X = (CUR.X & -8) + p1 * 8;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
+	// Don't use set_pos, the tabs could be discarded.
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
       case 'Z': // ESC[#Z Moves cursor back # tabs
 	if (es_argc > 1) return; // ESC[Z == ESC[1Z
-	Pos.Y = CUR.Y;
 	if (pState->tabs)
 	{
 	  Pos.X = (CUR.X < MAX_TABS) ? CUR.X : MAX_TABS;
@@ -1312,9 +1329,9 @@ void InterpretEscSeq( void )
 	     Pos.X = CUR.X - p1 * 8;
 	  else
 	     Pos.X = (CUR.X & -8) - (p1 - 1) * 8;
+	  if (Pos.X < LEFT) Pos.X = LEFT;
 	}
-	if (Pos.X < LEFT) Pos.X = LEFT;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, CUR.Y );
       return;
 
       case 'b': // ESC[#b Repeat character
@@ -1333,7 +1350,7 @@ void InterpretEscSeq( void )
 	Pos = pState->SavePos;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	if (Pos.Y > LAST) Pos.Y = LAST;
-	SetConsoleCursorPosition( hConOut, Pos );
+	set_pos( Pos.X, Pos.Y );
       return;
 
       case 'c': // ESC[#c Device attributes
@@ -1358,10 +1375,8 @@ void InterpretEscSeq( void )
 	    SendSequence( buf );
 	  }
 	  return;
-
-	  default:
-	  return;
 	}
+      return;
 
       case 't': // ESC[#t Window manipulation
 	if (es_argc != 1) return;
@@ -1381,12 +1396,28 @@ void InterpretEscSeq( void )
       return;
 
       case 'h': // ESC[#h Set Mode
-	if (es_argc == 1 && es_argv[0] == 3)
-	  pState->crm = TRUE;
+	for (i = 0; i < es_argc; i++)
+	  switch (es_argv[i])
+	  {
+	    case 3:
+	      pState->crm = TRUE;
+	    break;
+
+	    case 4:
+	      im = TRUE;
+	    break;
+	  }
       return;
 
       case 'l': // ESC[#l Reset Mode
-      return;			// ESC[3l is handled during parsing
+	for (i = 0; i < es_argc; i++)
+	  switch (es_argv[i])		// ESC[3l is handled during parsing
+	  {
+	    case 4:
+	      im = FALSE;
+	    break;
+	  }
+      return;
 
       case '~':
 	if (suffix2 == ',') // ESC[#;#;#...,~ Play Sound
@@ -1691,7 +1722,7 @@ ParseAndPrintString( HANDLE hDev,
   {
     hConOut = hDev;
     state = 1;
-    shifted = G0_special = FALSE;
+    im = shifted = G0_special = FALSE;
   }
   for (i = nNumberOfBytesToWrite, s = (LPCTSTR)lpBuffer; i > 0; i--, s++)
   {
@@ -1720,7 +1751,14 @@ ParseAndPrintString( HANDLE hDev,
 	GetConsoleScreenBufferInfo( hConOut, &Info );
 	while (++CUR.X < MAX_TABS && !pState->tab_stop[CUR.X]) ;
 	if (CUR.X > RIGHT) CUR.X = RIGHT;
+	// Don't use set_pos, the tab could be discarded.
 	SetConsoleCursorPosition( hConOut, CUR );
+      }
+      else if (im && (c == HT || c == '\r' || c == '\b' || c == '\n'))
+      {
+	FlushBuffer();
+	PushBuffer( (WCHAR)c );
+	FlushBuffer();
       }
       else PushBuffer( (WCHAR)c );
     }
@@ -1793,7 +1831,7 @@ ParseAndPrintString( HANDLE hDev,
 	CUR = pState->SavePos;
 	if (CUR.X > RIGHT) CUR.X = RIGHT;
 	if (CUR.Y > LAST)  CUR.Y = LAST;
-	SetConsoleCursorPosition( hConOut, CUR );
+	set_pos( CUR.X, CUR.Y );
 	if (pState->SaveAttr != 0)  // assume 0 means not saved
 	{
 	  pState->sgr = pState->SaveSgr;
