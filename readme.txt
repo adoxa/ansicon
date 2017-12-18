@@ -312,7 +312,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 17 December, 2017:
+    1.80 - 19 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -326,6 +326,7 @@ Version History
     * preserve escape that isn't part of a sequence;
     * escaped control characters will display the control;
     * change the graphics SCAN characters to their Unicode equivalents;
+    * BS/CUB/HVP after wrap will move back to the previous line(s);
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;
@@ -564,4 +565,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 17 December, 2017.
+Jason Hood, 19 December, 2017.

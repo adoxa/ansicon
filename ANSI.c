@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 17 December, 2017:
+  v1.80, 26 October to 19 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -173,7 +173,8 @@
     restrict parameters to a maximum value of 32767;
     added tab handling;
     added the bright SGR colors, recognised the system indices;
-    added insert mode.
+    added insert mode;
+    BS/CUB/HPB after wrap will move back to the previous line(s).
 */
 
 #include "ansicon.h"
@@ -544,7 +545,17 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
 int   nCharInBuffer;
 WCHAR ChBuffer[BUFFER_SIZE];
 WCHAR ChPrev;
-BOOL  fWrapped;
+int   nWrapped;
+
+
+// Set the cursor position, resetting the wrap flag.
+void set_pos( int x, int y )
+{
+  COORD pos = { x, y };
+  SetConsoleCursorPosition( hConOut, pos );
+  nWrapped = 0;
+}
+
 
 //-----------------------------------------------------------------------------
 //   FlushBuffer()
@@ -580,7 +591,7 @@ void FlushBuffer( void )
 	{
 	  GetConsoleScreenBufferInfo( hConOut, &csbi );
 	  if (csbi.dwCursorPosition.X == 0)
-	    fWrapped = TRUE;
+	    ++nWrapped;
 	}
       } while (++b, --nCharInBuffer);
     }
@@ -609,10 +620,9 @@ void FlushBuffer( void )
 	SetConsoleMode( hConWrap, ENABLE_WRAP_AT_EOL_OUTPUT );
       WriteConsole( hConWrap, ChBuffer, nCharInBuffer, &nWritten, NULL );
       GetConsoleScreenBufferInfo( hConWrap, &csbi );
-      if (csbi.dwCursorPosition.Y != 0)
-	fWrapped = TRUE;
+      nWrapped += csbi.dwCursorPosition.Y;
       CloseHandle( hConWrap );
-      if (im && !fWrapped)
+      if (im && !nWrapped)
       {
 	SMALL_RECT sr, cr;
 	CHAR_INFO  ci;		// unused, but necessary
@@ -666,7 +676,7 @@ void PushBuffer( WCHAR c )
     else
     {
       LPCWSTR nl = L"\n";
-      if (fWrapped)
+      if (nWrapped)
       {
 	// It's wrapped, but was anything more written?  Look at the current
 	// row, checking that each character is space in current attributes.
@@ -699,11 +709,30 @@ void PushBuffer( WCHAR c )
 	  }
 	  HeapFree( hHeap, 0, row );
 	}
-	fWrapped = FALSE;
+	nWrapped = 0;
       }
       if (nl)
 	WriteConsole( hConOut, nl, 1, &nWritten, NULL );
     }
+  }
+  else if (c == '\b')
+  {
+    BOOL bs = FALSE;
+    FlushBuffer();
+    if (nWrapped)
+    {
+      GetConsoleScreenBufferInfo( hConOut, &csbi );
+      if (csbi.dwCursorPosition.X == 0)
+      {
+	csbi.dwCursorPosition.X = csbi.dwSize.X - 1;
+	csbi.dwCursorPosition.Y--;
+	SetConsoleCursorPosition( hConOut, csbi.dwCursorPosition );
+	--nWrapped;
+	bs = TRUE;
+      }
+    }
+    if (!bs)
+      ChBuffer[nCharInBuffer++] = c;
   }
   else
   {
@@ -769,15 +798,6 @@ void init_tabs( int size )
   for (i = 0; i < MAX_TABS; i += size)
     pState->tab_stop[i] = TRUE;
   pState->tabs = TRUE;
-}
-
-
-// Set the cursor position, resetting the wrap flag.
-void set_pos( SHORT x, SHORT y )
-{
-  COORD pos = { x, y };
-  SetConsoleCursorPosition( hConOut, pos );
-  fWrapped = FALSE;
 }
 
 
@@ -894,7 +914,7 @@ void InterpretEscSeq( void )
 	      if (pState->noclear &&
 		  (suffix2 == '+' || (TOP == screen_top && CUR.Y != LAST)))
 	      {
-		set_pos( LEFT, (SHORT)(suffix2 == '+' ? 0 : TOP) );
+		set_pos( LEFT, (suffix2 == '+') ? 0 : TOP );
 		break;
 	      }
 	      prefix2 = 0;
@@ -1235,7 +1255,13 @@ void InterpretEscSeq( void )
       case 'j': // ESC[#j
       case 'D': // ESC[#D Moves cursor back # spaces
 	if (es_argc > 1) return; // ESC[D == ESC[1D
+      cub:
 	Pos.X = CUR.X - p1;
+	while (Pos.X < LEFT && nWrapped-- && CUR.Y != top)
+	{
+	  Pos.X += WIDTH;
+	  CUR.Y--;
+	}
 	if (Pos.X < LEFT) Pos.X = LEFT;
 	set_pos( Pos.X, CUR.Y );
       return;
@@ -1336,6 +1362,7 @@ void InterpretEscSeq( void )
 
       case 'b': // ESC[#b Repeat character
 	if (es_argc > 1) return; // ESC[b == ESC[1b
+	if (ChPrev == '\b') goto cub;
 	while (--p1 >= 0)
 	  PushBuffer( ChPrev );
       return;
