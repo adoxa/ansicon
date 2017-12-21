@@ -968,13 +968,13 @@ void InterpretEscSeq( void )
 	for (i = 0; i < es_argc; i++)
 	  switch (es_argv[i])
 	  {
-	    case 25:
+	    case 25: // DECTCEM
 	      GetConsoleCursorInfo( hConOut, &CursInfo );
 	      CursInfo.bVisible = (suffix == 'h');
 	      SetConsoleCursorInfo( hConOut, &CursInfo );
 	    break;
 
-	    case 7:
+	    case 7: // DECAWM
 	      awm = (suffix == 'h');
 	      mode = cache[0].mode;
 	      if (awm)
@@ -984,15 +984,15 @@ void InterpretEscSeq( void )
 	      SetConsoleMode( hConOut, mode );
 	    break;
 
-	    case 6:
+	    case 6: // DECOM
 	      om = (suffix == 'h');
 	    break;
 
-	    case 95:
+	    case 95: // DECNCSM
 	      pState->noclear = (suffix == 'h');
 	    break;
 
-	    case 3:
+	    case 3: // DECCOLM
 	    {
 	      COORD buf;
 	      SMALL_RECT win;
@@ -1046,7 +1046,7 @@ void InterpretEscSeq( void )
 	    }
 	}
       }
-      else if (suffix == 'W')
+      else if (suffix == 'W') // DECST8C
       {
 	if (es_argv[0] != 5 || es_argc > 2) return;
 	if (es_argc == 1) es_argv[1] = 8;
@@ -1075,7 +1075,7 @@ void InterpretEscSeq( void )
     }
     switch (suffix)
     {
-      case 'm':
+      case 'm': // SGR
 	if (es_argc == 0) es_argc++; // ESC[m == ESC[0m
 	for (i = 0; i < es_argc; i++)
 	{
@@ -1212,7 +1212,7 @@ void InterpretEscSeq( void )
 	SetConsoleTextAttribute( hConOut, attribut );
       return;
 
-      case 'J':
+      case 'J': // ED
 	if (es_argc > 1) return; // ESC[J == ESC[0J
 	switch (es_argv[0])
 	{
@@ -1268,7 +1268,7 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'K':
+      case 'K': // EL
 	if (es_argc > 1) return; // ESC[K == ESC[0K
 	switch (es_argv[0])
 	{
@@ -1291,12 +1291,12 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'X': // ESC[#X Erase # characters.
+      case 'X': // ECH - ESC[#X Erase # characters.
 	if (es_argc > 1) return; // ESC[X == ESC[1X
 	FillBlank( p1, CUR );
       return;
 
-      case 'r': // ESC[#;#r Set top and bottom margins.
+      case 'r': // DECSTBM - ESC[#;#r Set top and bottom margins.
 	if (es_argc == 0 && suffix2 == '+')
 	{
 	  tb_margins = FALSE; // ESC[+r == remove margins
@@ -1312,8 +1312,8 @@ void InterpretEscSeq( void )
 	set_pos( LEFT, om ? TOP + top_margin : TOP );
       return;
 
-      case 'S': // ESC[#S Scroll up/Pan down.
-      case 'T': // ESC[#T Scroll down/Pan up.
+      case 'S': // SU - ESC[#S Scroll up/Pan down.
+      case 'T': // SD - ESC[#T Scroll down/Pan up.
 	if (es_argc > 1) return; // ESC[S == ESC[1S
 	Pos.X	   =
 	Rect.Left  = LEFT;
@@ -1334,8 +1334,8 @@ void InterpretEscSeq( void )
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &Rect, Pos, &CharInfo );
       return;
 
-      case 'L': // ESC[#L Insert # blank lines.
-      case 'M': // ESC[#M Delete # lines.
+      case 'L': // IL - ESC[#L Insert # blank lines.
+      case 'M': // DL - ESC[#M Delete # lines.
 	if (es_argc > 1) return; // ESC[L == ESC[1L
 	Pos.X	   =
 	Rect.Left  = LEFT;
@@ -1357,8 +1357,8 @@ void InterpretEscSeq( void )
 	// Technically should home the cursor, but perhaps not expected.
       return;
 
-      case '@': // ESC[#@ Insert # blank characters.
-      case 'P': // ESC[#P Delete # characters.
+      case '@': // ICH - ESC[#@ Insert # blank characters.
+      case 'P': // DCH - ESC[#P Delete # characters.
 	if (es_argc > 1) return; // ESC[P == ESC[1P
 	Rect.Left   = CUR.X;
 	Rect.Right  = RIGHT;
@@ -1373,9 +1373,9 @@ void InterpretEscSeq( void )
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &Rect, CUR, &CharInfo );
       return;
 
-      case 'k': // ESC[#k
-      case 'A': // ESC[#A Moves cursor up # lines
-      case 'F': // ESC[#F Moves cursor up # lines, column 1.
+      case 'k': // VPB - ESC[#k
+      case 'A': // CUU - ESC[#A Moves cursor up # lines
+      case 'F': // CPL - ESC[#F Moves cursor up # lines, column 1.
 	if (es_argc > 1) return; // ESC[A == ESC[1A
 	Pos.Y = CUR.Y - p1;
 	if (tb_margins && (om || CUR.Y >= TOP + top_margin))
@@ -1384,9 +1384,9 @@ void InterpretEscSeq( void )
 	set_pos( (suffix == 'F') ? LEFT : CUR.X, Pos.Y );
       return;
 
-      case 'e': // ESC[#e
-      case 'B': // ESC[#B Moves cursor down # lines
-      case 'E': // ESC[#E Moves cursor down # lines, column 1.
+      case 'e': // VPR - ESC[#e
+      case 'B': // CUD - ESC[#B Moves cursor down # lines
+      case 'E': // CNL - ESC[#E Moves cursor down # lines, column 1.
 	if (es_argc > 1) return; // ESC[B == ESC[1B
 	Pos.Y = CUR.Y + p1;
 	if (tb_margins && (om || CUR.Y <= TOP + bot_margin))
@@ -1395,16 +1395,16 @@ void InterpretEscSeq( void )
 	set_pos( (suffix == 'E') ? LEFT : CUR.X, Pos.Y );
       return;
 
-      case 'a': // ESC[#a
-      case 'C': // ESC[#C Moves cursor forward # spaces
+      case 'a': // HPR - ESC[#a
+      case 'C': // CUF - ESC[#C Moves cursor forward # spaces
 	if (es_argc > 1) return; // ESC[C == ESC[1C
 	Pos.X = CUR.X + p1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	set_pos( Pos.X, CUR.Y );
       return;
 
-      case 'j': // ESC[#j
-      case 'D': // ESC[#D Moves cursor back # spaces
+      case 'j': // HPB - ESC[#j
+      case 'D': // CUB - ESC[#D Moves cursor back # spaces
 	if (es_argc > 1) return; // ESC[D == ESC[1D
       cub:
 	Pos.X = CUR.X - p1;
@@ -1417,22 +1417,22 @@ void InterpretEscSeq( void )
 	set_pos( Pos.X, CUR.Y );
       return;
 
-      case '`': // ESC[#`
-      case 'G': // ESC[#G Moves cursor column # in current row.
+      case '`': // HPA - ESC[#`
+      case 'G': // CHA - ESC[#G Moves cursor column # in current row.
 	if (es_argc > 1) return; // ESC[G == ESC[1G
 	Pos.X = p1 - 1;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	set_pos( Pos.X, CUR.Y );
       return;
 
-      case 'f': // ESC[#;#f
-      case 'H': // ESC[#;#H Moves cursor to line #, column #
+      case 'f': // HVP - ESC[#;#f
+      case 'H': // CUP - ESC[#;#H Moves cursor to line #, column #
 	if (es_argc > 2) return; // ESC[H == ESC[1;1H  ESC[#H == ESC[#;1H
 	CUR.X = p2 - 1;
 	if (CUR.X > RIGHT) CUR.X = RIGHT;
 	--es_argc; // so we can fall through
 
-      case 'd': // ESC[#d Moves cursor row #, current column.
+      case 'd': // VPA - ESC[#d Moves cursor row #, current column.
 	if (es_argc > 1) return; // ESC[d == ESC[1d
 	if (tb_margins && om)
 	{
@@ -1445,7 +1445,7 @@ void InterpretEscSeq( void )
 	set_pos( CUR.X, Pos.Y );
       return;
 
-      case 'g':
+      case 'g': // TBC
 	if (es_argc > 1) return; // ESC[g == ESC[0g
 	switch (es_argv[0])
 	{
@@ -1465,7 +1465,7 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'I': // ESC[#I Moves cursor forward # tabs
+      case 'I': // CHT - ESC[#I Moves cursor forward # tabs
 	if (es_argc > 1) return; // ESC[I == ESC[1I
 	Pos.Y = CUR.Y;
 	if (pState->tabs)
@@ -1480,7 +1480,7 @@ void InterpretEscSeq( void )
 	SetConsoleCursorPosition( hConOut, Pos );
       return;
 
-      case 'Z': // ESC[#Z Moves cursor back # tabs
+      case 'Z': // CBT - ESC[#Z Moves cursor back # tabs
 	if (es_argc > 1) return; // ESC[Z == ESC[1Z
 	if (pState->tabs)
 	{
@@ -1498,19 +1498,19 @@ void InterpretEscSeq( void )
 	set_pos( Pos.X, CUR.Y );
       return;
 
-      case 'b': // ESC[#b Repeat character
+      case 'b': // REP - ESC[#b Repeat character
 	if (es_argc > 1) return; // ESC[b == ESC[1b
 	if (ChPrev == '\b') goto cub;
 	while (--p1 >= 0)
 	  PushBuffer( ChPrev );
       return;
 
-      case 's': // ESC[s Saves cursor position for recall later
+      case 's': // SCOSC - ESC[s Saves cursor position for recall later
 	if (es_argc != 0) return;
 	pState->SavePos = CUR;
       return;
 
-      case 'u': // ESC[u Return to saved cursor position
+      case 'u': // SCORC - ESC[u Return to saved cursor position
 	if (es_argc != 0) return;
 	Pos = pState->SavePos;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
@@ -1518,12 +1518,12 @@ void InterpretEscSeq( void )
 	set_pos( Pos.X, Pos.Y );
       return;
 
-      case 'c': // ESC[#c Device attributes
+      case 'c': // DA - ESC[#c Device attributes
 	if (es_argc > 1 || es_argv[0] != 0) return; // ESC[c == ESC[0c
 	SendSequence( L"\33[?62;1c" ); // VT220 with 132 columns
       return;
 
-      case 'n': // ESC[#n Device status report
+      case 'n': // DSR - ESC[#n Device status report
 	if (es_argc != 1) return; // ESC[n == ESC[0n -> ignored
 	switch (es_argv[0])
 	{
@@ -1560,32 +1560,32 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'h': // ESC[#h Set Mode
+      case 'h': // SM - ESC[#h Set Mode
 	for (i = 0; i < es_argc; i++)
 	  switch (es_argv[i])
 	  {
-	    case 3:
+	    case 3: // CRM
 	      pState->crm = TRUE;
 	    break;
 
-	    case 4:
+	    case 4: // IRM
 	      im = TRUE;
 	    break;
 	  }
       return;
 
-      case 'l': // ESC[#l Reset Mode
+      case 'l': // RM - ESC[#l Reset Mode
 	for (i = 0; i < es_argc; i++)
-	  switch (es_argv[i])		// ESC[3l is handled during parsing
+	  switch (es_argv[i])	// CRM - ESC[3l is handled during parsing
 	  {
-	    case 4:
+	    case 4: // IRM
 	      im = FALSE;
 	    break;
 	  }
       return;
 
       case '~':
-	if (suffix2 == ',') // ESC[#;#;#...,~ Play Sound
+	if (suffix2 == ',') // DECPS - ESC[#;#;#...,~ Play Sound
 	{
 	  // Frequencies of notes obtained from:
 	  //	https://pages.mtu.edu/~suits/notefreqs.html
@@ -1989,7 +1989,7 @@ ParseAndPrintString( HANDLE hDev,
 	suffix2 = c;
       else if (suffix2 != 0)
       {
-	if (suffix2 == '(')     // Designate G0 character set
+	if (suffix2 == '(')     // SCS - Designate G0 character set
 	{
 	  if (c == '0')
 	    shifted = G0_special = TRUE;
