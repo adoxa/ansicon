@@ -152,6 +152,16 @@ H	set tab stop
 7	save cursor position (buffer only), attributes and G0 character set
 8	restore above (if nothing was saved only moves cursor to top-left)
 
+[+r	remove top and bottom margins
+[r	set top and bottom margins to the window
+[#r	set top margin to line #, bottom margin to the window
+[#;#r	set top margin to line #, bottom margin to line #
+
+[S	scroll up (pan down) one line
+[#S	scroll up (pan down) # lines
+[T	scroll down (pan up) one line
+[#T	scroll down (pan up) # lines
+
 (0	select the DEC Special Graphics Character Set
 (B	select ASCII
 
@@ -161,6 +171,8 @@ H	set tab stop
 [4l	replace characters
 [?3h	set 132 columns
 [?3l	restore original columns
+[?6h	set origin to top margin
+[?6l	set origin to top line
 [?7h	wrap lines at screen edge
 [?7l	don't wrap lines at screen edge
 [?25h	show cursor

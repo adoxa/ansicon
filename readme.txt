@@ -181,11 +181,14 @@ Sequences Recognised
 	\e[?3l		DECCOLM Selecting 80 or 132 Columns per Page (prior)
 	\e[?95h 	DECNCSM No Clearing Screen On Column Change Mode (keep)
 	\e[?95l 	DECNCSM No Clearing Screen On Column Change Mode (clear)
+	\e[?6h		DECOM	Origin Mode (top margin)
+	\e[?6l		DECOM	Origin Mode (top line)
 	\e[#;#;#...,~	DECPS	Play Sound
 	\e8		DECRC	Restore Cursor
 	\e7		DECSC	Save Cursor
 	\e[?5W		DECST8C Set Tab at Every 8 Columns
 	\e[?5;#W	DECST8C Set Tab at Every # Columns (ANSICON extension)
+	\e[#;#r 	DECSTBM Set Top and Bottom Margins
 	\e[?25h 	DECTCEM Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -212,6 +215,8 @@ Sequences Recognised
 	\e(0		SCS	Select Character Set (DEC special graphics)
 	\e(B		SCS	Select Character Set (ASCII)
 	\e[#;#;#m	SGR	Select Graphic Rendition
+	\e[#T		SD	Scroll Down/Pan Up
+	\e[#S		SU	Scroll Up/Pan Down
 	\e[#g		TBC	Tabulation Clear
 	\e[#d		VPA	Line Position Absolute
 	\e[#k		VPB	Line Position Backward
@@ -312,7 +317,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 19 December, 2017:
+    1.80 - 21 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -336,7 +341,8 @@ Version History
     + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
     + added SCS, but only for special/ASCII (same as Win10);
     + added tab handling (HT, HTS, TBC & DECST8C);
-    + added IRM.
+    + added IRM;
+    + added DECOM, DECSTBM, SD & SU.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -565,4 +571,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 19 December, 2017.
+Jason Hood, 21 December, 2017.
