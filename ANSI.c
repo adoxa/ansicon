@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 21 December, 2017:
+  v1.80, 26 October to 22 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -175,7 +175,8 @@
     added the bright SGR colors, recognised the system indices;
     added insert mode;
     BS/CUB/HPB after wrap will move back to the previous line(s);
-    added DECOM, DECSTBM, SD & SU.
+    added DECOM, DECSTBM, SD & SU;
+    only flush before accessing the console, adding a mode to flush immediately.
 */
 
 #include "ansicon.h"
@@ -360,6 +361,24 @@ typedef BOOL (WINAPI *PHCSBIX)(
 PHCSBIX GetConsoleScreenBufferInfoX, SetConsoleScreenBufferInfoX;
 
 
+typedef struct _CONSOLE_FONT_INFOX {
+  ULONG      cbSize;
+  DWORD      nFont;
+  COORD      dwFontSize;
+  UINT	     FontFamily;
+  UINT	     FontWeight;
+  WCHAR      FaceName[LF_FACESIZE];
+} CONSOLE_FONT_INFOX, *PCONSOLE_FONT_INFOX;
+
+typedef BOOL (WINAPI *PHBCFIX)(
+  HANDLE hConsoleOutput,
+  BOOL bMaximumWindow,
+  PCONSOLE_FONT_INFOX lpConsoleCurrentFontEx
+);
+
+PHBCFIX SetCurrentConsoleFontX;
+
+
 // Reduce verbosity.
 #define CURPOS dwCursorPosition
 #define ATTR   Info.wAttributes
@@ -391,6 +410,7 @@ typedef struct
 {
   SGR	   sgr, SaveSgr;
   WORD	   SaveAttr;
+  BYTE	   fm;		// flush mode
   BYTE	   crm; 	// showing control characters?
   COORD    SavePos;	// saved cursor position
   COLORREF palette[16];
@@ -1562,7 +1582,16 @@ void InterpretEscSeq( void )
 
       case 'h': // SM - ESC[#h Set Mode
 	for (i = 0; i < es_argc; i++)
-	  switch (es_argv[i])
+	  if (suffix2 == '+')
+	  {
+	    switch (es_argv[i])
+	    {
+	      case 1: // ACFM
+		pState->fm = TRUE;
+	      break;
+	    }
+	  }
+	  else switch (es_argv[i])
 	  {
 	    case 3: // CRM
 	      pState->crm = TRUE;
@@ -1576,7 +1605,16 @@ void InterpretEscSeq( void )
 
       case 'l': // RM - ESC[#l Reset Mode
 	for (i = 0; i < es_argc; i++)
-	  switch (es_argv[i])	// CRM - ESC[3l is handled during parsing
+	  if (suffix2 == '+')
+	  {
+	    switch (es_argv[i])
+	    {
+	      case 1: // ACFM
+		pState->fm = FALSE;
+	      break;
+	    }
+	  }
+	  else switch (es_argv[i]) // CRM - ESC[3l is handled during parsing
 	  {
 	    case 4: // IRM
 	      im = FALSE;
@@ -1932,6 +1970,7 @@ ParseAndPrintString( HANDLE hDev,
 
   if (hDev != hConOut)	// reinit if device has changed
   {
+    FlushBuffer();
     hConOut = hDev;
     state = 1;
     im = shifted = G0_special = FALSE;
@@ -2221,7 +2260,7 @@ ParseAndPrintString( HANDLE hDev,
       state = 1;
     }
   }
-  FlushBuffer();
+  if (pState->fm) FlushBuffer();
   if (lpNumberOfBytesWritten != NULL)
     *lpNumberOfBytesWritten = nNumberOfBytesToWrite - i;
   return (i == 0);
@@ -2916,7 +2955,11 @@ BOOL IsConsoleHandle( HANDLE h )
 BOOL
 WINAPI MySetConsoleMode( HANDLE hCon, DWORD mode )
 {
-  BOOL rc = SetConsoleMode( hCon, mode );
+  BOOL rc;
+
+  FlushBuffer();
+
+  rc = SetConsoleMode( hCon, mode );
   if (rc)
   {
     int c;
@@ -2925,6 +2968,8 @@ WINAPI MySetConsoleMode( HANDLE hCon, DWORD mode )
       // The mode is associated with the buffer, not the handle.
       GetConsoleMode( cache[c].h, &cache[c].mode );
     }
+    if (hCon == hConOut)
+      awm = (mode & ENABLE_WRAP_AT_EOL_OUTPUT) ? TRUE : FALSE;
   }
   return rc;
 }
@@ -3256,6 +3301,64 @@ WINAPI MyCreateConsoleScreenBuffer( DWORD dwDesiredAccess, DWORD dwShareMode,
 }
 
 
+//-----------------------------------------------------------------------------
+//   My...
+// Flush the buffer before accessing the console.
+//-----------------------------------------------------------------------------
+
+#define FLUSH2( func, arg2 ) \
+  BOOL WINAPI My##func( HANDLE a1, arg2 a2 )\
+  { FlushBuffer(); return func( a1, a2 ); }
+
+#define FLUSH2X( func, arg2 ) \
+  BOOL WINAPI My##func##Ex( HANDLE a1, arg2 a2 )\
+  { FlushBuffer(); return func##X( a1, a2 ); }
+
+#define FLUSH3( func, arg2, arg3 ) \
+  BOOL WINAPI My##func( HANDLE a1, arg2 a2, arg3 a3 )\
+  { FlushBuffer(); return func( a1, a2, a3 ); }
+
+#define FLUSH3X( func, arg2, arg3 ) \
+  BOOL WINAPI My##func##Ex( HANDLE a1, arg2 a2, arg3 a3 )\
+  { FlushBuffer(); return func##X( a1, a2, a3 ); }
+
+#define FLUSH4( func, arg2, arg3, arg4 ) \
+  BOOL WINAPI My##func( HANDLE a1, arg2 a2, arg3 a3, arg4 a4 )\
+  { FlushBuffer(); return func( a1, a2, a3, a4 ); }
+
+#define FLUSH5( func, arg2, arg3, arg4, arg5 ) \
+  BOOL WINAPI My##func( HANDLE a1, arg2 a2, arg3 a3, arg4 a4, arg5 a5 )\
+  { FlushBuffer(); return func( a1, a2, a3, a4, a5 ); }
+
+FLUSH5( FillConsoleOutputAttribute,  WORD, DWORD, COORD, LPDWORD )
+FLUSH5( FillConsoleOutputCharacterA, CHAR, DWORD, COORD, LPDWORD )
+FLUSH5( FillConsoleOutputCharacterW, WCHAR, DWORD, COORD, LPDWORD )
+FLUSH2( GetConsoleScreenBufferInfo,  PCONSOLE_SCREEN_BUFFER_INFO )
+FLUSH2X( GetConsoleScreenBufferInfo, PCONSOLE_SCREEN_BUFFER_INFOX )
+FLUSH5( ReadFile,     LPVOID, DWORD, LPDWORD, LPOVERLAPPED )
+FLUSH5( ReadConsoleA, LPVOID, DWORD, LPDWORD, LPVOID )
+FLUSH5( ReadConsoleW, LPVOID, DWORD, LPDWORD, LPVOID )
+FLUSH4( ReadConsoleInputA, PINPUT_RECORD, DWORD, LPDWORD )
+FLUSH4( ReadConsoleInputW, PINPUT_RECORD, DWORD, LPDWORD )
+FLUSH5( ReadConsoleOutputA, PCHAR_INFO, COORD, COORD, PSMALL_RECT )
+FLUSH5( ReadConsoleOutputW, PCHAR_INFO, COORD, COORD, PSMALL_RECT )
+FLUSH5( ReadConsoleOutputAttribute, LPWORD, DWORD, COORD, LPDWORD )
+FLUSH5( ReadConsoleOutputCharacterA, LPSTR, DWORD, COORD, LPDWORD )
+FLUSH5( ReadConsoleOutputCharacterW, LPWSTR, DWORD, COORD, LPDWORD )
+FLUSH5( ScrollConsoleScreenBufferA, SMALL_RECT*,SMALL_RECT*, COORD, CHAR_INFO* )
+FLUSH5( ScrollConsoleScreenBufferW, SMALL_RECT*,SMALL_RECT*, COORD, CHAR_INFO* )
+FLUSH2( SetConsoleCursorPosition, COORD )
+FLUSH2( SetConsoleScreenBufferSize, COORD )
+FLUSH2( SetConsoleTextAttribute, WORD )
+FLUSH3( SetConsoleWindowInfo, BOOL, const SMALL_RECT* )
+FLUSH3X( SetCurrentConsoleFont, BOOL, PCONSOLE_FONT_INFOX )
+FLUSH5( WriteConsoleOutputA, const CHAR_INFO*, COORD, COORD, PSMALL_RECT )
+FLUSH5( WriteConsoleOutputW, const CHAR_INFO*, COORD, COORD, PSMALL_RECT )
+FLUSH5( WriteConsoleOutputAttribute, const WORD*, DWORD, COORD, LPDWORD )
+FLUSH5( WriteConsoleOutputCharacterA, LPCSTR, DWORD, COORD, LPDWORD )
+FLUSH5( WriteConsoleOutputCharacterW, LPCWSTR, DWORD, COORD, LPDWORD )
+
+
 // ========== Environment variable
 
 void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
@@ -3336,27 +3439,55 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 
 // ========== Initialisation
 
+#define HOOK( dll, name ) { dll, #name, (PROC)My##name, NULL, NULL, NULL }
+
 HookFn Hooks[] = {
   // These two are expected first!
-  { APILibraryLoader,	   "LoadLibraryA",              (PROC)MyLoadLibraryA,              NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryW",              (PROC)MyLoadLibraryW,              NULL, NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessA",            (PROC)MyCreateProcessA,            NULL, NULL, NULL },
-  { APIProcessThreads,	   "CreateProcessW",            (PROC)MyCreateProcessW,            NULL, NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableA",   (PROC)MyGetEnvironmentVariableA,   NULL, NULL, NULL },
-  { APIProcessEnvironment, "GetEnvironmentVariableW",   (PROC)MyGetEnvironmentVariableW,   NULL, NULL, NULL },
-  { APILibraryLoader,	   "GetProcAddress",            (PROC)MyGetProcAddress,            NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExA",            (PROC)MyLoadLibraryExA,            NULL, NULL, NULL },
-  { APILibraryLoader,	   "LoadLibraryExW",            (PROC)MyLoadLibraryExW,            NULL, NULL, NULL },
-  { APIConsole, 	   "SetConsoleMode",            (PROC)MySetConsoleMode,            NULL, NULL, NULL },
-  { APIConsole, 	   "WriteConsoleA",             (PROC)MyWriteConsoleA,             NULL, NULL, NULL },
-  { APIConsole, 	   "WriteConsoleW",             (PROC)MyWriteConsoleW,             NULL, NULL, NULL },
-  { APIFile,		   "WriteFile",                 (PROC)MyWriteFile,                 NULL, NULL, NULL },
-  { APIKernel,		   "_lwrite",                   (PROC)My_lwrite,                   NULL, NULL, NULL },
-  { APIProcessThreads,	   "ExitProcess",               (PROC)MyExitProcess,               NULL, NULL, NULL },
-  { APILibraryLoader,	   "FreeLibrary",               (PROC)MyFreeLibrary,               NULL, NULL, NULL },
-  { APIFile,		   "CreateFileA",               (PROC)MyCreateFileA,               NULL, NULL, NULL },
-  { APIFile,		   "CreateFileW",               (PROC)MyCreateFileW,               NULL, NULL, NULL },
-  { APIKernel,		   "CreateConsoleScreenBuffer", (PROC)MyCreateConsoleScreenBuffer, NULL, NULL, NULL },
+  HOOK( APILibraryLoader,      LoadLibraryA ),
+  HOOK( APILibraryLoader,      LoadLibraryW ),
+  HOOK( APIProcessThreads,     CreateProcessA ),
+  HOOK( APIProcessThreads,     CreateProcessW ),
+  HOOK( APIProcessEnvironment, GetEnvironmentVariableA ),
+  HOOK( APIProcessEnvironment, GetEnvironmentVariableW ),
+  HOOK( APILibraryLoader,      GetProcAddress ),
+  HOOK( APILibraryLoader,      LoadLibraryExA ),
+  HOOK( APILibraryLoader,      LoadLibraryExW ),
+  HOOK( APIConsole,	       SetConsoleMode ),
+  HOOK( APIConsole,	       WriteConsoleA ),
+  HOOK( APIConsole,	       WriteConsoleW ),
+  HOOK( APIFile,	       WriteFile ),
+  HOOK( APIKernel,	       _lwrite ),
+  HOOK( APIProcessThreads,     ExitProcess ),
+  HOOK( APILibraryLoader,      FreeLibrary ),
+  HOOK( APIFile,	       CreateFileA ),
+  HOOK( APIFile,	       CreateFileW ),
+  HOOK( APIKernel,	       CreateConsoleScreenBuffer ),
+  HOOK( APIKernel,	       FillConsoleOutputAttribute ),
+  HOOK( APIKernel,	       FillConsoleOutputCharacterA ),
+  HOOK( APIKernel,	       FillConsoleOutputCharacterW ),
+  HOOK( APIKernel,	       GetConsoleScreenBufferInfo ),
+  HOOK( APIKernel,	       GetConsoleScreenBufferInfoEx ),
+  HOOK( APIFile,	       ReadFile ),
+  HOOK( APIConsole,	       ReadConsoleA ),
+  HOOK( APIConsole,	       ReadConsoleW ),
+  HOOK( APIConsole,	       ReadConsoleInputA ),
+  HOOK( APIConsole,	       ReadConsoleInputW ),
+  HOOK( APIKernel,	       ReadConsoleOutputA ),
+  HOOK( APIKernel,	       ReadConsoleOutputW ),
+  HOOK( APIKernel,	       ReadConsoleOutputAttribute ),
+  HOOK( APIKernel,	       ReadConsoleOutputCharacterA ),
+  HOOK( APIKernel,	       ReadConsoleOutputCharacterW ),
+  HOOK( APIKernel,	       ScrollConsoleScreenBufferA ),
+  HOOK( APIKernel,	       ScrollConsoleScreenBufferW ),
+  HOOK( APIKernel,	       SetConsoleCursorPosition ),
+  HOOK( APIKernel,	       SetConsoleScreenBufferSize ),
+  HOOK( APIKernel,	       SetConsoleTextAttribute ),
+  HOOK( APIKernel,	       SetConsoleWindowInfo ),
+  HOOK( APIKernel,	       WriteConsoleOutputA ),
+  HOOK( APIKernel,	       WriteConsoleOutputW ),
+  HOOK( APIKernel,	       WriteConsoleOutputAttribute ),
+  HOOK( APIKernel,	       WriteConsoleOutputCharacterA ),
+  HOOK( APIKernel,	       WriteConsoleOutputCharacterW ),
   { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
@@ -3421,6 +3552,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 				     hKernel, "GetConsoleScreenBufferInfoEx" );
     SetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
 				     hKernel, "SetConsoleScreenBufferInfoEx" );
+    SetCurrentConsoleFontX	= (PHBCFIX)GetProcAddress(
+				     hKernel, "SetCurrentConsoleFontEx" );
 
     *logstr = '\0';
     GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
@@ -3453,6 +3586,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
+    FlushBuffer();
     if (lpReserved == NULL)
     {
       DEBUGSTR( 1, "Unloading" );

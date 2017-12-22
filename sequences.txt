@@ -165,6 +165,8 @@ H	set tab stop
 (0	select the DEC Special Graphics Character Set
 (B	select ASCII
 
+[1+h	flush immediately on write
+[1+l	flush only when necessary
 [3h	display control characters (LF is also performed)
 [3l	perform control functions (the only such recognised during above)
 [4h	insert characters

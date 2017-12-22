@@ -160,6 +160,8 @@ Sequences Recognised
 	\e[21t			xterm: Report window's title
 	\e[s			ANSI.SYS: Save Cursor Position
 	\e[u			ANSI.SYS: Restore Cursor Position
+	\e[1+h		ACFM	Flush Mode (flush immediately)
+	\e[1+l		ACFM	Flush Mode (flush when necessary)
 	BEL		BEL	Bell
 	\e[#Z		CBT	Cursor Backward Tabulation
 	\e[#G		CHA	Cursor Character Absolute
@@ -317,7 +319,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 21 December, 2017:
+    1.80 - 22 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -332,6 +334,8 @@ Version History
     * escaped control characters will display the control;
     * change the graphics SCAN characters to their Unicode equivalents;
     * BS/CUB/HVP after wrap will move back to the previous line(s);
+    * improve speed by only flushing when necessary, adding a mode to restore
+      flushing immediately.
     + use the system default sound for the bell;
     + added Play Sound DECPS;
     + added '+' intermediate byte to use the buffer, rather than the window;
@@ -571,4 +575,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 21 December, 2017.
+Jason Hood, 22 December, 2017.
