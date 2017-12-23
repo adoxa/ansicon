@@ -333,6 +333,7 @@ Version History
     - fix issues with CRM;
     - fix explicit zero parameters not defaulting to 1;
     - set color by index (also setting bold/underline);
+    - fix processes that start without a window;
     * limit parameters to a maximum value of 32767;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;

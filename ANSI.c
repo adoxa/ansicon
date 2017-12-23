@@ -177,7 +177,8 @@
     BS/CUB/HPB after wrap will move back to the previous line(s);
     added DECOM, DECSTBM, SD & SU;
     only flush before accessing the console, adding a mode to flush immediately;
-    added DECSTR & RIS.
+    added DECSTR & RIS;
+    fix state problems with windowless processes.
 */
 
 #include "ansicon.h"
@@ -225,8 +226,7 @@ TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
 int   Pt_len;
 BOOL  shifted, G0_special, SaveG0;
 BOOL  awm = TRUE;		// autowrap mode
-BOOL  im, om, tb_margins;	// insert mode, origin mode, top/bottom margins
-int   top_margin, bot_margin;
+BOOL  im;			// insert mode
 int   screen_top = -1;		// initial window top when cleared
 
 
@@ -414,6 +414,10 @@ typedef struct
   WORD	   SaveAttr;
   BYTE	   fm;		// flush mode
   BYTE	   crm; 	// showing control characters?
+  BYTE	   om;		// origin mode
+  BYTE	   tb_margins;	// top/bottom margins set?
+  SHORT    top_margin;
+  SHORT    bot_margin;
   COORD    SavePos;	// saved cursor position
   COLORREF palette[16];
   SHORT    buf_width;	// buffer width prior to setting 132 columns
@@ -423,7 +427,9 @@ typedef struct
   BYTE	   tab_stop[MAX_TABS];
 } STATE, *PSTATE;
 
-PSTATE pState;
+STATE  default_state;	// for when there's no window or file mapping
+PSTATE pState = &default_state;
+BOOL   valid_state;
 HANDLE hMap;
 
 void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO );
@@ -437,39 +443,32 @@ void get_state( void )
   HANDLE hConOut;
   CONSOLE_SCREEN_BUFFER_INFO  Info;
   CONSOLE_SCREEN_BUFFER_INFOX csbix;
-  static STATE state;	// on the odd chance file mapping fails
 
-  if (pState != NULL)
+  if (valid_state)
     return;
 
   hwnd = GetConsoleWindow();
   if (hwnd == NULL)
     return;
 
+  valid_state = TRUE;
+
   wsprintf( buf, L"ANSICON_State_%X", PtrToUint( hwnd ) );
   hMap = CreateFileMapping( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
 			    0, sizeof(STATE), buf );
-  if (hMap == NULL)
-  {
-  no_go:
-    DEBUGSTR( 1, "File mapping failed (%u) - using default state",
-		 GetLastError() );
-    pState = &state;
-    goto do_init;
-  }
   init = (GetLastError() != ERROR_ALREADY_EXISTS);
-
   pState = MapViewOfFile( hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
   if (pState == NULL)
   {
+    DEBUGSTR( 1, "File mapping failed (%u) - using default state",
+		 GetLastError() );
+    pState = &default_state;
     CloseHandle( hMap );
     hMap = NULL;
-    goto no_go;
   }
 
   if (init)
   {
-  do_init:
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
@@ -625,7 +624,7 @@ void FlushBuffer( void )
     CONSOLE_CURSOR_INFO cci;
     CONSOLE_SCREEN_BUFFER_INFO Info, wi;
 
-    if (nCharInBuffer < 4 && !im && !tb_margins)
+    if (nCharInBuffer < 4 && !im && !pState->tb_margins)
     {
       LPWSTR b = ChBuffer;
       do
@@ -670,9 +669,9 @@ void FlushBuffer( void )
 	SetConsoleMode( hConWrap, ENABLE_PROCESSED_OUTPUT );
       WriteConsole( hConWrap, ChBuffer, nCharInBuffer, &nWritten, NULL );
       GetConsoleScreenBufferInfo( hConWrap, &wi );
-      if (tb_margins && CUR.Y + wi.CURPOS.Y > TOP + bot_margin)
+      if (pState->tb_margins && CUR.Y + wi.CURPOS.Y > TOP + pState->bot_margin)
       {
-	if (CUR.Y > TOP + bot_margin)
+	if (CUR.Y > TOP + pState->bot_margin)
 	{
 	  // If we're at the bottom of the window, outside the margins, then
 	  // just keep overwriting the last line.
@@ -717,29 +716,30 @@ void FlushBuffer( void )
 	    }
 	  }
 	}
-	else if (wi.CURPOS.Y > bot_margin - top_margin)
+	else if (wi.CURPOS.Y > pState->bot_margin - pState->top_margin)
 	{
 	  // The line is bigger than the scroll region, copy that portion.
-	  PCHAR_INFO row = HeapAlloc( hHeap, 0, (bot_margin - top_margin + 1)
-						* WIDTH * sizeof(CHAR_INFO) );
+	  PCHAR_INFO row = HeapAlloc( hHeap, 0,
+				(pState->bot_margin - pState->top_margin + 1)
+				* WIDTH * sizeof(CHAR_INFO) );
 	  if (row != NULL)
 	  {
 	    COORD s, c;
 	    SMALL_RECT r;
 	    s.X = WIDTH;
-	    s.Y = bot_margin - top_margin + 1;
+	    s.Y = pState->bot_margin - pState->top_margin + 1;
 	    c.X = c.Y = 0;
 	    r.Left = LEFT;
 	    r.Right = RIGHT;
 	    r.Bottom = wi.CURPOS.Y;
-	    r.Top = r.Bottom - (bot_margin - top_margin);
+	    r.Top = r.Bottom - (pState->bot_margin - pState->top_margin);
 	    ReadConsoleOutput( hConWrap, row, s, c, &r );
-	    r.Top = TOP + top_margin;
-	    r.Bottom = TOP + bot_margin;
+	    r.Top = TOP + pState->top_margin;
+	    r.Bottom = TOP + pState->bot_margin;
 	    WriteConsoleOutput( hConOut, row, s, c, &r );
 	    HeapFree( hHeap, 0, row );
 	    CloseHandle( hConWrap );
-	    nWrapped = bot_margin - top_margin;
+	    nWrapped = pState->bot_margin - pState->top_margin;
 	    nCharInBuffer = 0;
 	    return;
 	  }
@@ -756,8 +756,8 @@ void FlushBuffer( void )
 	  c.X	    =
 	  sr.Left   = LEFT;
 	  sr.Right  = RIGHT;
-	  sr.Top    = TOP + top_margin;
-	  sr.Bottom = TOP + bot_margin;
+	  sr.Top    = TOP + pState->top_margin;
+	  sr.Bottom = TOP + pState->bot_margin;
 	  c.Y	    = sr.Top - wi.CURPOS.Y;
 	  ScrollConsoleScreenBuffer( hConOut, &sr, &sr, c, &ci );
 	  CUR.Y -= wi.CURPOS.Y;
@@ -960,9 +960,9 @@ void Reset( BOOL hard )
   CursInfo.bVisible = TRUE;
   SetConsoleCursorInfo( hConOut, &CursInfo );
   im =
-  om =
-  tb_margins =
-  pState->crm = FALSE;
+  pState->om =
+  pState->crm =
+  pState->tb_margins = FALSE;
   awm = TRUE;
   SetConsoleMode( hConOut, cache[0].mode | ENABLE_WRAP_AT_EOL_OUTPUT );
   shifted = G0_special = SaveG0 = FALSE;
@@ -1057,7 +1057,7 @@ void InterpretEscSeq( void )
 	    break;
 
 	    case 6: // DECOM
-	      om = (suffix == 'h');
+	      pState->om = (suffix == 'h');
 	    break;
 
 	    case 95: // DECNCSM
@@ -1069,7 +1069,7 @@ void InterpretEscSeq( void )
 	      COORD buf;
 	      SMALL_RECT win;
 
-	      tb_margins = FALSE;
+	      pState->tb_margins = FALSE;
 
 	      buf.X = (suffix == 'l') ? pState->buf_width : 132;
 	      if (buf.X != 0)
@@ -1371,17 +1371,19 @@ void InterpretEscSeq( void )
       case 'r': // DECSTBM - ESC[#;#r Set top and bottom margins.
 	if (es_argc == 0 && suffix2 == '+')
 	{
-	  tb_margins = FALSE; // ESC[+r == remove margins
+	  pState->tb_margins = FALSE; // ESC[+r == remove margins
 	  return;
 	}
 	if (es_argc > 2) return;
 	if (es_argv[1] == 0) es_argv[1] = BOTTOM - TOP + 1;
-	top_margin = p1 - 1;
-	bot_margin = es_argv[1] - 1;
-	if (bot_margin > BOTTOM - TOP) bot_margin = BOTTOM - TOP;
-	if (top_margin >= bot_margin) return; // top must be less than bottom
-	tb_margins = TRUE;
-	set_pos( LEFT, om ? TOP + top_margin : TOP );
+	pState->top_margin = p1 - 1;
+	pState->bot_margin = es_argv[1] - 1;
+	if (pState->bot_margin > BOTTOM - TOP)
+	  pState->bot_margin = BOTTOM - TOP;
+	if (pState->top_margin >= pState->bot_margin)
+	  return; // top must be less than bottom
+	pState->tb_margins = TRUE;
+	set_pos( LEFT, pState->om ? TOP + pState->top_margin : TOP );
       return;
 
       case 'S': // SU - ESC[#S Scroll up/Pan down.
@@ -1390,10 +1392,10 @@ void InterpretEscSeq( void )
 	Pos.X	   =
 	Rect.Left  = LEFT;
 	Rect.Right = RIGHT;
-	if (tb_margins)
+	if (pState->tb_margins)
 	{
-	  Rect.Top    = TOP + top_margin;
-	  Rect.Bottom = TOP + bot_margin;
+	  Rect.Top    = TOP + pState->top_margin;
+	  Rect.Bottom = TOP + pState->bot_margin;
 	}
 	else
 	{
@@ -1413,10 +1415,11 @@ void InterpretEscSeq( void )
 	Rect.Left  = LEFT;
 	Rect.Right = RIGHT;
 	Rect.Top   = CUR.Y;
-	if (tb_margins)
+	if (pState->tb_margins)
 	{
-	  if (CUR.Y < TOP + top_margin || CUR.Y > TOP + bot_margin) return;
-	  Rect.Bottom = TOP + bot_margin;
+	  if (CUR.Y < TOP + pState->top_margin ||
+	      CUR.Y > TOP + pState->bot_margin) return;
+	  Rect.Bottom = TOP + pState->bot_margin;
 	}
 	else
 	{
@@ -1450,8 +1453,9 @@ void InterpretEscSeq( void )
       case 'F': // CPL - ESC[#F Moves cursor up # lines, column 1.
 	if (es_argc > 1) return; // ESC[A == ESC[1A
 	Pos.Y = CUR.Y - p1;
-	if (tb_margins && (om || CUR.Y >= TOP + top_margin))
-	  top = TOP + top_margin;
+	if (pState->tb_margins && (pState->om ||
+				   CUR.Y >= TOP + pState->top_margin))
+	  top = TOP + pState->top_margin;
 	if (Pos.Y < top) Pos.Y = top;
 	set_pos( (suffix == 'F') ? LEFT : CUR.X, Pos.Y );
       return;
@@ -1461,8 +1465,9 @@ void InterpretEscSeq( void )
       case 'E': // CNL - ESC[#E Moves cursor down # lines, column 1.
 	if (es_argc > 1) return; // ESC[B == ESC[1B
 	Pos.Y = CUR.Y + p1;
-	if (tb_margins && (om || CUR.Y <= TOP + bot_margin))
-	  bottom = TOP + bot_margin;
+	if (pState->tb_margins && (pState->om ||
+				   CUR.Y <= TOP + pState->bot_margin))
+	  bottom = TOP + pState->bot_margin;
 	if (Pos.Y > bottom) Pos.Y = bottom;
 	set_pos( (suffix == 'E') ? LEFT : CUR.X, Pos.Y );
       return;
@@ -1506,10 +1511,10 @@ void InterpretEscSeq( void )
 
       case 'd': // VPA - ESC[#d Moves cursor row #, current column.
 	if (es_argc > 1) return; // ESC[d == ESC[1d
-	if (tb_margins && om)
+	if (pState->tb_margins && pState->om)
 	{
-	  top = TOP + top_margin;
-	  bottom = TOP + bot_margin;
+	  top = TOP + pState->top_margin;
+	  bottom = TOP + pState->bot_margin;
 	}
 	Pos.Y = top + p1 - 1;
 	if (Pos.Y < top) Pos.Y = top;
@@ -1893,14 +1898,14 @@ void MoveDown( BOOL home )
   CHAR_INFO  CharInfo;
 
   GetConsoleScreenBufferInfo( hConOut, &Info );
-  if (tb_margins && CUR.Y == TOP + bot_margin)
+  if (pState->tb_margins && CUR.Y == TOP + pState->bot_margin)
   {
     Rect.Left = LEFT;
     Rect.Right = RIGHT;
-    Rect.Top = TOP + top_margin + 1;
-    Rect.Bottom = TOP + bot_margin;
+    Rect.Top = TOP + pState->top_margin + 1;
+    Rect.Bottom = TOP + pState->bot_margin;
     Pos.X = LEFT;
-    Pos.Y = TOP + top_margin;
+    Pos.Y = TOP + pState->top_margin;
     CharInfo.Char.UnicodeChar = ' ';
     CharInfo.Attributes = ATTR;
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
@@ -1910,7 +1915,7 @@ void MoveDown( BOOL home )
       SetConsoleCursorPosition( hConOut, CUR );
     }
   }
-  else if (tb_margins && CUR.Y == BOTTOM)
+  else if (pState->tb_margins && CUR.Y == BOTTOM)
   {
     if (home)
     {
@@ -1950,19 +1955,19 @@ void MoveUp( void )
   CHAR_INFO  CharInfo;
 
   GetConsoleScreenBufferInfo( hConOut, &Info );
-  if (tb_margins && CUR.Y == TOP + top_margin)
+  if (pState->tb_margins && CUR.Y == TOP + pState->top_margin)
   {
     Rect.Left = LEFT;
     Rect.Right = RIGHT;
-    Rect.Top = TOP + top_margin;
-    Rect.Bottom = TOP + bot_margin - 1;
+    Rect.Top = TOP + pState->top_margin;
+    Rect.Bottom = TOP + pState->bot_margin - 1;
     Pos.X = LEFT;
-    Pos.Y = TOP + top_margin + 1;
+    Pos.Y = TOP + pState->top_margin + 1;
     CharInfo.Char.UnicodeChar = ' ';
     CharInfo.Attributes = ATTR;
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
   }
-  else if (tb_margins && CUR.Y == TOP)
+  else if (pState->tb_margins && CUR.Y == TOP)
   {
     // do nothing
   }
@@ -2044,7 +2049,7 @@ ParseAndPrintString( HANDLE hDev,
       }
       else if (c == SO) shifted = TRUE;
       else if (c == SI) shifted = G0_special;
-      else if (c == HT && pState != NULL && pState->tabs)
+      else if (c == HT && pState->tabs)
       {
 	CONSOLE_SCREEN_BUFFER_INFO Info;
 	FlushBuffer();
