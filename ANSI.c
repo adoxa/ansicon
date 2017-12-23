@@ -176,7 +176,8 @@
     added insert mode;
     BS/CUB/HPB after wrap will move back to the previous line(s);
     added DECOM, DECSTBM, SD & SU;
-    only flush before accessing the console, adding a mode to flush immediately.
+    only flush before accessing the console, adding a mode to flush immediately;
+    added DECSTR & RIS.
 */
 
 #include "ansicon.h"
@@ -213,10 +214,11 @@ struct Cache
 
 #define MAX_ARG 16		// max number of args in an escape sequence
 int   state;			// automata state
-TCHAR prefix;			// escape sequence prefix ( '[', ']' or '(' );
-TCHAR prefix2;			// secondary prefix ( '?' or '>' );
-TCHAR suffix;			// escape sequence suffix
-TCHAR suffix2;			// escape sequence secondary suffix
+TCHAR prefix;			// escape sequence prefix ( '[' or ']' );
+TCHAR prefix2;			// secondary prefix ( one of '<=>?' );
+TCHAR suffix;			// escape sequence final byte
+TCHAR suffix2;			// escape sequence intermediate byte
+int   ibytes;			// count of intermediate bytes
 int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
@@ -945,6 +947,56 @@ void init_tabs( int size )
 }
 
 
+// ========== Reset
+
+void InterpretEscSeq( void );
+
+void Reset( BOOL hard )
+{
+  CONSOLE_CURSOR_INFO CursInfo;
+  CONSOLE_SCREEN_BUFFER_INFOX csbix;
+
+  GetConsoleCursorInfo( hConOut, &CursInfo );
+  CursInfo.bVisible = TRUE;
+  SetConsoleCursorInfo( hConOut, &CursInfo );
+  im =
+  om =
+  tb_margins =
+  pState->crm = FALSE;
+  awm = TRUE;
+  SetConsoleMode( hConOut, cache[0].mode | ENABLE_WRAP_AT_EOL_OUTPUT );
+  shifted = G0_special = SaveG0 = FALSE;
+  pState->SavePos.X = pState->SavePos.Y = 0;
+  pState->SaveAttr = 0;
+  es_argv[0] = es_argc = 0;
+  prefix = '[';
+  prefix2 = suffix2 = 0;
+  suffix = 'm';
+  InterpretEscSeq();
+
+  if (hard)
+  {
+    pState->tabs =
+    pState->noclear = FALSE;
+    prefix2 = '?';
+    es_argv[0] = 3; es_argc = 1;
+    suffix2 = '+';
+    suffix = 'l';
+    InterpretEscSeq();
+    screen_top = -1;
+    csbix.cbSize = sizeof(csbix);
+    if (GetConsoleScreenBufferInfoX &&
+	GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+    {
+      memcpy( csbix.ColorTable, pState->palette, sizeof(csbix.ColorTable) );
+      ++csbix.srWindow.Right;
+      ++csbix.srWindow.Bottom;
+      SetConsoleScreenBufferInfoX( hConOut, &csbix );
+    }
+  }
+}
+
+
 // ========== Print functions
 
 //-----------------------------------------------------------------------------
@@ -981,7 +1033,7 @@ void InterpretEscSeq( void )
 
   if (prefix == '[')
   {
-    if (prefix2 == '?')
+    if (prefix2 == '?' && (suffix2 == 0 || suffix2 == '+'))
     {
       if (suffix == 'h' || suffix == 'l')
       {
@@ -1093,7 +1145,7 @@ void InterpretEscSeq( void )
       top    = TOP;
       bottom = BOTTOM;
     }
-    switch (suffix)
+    if (suffix2 == 0 || suffix2 == '+') switch (suffix)
     {
       case 'm': // SGR
 	if (es_argc == 0) es_argc++; // ESC[m == ESC[0m
@@ -1580,82 +1632,78 @@ void InterpretEscSeq( void )
 	}
       return;
 
-      case 'h': // SM - ESC[#h Set Mode
+      case 'h': // SM - ESC[#...h Set Mode
+      case 'l': // RM - ESC[#...l Reset Mode
+      {
+	BOOL state = (suffix == 'h');
 	for (i = 0; i < es_argc; i++)
-	  if (suffix2 == '+')
+	  if (suffix2 == '+') switch (es_argv[i])
 	  {
-	    switch (es_argv[i])
-	    {
-	      case 1: // ACFM
-		pState->fm = TRUE;
-	      break;
-	    }
+	    case 1: // ACFM
+	      pState->fm = state;
+	    break;
 	  }
 	  else switch (es_argv[i])
 	  {
 	    case 3: // CRM
-	      pState->crm = TRUE;
+	      pState->crm = state;
 	    break;
 
 	    case 4: // IRM
-	      im = TRUE;
+	      im = state;
 	    break;
 	  }
+	return;
+      }
+
+      default:
+      return;
+    }
+    if (suffix2 == '!') switch (suffix)
+    {
+      case 'p': // DECSTR - ESC[!p Soft reset
+	if (es_argc != 0) return;
+	Reset( FALSE );
       return;
 
-      case 'l': // RM - ESC[#l Reset Mode
-	for (i = 0; i < es_argc; i++)
-	  if (suffix2 == '+')
-	  {
-	    switch (es_argv[i])
-	    {
-	      case 1: // ACFM
-		pState->fm = FALSE;
-	      break;
-	    }
-	  }
-	  else switch (es_argv[i]) // CRM - ESC[3l is handled during parsing
-	  {
-	    case 4: // IRM
-	      im = FALSE;
-	    break;
-	  }
+      default:
       return;
-
-      case '~':
-	if (suffix2 == ',') // DECPS - ESC[#;#;#...,~ Play Sound
-	{
-	  // Frequencies of notes obtained from:
-	  //	https://pages.mtu.edu/~suits/notefreqs.html
-	  //	http://www.liutaiomottola.com/formulae/freqtab.htm
-	  // This is different to what the VT520 manual has, but since that
-	  // only specifies four frequencies, so be it.  I've also rounded to
-	  // even numbers, as the Beep function seems to stutter on odd.
-	  static const DWORD snd_freq[] = { 0,
+    }
+    if (suffix2 == ',') switch (suffix)
+    {
+      case '~': // DECPS - ESC[#;#;#...,~ Play Sound
+      {
+	// Frequencies of notes obtained from:
+	//	https://pages.mtu.edu/~suits/notefreqs.html
+	//	http://www.liutaiomottola.com/formulae/freqtab.htm
+	// This is different to what the VT520 manual has, but since that
+	// only specifies four frequencies, so be it. I've also rounded to
+	// even numbers, as the Beep function seems to stutter on odd.
+	static const DWORD snd_freq[] = { 0,
 //	C    C#/Db  D	 D#/Eb	E     F    F#/Gb  G    G#/Ab  A    A#/Bb  B
 /* 5 */  524,  554,  588,  622,  660,  698,  740,  784,  830,  880,  932,  988,
 /* 6 */ 1046, 1108, 1174, 1244, 1318, 1396, 1480, 1568, 1662, 1760, 1864, 1976,
 /* 7 */ 2094
-	  };
-	  DWORD dur;
-	  if (es_argc < 2) return;
-	  dur = es_argv[1];
-	  if (dur <= 48)		// use 1/32 second
-	    dur = 1000 * dur / 32;
-	  else if (dur > 8000)		// max out at 8 seconds
-	    dur = 8000;
-	  if (es_argc == 2)		// no notes
+	};
+	DWORD dur;
+	if (es_argc < 2) return;
+	dur = es_argv[1];
+	if (dur <= 48)	// use 1/32 second
+	  dur = 1000 * dur / 32;
+	else if (dur > 8000)		// max out at 8 seconds
+	  dur = 8000;
+	if (es_argc == 2)		// no notes
+	  Sleep( dur );
+	else for (i = 2; i < es_argc; ++i)
+	{
+	  if (es_argv[0] == 0) // zero volume
 	    Sleep( dur );
-	  else for (i = 2; i < es_argc; ++i)
-	  {
-	    if (es_argv[0] == 0)	// zero volume
-	      Sleep( dur );
-	    else
-	      Beep( (es_argv[i] < lenof(snd_freq)) ? snd_freq[es_argv[i]]
-						   : es_argv[i], dur );
-	  }
+	  else
+	    Beep( (es_argv[i] < lenof(snd_freq)) ? snd_freq[es_argv[i]]
+						 : es_argv[i], dur );
 	}
-      return;
+	return;
+      }
 
       default:
       return;
@@ -1984,6 +2032,7 @@ ParseAndPrintString( HANDLE hDev,
       if (c == ESC)
       {
 	suffix2 = 0;
+	ibytes = 0;
 	get_state();
 	state = (pState->crm) ? 7 : 2;
       }
@@ -2025,10 +2074,14 @@ ParseAndPrintString( HANDLE hDev,
 	state = 1;
       }
       else if (c >= '\x20' && c <= '\x2f')
-	suffix2 = c;
-      else if (suffix2 != 0)
       {
-	if (suffix2 == '(')     // SCS - Designate G0 character set
+	suffix2 = c;
+	++ibytes;
+      }
+      else if (ibytes != 0)
+      {
+	if (ibytes == 1 &&
+	    suffix2 == '(')     // SCS - Designate G0 character set
 	{
 	  if (c == '0')
 	    shifted = G0_special = TRUE;
@@ -2091,6 +2144,10 @@ ParseAndPrintString( HANDLE hDev,
 	}
 	state = 1;
       }
+      else if (c == 'c')        // RIS Reset to Initial State
+      {
+	Reset( TRUE );
+      }
       else if (c == '[' ||      // CSI Control Sequence Introducer
 	       c == ']')        // OSC Operating System Command
       {
@@ -2134,15 +2191,16 @@ ParseAndPrintString( HANDLE hDev,
       {
 	// ignore it
       }
-      else if (c >= '\x3b' && c <= '\x3f')
+      else if (c >= '\x3c' && c <= '\x3f')
       {
 	prefix2 = c;
       }
       else if (c >= '\x20' && c <= '\x2f')
       {
 	suffix2 = c;
+	++ibytes;
       }
-      else if (suffix2 != 0 && suffix2 != '+' && (suffix2 != ',' || c != '~'))
+      else if (ibytes > 1)
       {
 	state = 1;
       }
@@ -2175,8 +2233,9 @@ ParseAndPrintString( HANDLE hDev,
       else if (c >= '\x20' && c <= '\x2f')
       {
 	suffix2 = c;
+	++ibytes;
       }
-      else if (suffix2 != 0 && suffix2 != '+' && (suffix2 != ',' || c != '~'))
+      else if (ibytes > 1)
       {
 	state = 1;
       }

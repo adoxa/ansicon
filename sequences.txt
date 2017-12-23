@@ -182,6 +182,25 @@ H	set tab stop
 [?95h	don't clear screen when changing columns
 [?95l	clear screen when changing columns
 
+[!p	soft reset:
+	  show cursor
+	  perform control functions
+	  replace characters
+	  set origin to top line
+	  wrap lines at screen edge
+	  select ASCII
+	  remove margins
+	  default SGR
+	  set the saved cursor to the top-left
+c	hard reset:
+	  as above
+	  restore console tab handling
+	  restore the entire palette
+	  restore original columns
+	  clear screen when changing columns
+	  clear the buffer
+	  home the cursor
+
 [c	sends "\e[?62;1c" to console input (where \e is escape)
 [0c	as above
 [5n	sends "\e[0n" to console input

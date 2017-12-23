@@ -191,6 +191,7 @@ Sequences Recognised
 	\e[?5W		DECST8C Set Tab at Every 8 Columns
 	\e[?5;#W	DECST8C Set Tab at Every # Columns (ANSICON extension)
 	\e[#;#r 	DECSTBM Set Top and Bottom Margins
+	\e[!p		DECSTR	Soft Terminal Reset
 	\e[?25h 	DECTCEM Text Cursor Enable Mode (show cursor)
 	\e[?25l 	DECTCEM Text Cursor Enable Mode (hide cursor)
 	\e[#M		DL	Delete Line
@@ -214,6 +215,7 @@ Sequences Recognised
 	\eE		NEL	Next Line
 	\e[#b		REP	Repeat
 	\eM		RI	Reverse Index
+	\ec		RIS	Reset to Initial State
 	\e(0		SCS	Select Character Set (DEC special graphics)
 	\e(B		SCS	Select Character Set (ASCII)
 	\e[#;#;#m	SGR	Select Graphic Rendition
@@ -322,7 +324,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 22 December, 2017:
+    1.80 - 23 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -349,7 +351,8 @@ Version History
     + added SCS, but only for special/ASCII (same as Win10);
     + added tab handling (HT, HTS, TBC & DECST8C);
     + added IRM;
-    + added DECOM, DECSTBM, SD & SU.
+    + added DECOM, DECSTBM, SD & SU;
+    + added DECSTR & RIS.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
@@ -578,4 +581,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 22 December, 2017.
+Jason Hood, 23 December, 2017.
