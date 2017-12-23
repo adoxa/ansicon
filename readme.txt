@@ -23,23 +23,27 @@ Requirements
 Installation
 ============
 
-    Add "x86" (if your OS is 32-bit) or "x64" (if 64-bit) to your PATH, or copy
-    the relevant files to a directory already on the PATH (but NOT System32).
-    Alternatively, use option '-i' (or '-I', if permitted) to install it
-    permanently, by adding an entry to CMD.EXE's AutoRun registry value
-    (current user or local machine, respectively).
+    There are three ways to install, depending on your usage.
 
-    Uninstall simply involves closing any programs that are currently using it;
-    running with '-u' (and/or '-U') to remove it from AutoRun; removing the
-    directory from PATH; and deleting the files.  No other changes are made
-    (although you may have also created environment variables).
+    * Add "x86" (if your OS is 32-bit) or "x64" (if 64-bit) to your PATH, or
+      copy the relevant files to a directory already on the PATH (but NOT to
+      "System32" on a 64-bit system).  This means you explicitly run 'ansicon'
+      whenever you want to use it.
 
-Upgrading
----------
+    * Use option '-i' (or '-I', if permitted) to add an entry to CMD.EXE's
+      AutoRun registry value (current user or local machine, respectively).
+      This means "Command Prompt" and any program started by CMD.EXE will
+      automatically have sequences.
 
-    Delete ANSI.dll, it has been replaced with ANSI32.dll.
-    Delete ANSI-LLA.exe and ANSI-LLW.exe, they are no longer used.
-    Uninstall a pre-1.50 version and reinstall with this version.
+    * Add "d:\path\to\ansicon.exe -p" to your Startup group (run minimized to
+      avoid the console window flashing).  This means any console program
+      started by Explorer will automatically have sequences.
+
+    Uninstall involves closing any programs that are currently using it; using
+    the Run dialog to run "d:\path\to\ansicon.exe -pu" to remove it from
+    Explorer; running with '-u' (and/or '-U') to remove it from AutoRun; remov-
+    ing the directory from PATH; and deleting the files.  No other changes are
+    made (unless you created environment variables).
 
 
 Usage
@@ -84,7 +88,7 @@ Usage
 
     If you experience trouble with certain programs, the log may help in find-
     ing the cause; it can be found at "%TEMP%\ansicon.log".  A number should
-    follow the 'l':
+    immediately follow the 'l':
 
 	0	No logging
 	1	Log process start and end
@@ -112,8 +116,8 @@ Usage
     The variable is updated whenever a program reads it directly (i.e. as an
     individual request, not as part of the entire environment block).  For
     example, 'set an' will not update it, but 'echo %ansicon%' will.  Also
-    created are ANSICON_VER, which contains the version without the point (1.50
-    becomes "150"), and CLICOLOR (see http://bixense.com/clicolors/), which
+    created are ANSICON_VER, which contains the version without the point (1.80
+    becomes "180"), and CLICOLOR (see http://bixense.com/clicolors/), which
     contains "1".  These variables do not exist as part of the environment
     block (e.g. 'set an' will not show ANSICON_VER).
 
@@ -123,7 +127,8 @@ Usage
 
     Using 'ansicon' after install will always start with the default attrib-
     utes, restoring the originals on exit; all other programs will use the cur-
-    rent attributes.  The shift state is always reset for a new process.
+    rent attributes.  The shift state and insert mode are always reset for a
+    new process.
 
     My version of WriteConsoleA will always set the number of characters writt-
     en, not the number of bytes.  This means writing a double-byte character as
@@ -234,8 +239,8 @@ Sequences Recognised
     perform its function; an unrecognised character will preserve the escape.
 
     SO will select the G1 character set; SI will select the G0 set.  The G0
-    character set is set by SCS; the G1 character set is always the DEC
-    Special Graphics Character Set.
+    character set is set by SCS; the G1 character set is always the DEC Special
+    Graphics Character Set.
 
     I make a distinction between '\e[m' and '\e[0;...m'.  Both will restore the
     original foreground/background colors (and so '0' should be the first para-
@@ -334,6 +339,7 @@ Version History
     - fix explicit zero parameters not defaulting to 1;
     - set color by index (also setting bold/underline);
     - fix processes that start without a window;
+    * use the system default sound for the bell;
     * limit parameters to a maximum value of 32767;
     * go back to saving the buffer cursor position;
     * preserve escape that isn't part of a sequence;
@@ -341,26 +347,21 @@ Version History
     * change the graphics SCAN characters to their Unicode equivalents;
     * BS/CUB/HVP after wrap will move back to the previous line(s);
     * improve speed by only flushing when necessary, adding a mode to restore
-      flushing immediately.
-    + use the system default sound for the bell;
-    + added Play Sound DECPS;
+      flushing immediately;
+    + added DA, DECCOLM, DECNCSM, DECOM, DECPS, DECRC, DECSC, DECST8C, DECSTBM,
+      DECSTR, HT, HTS, IND, IRM, NEL, RI, RIS, SCS (only G0 as Special/ASCII),
+      SD, SU and TBC;
     + added '+' intermediate byte to use the buffer, rather than the window;
-    + added palette sequences;
+    + added set/get palette sequences;
     + added the bright SGR colors;
-    + added -pu to unload from the parent;
-    + added IND, NEL, RI, DA, DECCOLM, DECNCSM, DECSC & DECRC;
-    + added SCS, but only for special/ASCII (same as Win10);
-    + added tab handling (HT, HTS, TBC & DECST8C);
-    + added IRM;
-    + added DECOM, DECSTBM, SD & SU;
-    + added DECSTR & RIS.
+    + added -pu to unload from the parent.
 
     1.72 - 24 December, 2015:
     - handle STD_OUTPUT_HANDLE & STD_ERROR_HANDLE in WriteFile;
     - better handling of unusual PE files;
     * cache GetConsoleMode for an improvement in speed;
     * files writing to the console always succeed (should mostly remove the
-       need for ANSICON_API);
+      need for ANSICON_API);
     * log: add a blank line between processes;
 	   remove the separate line for WriteFile & _lwrite;
 	   write byte strings as-is, wide strings using the current code page;
