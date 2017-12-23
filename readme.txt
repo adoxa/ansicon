@@ -313,6 +313,9 @@ Limitations
     An application using multiple screen buffers will not have separate
     attributes in each buffer.
 
+    Console input that is echoed will not be processed (which is probably a
+    good thing for escapes, but not so good for margins).
+
 
 Version History
 ===============
