@@ -631,16 +631,20 @@ void FlushBuffer( void )
     if (nCharInBuffer < 4 && !im && !pState->tb_margins)
     {
       LPWSTR b = ChBuffer;
+      if (pState->crm)
+	SetConsoleMode( hConOut, cache[0].mode & ~ENABLE_PROCESSED_OUTPUT );
       do
       {
 	WriteConsole( hConOut, b, 1, &nWritten, NULL );
-	if (*b != '\r' && *b != '\b' && *b != '\a')
+	if (pState->crm || (*b != '\r' && *b != '\b' && *b != '\a'))
 	{
 	  GetConsoleScreenBufferInfo( hConOut, &Info );
 	  if (CUR.X == 0)
 	    ++nWrapped;
 	}
       } while (++b, --nCharInBuffer);
+      if (pState->crm)
+	SetConsoleMode( hConOut, cache[0].mode );
     }
     else
     {
