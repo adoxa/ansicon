@@ -688,9 +688,9 @@ void FlushBuffer( void )
       // width) and contains sufficient lines.
       GetConsoleScreenBufferInfo( hConOut, &Info );
       if (WIN.Right - WIN.Left + 1 != WIDTH ||
-	  BOTTOM - TOP < 2 * nCharInBuffer % WIDTH)
+	  BOTTOM - TOP < 2 * nCharInBuffer / WIDTH)
       {
-	HEIGHT = 2 * nCharInBuffer % WIDTH + 1;
+	HEIGHT = 2 * nCharInBuffer / WIDTH + 1;
 	SetConsoleScreenBufferSize( hConWrap, Info.dwSize );
       }
       // Put the cursor on the top line, in the same column.
@@ -896,8 +896,9 @@ void PushBuffer( WCHAR c )
       if (nl)
 	MoveDown( TRUE );
     }
+    return;
   }
-  else if (c == '\r')
+  if (nCharInBuffer > 0 && ChBuffer[nCharInBuffer-1] == '\r')
   {
     FlushBuffer();
     if (nWrapped)
@@ -908,12 +909,9 @@ void PushBuffer( WCHAR c )
       if (pState->tb_margins && CUR.Y < TOP) CUR.Y = TOP;
       set_pos( LEFT, CUR.Y );
     }
-    else
-      ChBuffer[nCharInBuffer++] = c;
   }
-  else if (c == '\b')
+  if (c == '\b')
   {
-    BOOL bs = FALSE;
     FlushBuffer();
     if (nWrapped)
     {
@@ -924,20 +922,15 @@ void PushBuffer( WCHAR c )
 	CUR.Y--;
 	SetConsoleCursorPos( hConOut, CUR );
 	--nWrapped;
-	bs = TRUE;
+	return;
       }
     }
-    if (!bs)
-      ChBuffer[nCharInBuffer++] = c;
   }
-  else
-  {
-    if (shifted && c >= FIRST_G1 && c <= LAST_G1)
-      c = G1[c-FIRST_G1];
-    ChBuffer[nCharInBuffer] = c;
-    if (++nCharInBuffer == BUFFER_SIZE)
-      FlushBuffer();
-  }
+  if (shifted && c >= FIRST_G1 && c <= LAST_G1)
+    c = G1[c-FIRST_G1];
+  ChBuffer[nCharInBuffer] = c;
+  if (++nCharInBuffer == BUFFER_SIZE)
+    FlushBuffer();
 }
 
 //-----------------------------------------------------------------------------
