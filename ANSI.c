@@ -2076,8 +2076,10 @@ ParseAndPrintString( HANDLE hDev,
       else if (im && (c == HT || c == '\r' || c == '\b' || c == '\n'))
       {
 	FlushBuffer();
+	im = FALSE;
 	PushBuffer( (WCHAR)c );
 	FlushBuffer();
+	im = TRUE;
       }
       else PushBuffer( (WCHAR)c );
     }
