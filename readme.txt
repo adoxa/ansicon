@@ -45,6 +45,11 @@ Installation
     ing the directory from PATH; and deleting the files.  No other changes are
     made (unless you created environment variables).
 
+Upgrading
+---------
+
+    Delete ANSICON_API - it has switched from WriteFile to WriteConsoleA.
+
 
 Usage
 =====
@@ -329,7 +334,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.80 - 23 December, 2017:
+    1.80 - 24 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
     - hook CreateFile and CreateConsoleScreenBuffer to force read/write access
@@ -345,7 +350,7 @@ Version History
     * preserve escape that isn't part of a sequence;
     * escaped control characters will display the control;
     * change the graphics SCAN characters to their Unicode equivalents;
-    * BS/CUB/HVP after wrap will move back to the previous line(s);
+    * BS/CR/CUB/HVP after wrap will move back to the previous line(s);
     * improve speed by only flushing when necessary, adding a mode to restore
       flushing immediately;
     + added DA, DECCOLM, DECNCSM, DECOM, DECPS, DECRC, DECSC, DECST8C, DECSTBM,
@@ -583,4 +588,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 23 December, 2017.
+Jason Hood, 24 December, 2017.

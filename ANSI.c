@@ -152,7 +152,7 @@
     remove wcstok, avoiding potential interference with the host;
     similarly, use a private heap instead of malloc.
 
-  v1.80, 26 October to 22 December, 2017:
+  v1.80, 26 October to 24 December, 2017:
     fix unloading;
     revert back to (re)storing buffer cursor position;
     increase cache to five handles;
@@ -174,7 +174,7 @@
     added tab handling;
     added the bright SGR colors, recognised the system indices;
     added insert mode;
-    BS/CUB/HPB after wrap will move back to the previous line(s);
+    BS/CR/CUB/HPB after wrap will move back to the previous line(s);
     added DECOM, DECSTBM, SD & SU;
     only flush before accessing the console, adding a mode to flush immediately;
     added DECSTR & RIS;
@@ -861,6 +861,20 @@ void PushBuffer( WCHAR c )
 	MoveDown( TRUE );
     }
   }
+  else if (c == '\r')
+  {
+    FlushBuffer();
+    if (nWrapped)
+    {
+      GetConsoleScreenBufferInfo( hConOut, &Info );
+      CUR.Y -= nWrapped;
+      if (CUR.Y < 0) CUR.Y = 0;
+      if (pState->tb_margins && CUR.Y < TOP) CUR.Y = TOP;
+      set_pos( LEFT, CUR.Y );
+    }
+    else
+      ChBuffer[nCharInBuffer++] = c;
+  }
   else if (c == '\b')
   {
     BOOL bs = FALSE;
@@ -868,7 +882,7 @@ void PushBuffer( WCHAR c )
     if (nWrapped)
     {
       GetConsoleScreenBufferInfo( hConOut, &Info );
-      if (CUR.X == 0)
+      if (CUR.X == LEFT)
       {
 	CUR.X = RIGHT;
 	CUR.Y--;
@@ -3210,10 +3224,9 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
     if (rc && lpNumberOfCharsWritten != NULL &&
 	      *lpNumberOfCharsWritten != nNumberOfCharsToWrite)
     {
-      // Converting a multibyte character to Unicode results in a different
-      // "character" count.  This causes some programs to think not everything
-      // was written, so the difference is sent again.	Fudge the (presumably)
-      // correct count.
+      // I set the number of characters actually written, which may be 0 when
+      // multibyte characters are split across calls.  If that causes problems,
+      // restore original behaviour.
       if (search_env( L"ANSICON_API", prog ))
 	*lpNumberOfCharsWritten = nNumberOfCharsToWrite;
     }
