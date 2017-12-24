@@ -344,6 +344,8 @@ Version History
     - fix explicit zero parameters not defaulting to 1;
     - set color by index (also setting bold/underline);
     - fix processes that start without a window;
+    - hide the cursor when moving (prevent it displaying on the active buffer
+      when moving on another);
     * use the system default sound for the bell;
     * limit parameters to a maximum value of 32767;
     * go back to saving the buffer cursor position;

@@ -589,11 +589,37 @@ HANDLE hFlushTimer;
 void MoveDown( BOOL home );
 
 
+// Well, this is annoying.  Setting the cursor position on any buffer always
+// displays the cursor on the active buffer (at least on 7).  Since there's no
+// way to tell which buffer is active (hooking SetConsoleActiveScreenBuffer
+// isn't sufficient, since multiple handles could refer to the same buffer),
+// hide the cursor, do the move and restore the cursor.
+BOOL SetConsoleCursorPos( HANDLE hConsoleOutput, COORD dwCursorPosition )
+{
+  CONSOLE_CURSOR_INFO CursInfo;
+  BOOL rc;
+
+  GetConsoleCursorInfo( hConsoleOutput, &CursInfo );
+  if (CursInfo.bVisible)
+  {
+    CursInfo.bVisible = FALSE;
+    SetConsoleCursorInfo( hConsoleOutput, &CursInfo );
+    rc = SetConsoleCursorPosition( hConsoleOutput, dwCursorPosition );
+    CursInfo.bVisible = TRUE;
+    SetConsoleCursorInfo( hConsoleOutput, &CursInfo );
+  }
+  else
+    rc = SetConsoleCursorPosition( hConsoleOutput, dwCursorPosition );
+
+  return rc;
+}
+
+
 // Set the cursor position, resetting the wrap flag.
 void set_pos( int x, int y )
 {
   COORD pos = { x, y };
-  SetConsoleCursorPosition( hConOut, pos );
+  SetConsoleCursorPos( hConOut, pos );
   nWrapped = 0;
 }
 
@@ -768,7 +794,7 @@ void FlushBuffer( void )
 	  c.Y	    = sr.Top - wi.CURPOS.Y;
 	  ScrollConsoleScreenBuffer( hConOut, &sr, &sr, c, &ci );
 	  CUR.Y -= wi.CURPOS.Y;
-	  SetConsoleCursorPosition( hConOut, CUR );
+	  SetConsoleCursorPos( hConOut, CUR );
 	}
       }
       nWrapped += wi.CURPOS.Y;
@@ -857,7 +883,7 @@ void PushBuffer( WCHAR c )
 	      if (CUR.X != 0)
 	      {
 		CUR.X = 0;
-		SetConsoleCursorPosition( hConOut, CUR );
+		SetConsoleCursorPos( hConOut, CUR );
 	      }
 	      nl = FALSE;
 	      break;
@@ -896,7 +922,7 @@ void PushBuffer( WCHAR c )
       {
 	CUR.X = RIGHT;
 	CUR.Y--;
-	SetConsoleCursorPosition( hConOut, CUR );
+	SetConsoleCursorPos( hConOut, CUR );
 	--nWrapped;
 	bs = TRUE;
       }
@@ -1578,7 +1604,7 @@ void InterpretEscSeq( void )
 	  Pos.X = (CUR.X & -8) + p1 * 8;
 	if (Pos.X > RIGHT) Pos.X = RIGHT;
 	// Don't use set_pos, the tabs could be discarded.
-	SetConsoleCursorPosition( hConOut, Pos );
+	SetConsoleCursorPos( hConOut, Pos );
       return;
 
       case 'Z': // CBT - ESC[#Z Moves cursor back # tabs
@@ -1936,7 +1962,7 @@ void MoveDown( BOOL home )
     if (home)
     {
       CUR.X = 0;
-      SetConsoleCursorPosition( hConOut, CUR );
+      SetConsoleCursorPos( hConOut, CUR );
     }
   }
   else if (pState->tb_margins && CUR.Y == BOTTOM)
@@ -1944,7 +1970,7 @@ void MoveDown( BOOL home )
     if (home)
     {
       CUR.X = 0;
-      SetConsoleCursorPosition( hConOut, CUR );
+      SetConsoleCursorPos( hConOut, CUR );
     }
   }
   else if (CUR.Y == LAST)
@@ -1960,14 +1986,14 @@ void MoveDown( BOOL home )
     if (home)
     {
       CUR.X = 0;
-      SetConsoleCursorPosition( hConOut, CUR );
+      SetConsoleCursorPos( hConOut, CUR );
     }
   }
   else
   {
     if (home) CUR.X = 0;
     ++CUR.Y;
-    SetConsoleCursorPosition( hConOut, CUR );
+    SetConsoleCursorPos( hConOut, CUR );
   }
 }
 
@@ -2010,7 +2036,7 @@ void MoveUp( void )
   else
   {
     --CUR.Y;
-    SetConsoleCursorPosition( hConOut, CUR );
+    SetConsoleCursorPos( hConOut, CUR );
   }
 }
 
@@ -2096,7 +2122,7 @@ ParseAndPrintString( HANDLE hDev,
 	while (++CUR.X < MAX_TABS && !pState->tab_stop[CUR.X]) ;
 	if (CUR.X > RIGHT) CUR.X = RIGHT;
 	// Don't use set_pos, the tab could be discarded.
-	SetConsoleCursorPosition( hConOut, CUR );
+	SetConsoleCursorPos( hConOut, CUR );
       }
       else if (im && (c == HT || c == '\r' || c == '\b' || c == '\n'))
       {
