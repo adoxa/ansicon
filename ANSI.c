@@ -583,6 +583,8 @@ int   nCharInBuffer;
 WCHAR ChBuffer[BUFFER_SIZE];
 WCHAR ChPrev;
 int   nWrapped;
+CRITICAL_SECTION CritSect;
+HANDLE hFlushTimer;
 
 void MoveDown( BOOL home );
 
@@ -606,6 +608,8 @@ void FlushBuffer( void )
   DWORD nWritten;
 
   if (nCharInBuffer <= 0) return;
+
+  EnterCriticalSection( &CritSect );
 
   if (!awm && !im)
   {
@@ -711,8 +715,8 @@ void FlushBuffer( void )
 	      }
 	      HeapFree( hHeap, 0, row );
 	      CloseHandle( hConWrap );
-	      nCharInBuffer = nWrapped = 0;
-	      return;
+	      nWrapped = 0;
+	      goto done;
 	    }
 	  }
 	}
@@ -740,8 +744,7 @@ void FlushBuffer( void )
 	    HeapFree( hHeap, 0, row );
 	    CloseHandle( hConWrap );
 	    nWrapped = pState->bot_margin - pState->top_margin;
-	    nCharInBuffer = 0;
-	    return;
+	    goto done;
 	  }
 	}
 	else
@@ -787,7 +790,10 @@ void FlushBuffer( void )
 	WriteConsole( hConOut, ChBuffer, nCharInBuffer, &nWritten, NULL );
     }
   }
+done:
   nCharInBuffer = 0;
+
+  LeaveCriticalSection( &CritSect );
 }
 
 //-----------------------------------------------------------------------------
@@ -2005,6 +2011,18 @@ void MoveUp( void )
 }
 
 
+DWORD WINAPI FlushThread( LPVOID param )
+{
+  for (;;)
+  {
+    WaitForSingleObject( hFlushTimer, INFINITE );
+    EnterCriticalSection( &CritSect );
+    FlushBuffer();
+    LeaveCriticalSection( &CritSect );
+  }
+}
+
+
 DWORD WINAPI BellThread( LPVOID param )
 {
   // XP doesn't support SND_SENTRY, so if it fails, try without.
@@ -2015,6 +2033,7 @@ DWORD WINAPI BellThread( LPVOID param )
   hBell = NULL;
   return 0;
 }
+
 
 //-----------------------------------------------------------------------------
 //   ParseAndPrintString(hDev, lpBuffer, nNumberOfBytesToWrite)
@@ -2034,6 +2053,8 @@ ParseAndPrintString( HANDLE hDev,
 {
   DWORD   i;
   LPCTSTR s;
+
+  EnterCriticalSection( &CritSect );
 
   if (hDev != hConOut)	// reinit if device has changed
   {
@@ -2340,9 +2361,21 @@ ParseAndPrintString( HANDLE hDev,
       state = 1;
     }
   }
-  if (pState->fm) FlushBuffer();
+  if (nCharInBuffer > 0)
+  {
+    if (pState->fm) FlushBuffer();
+    else
+    {
+      LARGE_INTEGER due;
+      due.QuadPart = -150000;
+      SetWaitableTimer( hFlushTimer, &due, 0, NULL, NULL, FALSE );
+    }
+  }
   if (lpNumberOfBytesWritten != NULL)
     *lpNumberOfBytesWritten = nNumberOfBytesToWrite - i;
+
+  LeaveCriticalSection( &CritSect );
+
   return (i == 0);
 }
 
@@ -3662,6 +3695,10 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 		 GetModuleHandle( L"ntdll.dll" ), "NtQueryInformationThread" );
     if (NtQueryInformationThread == NULL)
       DisableThreadLibraryCalls( hInstance );
+
+    InitializeCriticalSection( &CritSect );
+    hFlushTimer = CreateWaitableTimer( NULL, FALSE, NULL );
+    CreateThread( NULL, 4096, FlushThread, NULL, 0, NULL );
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
