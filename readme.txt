@@ -334,6 +334,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.81-wip - 26 December, 2017:
+    - fix multiple CRs before LF (including preventing an immediate flush);
+    - fix CR, BS and partial RM during CRM.
+
     1.80 - 24 December, 2017:
     - fix unloading;
     - fix -e et al when redirecting to CON;
@@ -590,4 +594,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 24 December, 2017.
+Jason Hood, 26 December, 2017.

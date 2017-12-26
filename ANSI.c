@@ -179,6 +179,12 @@
     only flush before accessing the console, adding a mode to flush immediately;
     added DECSTR & RIS;
     fix state problems with windowless processes.
+
+  v1.81-wip, 26 December, 2017:
+    combine multiple CRs as one (to ignore all CRs before LF);
+    don't process CR or BS during CRM;
+    don't flush CR immediately (to catch following LF);
+    fix CRM with all partial RM sequences.
 */
 
 #include "ansicon.h"
@@ -898,31 +904,35 @@ void PushBuffer( WCHAR c )
     }
     return;
   }
-  if (nCharInBuffer > 0 && ChBuffer[nCharInBuffer-1] == '\r')
+  if (!pState->crm)
   {
-    FlushBuffer();
-    if (nWrapped)
+    if (nCharInBuffer > 0 && ChBuffer[nCharInBuffer-1] == '\r')
     {
-      GetConsoleScreenBufferInfo( hConOut, &Info );
-      CUR.Y -= nWrapped;
-      if (CUR.Y < 0) CUR.Y = 0;
-      if (pState->tb_margins && CUR.Y < TOP) CUR.Y = TOP;
-      set_pos( LEFT, CUR.Y );
-    }
-  }
-  if (c == '\b')
-  {
-    FlushBuffer();
-    if (nWrapped)
-    {
-      GetConsoleScreenBufferInfo( hConOut, &Info );
-      if (CUR.X == LEFT)
+      if (c == '\r') return; // \r\r\r... == \r, thus \r\r\n == \r\n
+      FlushBuffer();
+      if (nWrapped)
       {
-	CUR.X = RIGHT;
-	CUR.Y--;
-	SetConsoleCursorPos( hConOut, CUR );
-	--nWrapped;
-	return;
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	CUR.Y -= nWrapped;
+	if (CUR.Y < 0) CUR.Y = 0;
+	if (pState->tb_margins && CUR.Y < TOP) CUR.Y = TOP;
+	set_pos( LEFT, CUR.Y );
+      }
+    }
+    if (c == '\b')
+    {
+      FlushBuffer();
+      if (nWrapped)
+      {
+	GetConsoleScreenBufferInfo( hConOut, &Info );
+	if (CUR.X == LEFT)
+	{
+	  CUR.X = RIGHT;
+	  CUR.Y--;
+	  SetConsoleCursorPos( hConOut, CUR );
+	  --nWrapped;
+	  return;
+	}
       }
     }
   }
@@ -2363,8 +2373,12 @@ ParseAndPrintString( HANDLE hDev,
       {
 	PushBuffer( ESC );
 	PushBuffer( '[' );
-	PushBuffer( (WCHAR)c );
-	state = 1;
+	if (c == ESC) state = 7;
+	else
+	{
+	  PushBuffer( (WCHAR)c );
+	  state = 1;
+	}
       }
     }
     else if (state == 9)
@@ -2373,20 +2387,25 @@ ParseAndPrintString( HANDLE hDev,
       {
 	FlushBuffer();
 	pState->crm = FALSE;
+	state = 1;
       }
       else
       {
 	PushBuffer( ESC );
 	PushBuffer( '[' );
 	PushBuffer( '3' );
-	PushBuffer( (WCHAR)c );
+	if (c == ESC) state = 7;
+	else
+	{
+	  PushBuffer( (WCHAR)c );
+	  state = 1;
+	}
       }
-      state = 1;
     }
   }
   if (nCharInBuffer > 0)
   {
-    if (pState->fm) FlushBuffer();
+    if (pState->fm && ChBuffer[nCharInBuffer-1] != '\r') FlushBuffer();
     else
     {
       LARGE_INTEGER due;
