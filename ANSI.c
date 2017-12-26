@@ -184,7 +184,8 @@
     combine multiple CRs as one (to ignore all CRs before LF);
     don't process CR or BS during CRM;
     don't flush CR immediately (to catch following LF);
-    fix CRM with all partial RM sequences.
+    fix CRM with all partial RM sequences;
+    check for the empty buffer within the critical section.
 */
 
 #include "ansicon.h"
@@ -639,9 +640,13 @@ void FlushBuffer( void )
 {
   DWORD nWritten;
 
-  if (nCharInBuffer <= 0) return;
-
   EnterCriticalSection( &CritSect );
+
+  if (nCharInBuffer <= 0)
+  {
+    LeaveCriticalSection( &CritSect );
+    return;
+  }
 
   if (!awm && !im)
   {
