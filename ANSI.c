@@ -180,12 +180,13 @@
     added DECSTR & RIS;
     fix state problems with windowless processes.
 
-  v1.81-wip, 26 December, 2017:
+  v1.81-wip, 26 to 28 December, 2017:
     combine multiple CRs as one (to ignore all CRs before LF);
     don't process CR or BS during CRM;
     don't flush CR immediately (to catch following LF);
     fix CRM with all partial RM sequences;
-    check for the empty buffer within the critical section.
+    check for the empty buffer within the critical section;
+    palette improvements.
 */
 
 #include "ansicon.h"
@@ -229,7 +230,7 @@ TCHAR suffix2;			// escape sequence intermediate byte
 int   ibytes;			// count of intermediate bytes
 int   es_argc;			// escape sequence args count
 int   es_argv[MAX_ARG]; 	// escape sequence args
-TCHAR Pt_arg[MAX_PATH*2];	// text parameter for Operating System Command
+TCHAR Pt_arg[4096];		// text parameter for Operating System Command
 int   Pt_len;
 BOOL  shifted, G0_special, SaveG0;
 BOOL  awm = TRUE;		// autowrap mode
@@ -369,6 +370,12 @@ typedef BOOL (WINAPI *PHCSBIX)(
 
 PHCSBIX GetConsoleScreenBufferInfoX, SetConsoleScreenBufferInfoX;
 
+BOOL WINAPI GetConsoleScreenBufferInfoEx_repl( HANDLE h,
+					       PCONSOLE_SCREEN_BUFFER_INFOX i )
+{
+  return FALSE;
+}
+
 
 typedef struct _CONSOLE_FONT_INFOX {
   ULONG      cbSize;
@@ -426,7 +433,8 @@ typedef struct
   SHORT    top_margin;
   SHORT    bot_margin;
   COORD    SavePos;	// saved cursor position
-  COLORREF palette[16];
+  COLORREF o_palette[16];  // original palette, for resetting
+  COLORREF x_palette[240]; // xterm 256-color palette, less 16 system colors
   SHORT    buf_width;	// buffer width prior to setting 132 columns
   SHORT    win_width;	// window width prior to setting 132 columns
   BYTE	   noclear;	// don't clear the screen on column mode change
@@ -438,6 +446,8 @@ STATE  default_state;	// for when there's no window or file mapping
 PSTATE pState = &default_state;
 BOOL   valid_state;
 HANDLE hMap;
+
+#include "palette.h"
 
 void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO );
 
@@ -480,26 +490,30 @@ void get_state( void )
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
     csbix.cbSize = sizeof(csbix);
-    if (GetConsoleScreenBufferInfoX &&
-	GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+    if (GetConsoleScreenBufferInfoX( hConOut, &csbix ))
     {
       Info.dwSize = csbix.dwSize;
       ATTR = csbix.wAttributes;
       WIN  = csbix.srWindow;
-      memcpy( pState->palette, csbix.ColorTable, sizeof(csbix.ColorTable) );
+      memcpy( pState->o_palette, csbix.ColorTable, sizeof(csbix.ColorTable) );
     }
-    else if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
+    else
     {
-      DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
-		   GetLastError() );
-      ATTR	= 7;
-      WIDTH	= 80;
-      HEIGHT	= 300;
-      WIN.Left	= 0;
-      WIN.Right = 79;
-      TOP	= 0;
-      BOTTOM	= 24;
+      memcpy( pState->o_palette, legacy_palette, sizeof(legacy_palette) );
+      if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
+      {
+	DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
+		     GetLastError() );
+	ATTR	= 7;
+	WIDTH	= 80;
+	HEIGHT	= 300;
+	WIN.Left = 0;
+	WIN.Right = 79;
+	TOP	= 0;
+	BOTTOM	= 24;
+      }
     }
+    memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
     if (GetEnvironmentVariable( L"ANSICON_REVERSE", NULL, 0 ))
     {
       SetEnvironmentVariable( L"ANSICON_REVERSE", NULL );
@@ -985,7 +999,7 @@ void send_palette_sequence( COLORREF c )
   r = GetRValue( c );
   g = GetGValue( c );
   b = GetBValue( c );
-  if ((c & 0x0F0F0F) == ((c & 0xF0F0F0) >> 4))
+  if ((c & 0x0F0F0F) == ((c >> 4) & 0x0F0F0F))
     wsprintf( buf, L"#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
   else
     wsprintf( buf, L"#%02X%02X%02X", r, g, b );
@@ -1002,6 +1016,49 @@ void init_tabs( int size )
   for (i = 0; i < MAX_TABS; i += size)
     pState->tab_stop[i] = TRUE;
   pState->tabs = TRUE;
+}
+
+
+// Find the "distance" between two colors.
+// https://www.compuphase.com/cmetric.htm
+int color_distance( COLORREF c1, COLORREF c2 )
+{
+  int rmean = (GetRValue( c1 ) + GetRValue( c2 )) / 2;
+  int r = GetRValue( c1 ) - GetRValue( c2 );
+  int g = GetGValue( c1 ) - GetGValue( c2 );
+  int b = GetBValue( c1 ) - GetBValue( c2 );
+  return (((512 + rmean) * r * r) >> 8) +
+	 4 * g * g +
+	 (((767 - rmean) * b * b) >> 8);
+}
+
+// Find the nearest color to a system color.
+int find_nearest_color( COLORREF col )
+{
+  int d, d_min;
+  int i, idx;
+  CONSOLE_SCREEN_BUFFER_INFOX csbix;
+  const COLORREF* table;
+
+  csbix.cbSize = sizeof(csbix);
+  table = (GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+	  ? csbix.ColorTable : legacy_palette;
+
+  d_min = color_distance( col, table[0] );
+  if (d_min == 0) return 0;
+  idx = 0;
+  for (i = 1; i < 16; ++i)
+  {
+    d = color_distance( col, table[i] );
+    if (d < d_min)
+    {
+      if (d == 0) return i;
+      d_min = d;
+      idx = i;
+    }
+  }
+
+  return idx;
 }
 
 
@@ -1043,14 +1100,14 @@ void Reset( BOOL hard )
     InterpretEscSeq();
     screen_top = -1;
     csbix.cbSize = sizeof(csbix);
-    if (GetConsoleScreenBufferInfoX &&
-	GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+    if (GetConsoleScreenBufferInfoX( hConOut, &csbix ))
     {
-      memcpy( csbix.ColorTable, pState->palette, sizeof(csbix.ColorTable) );
+      memcpy( csbix.ColorTable, pState->o_palette, sizeof(csbix.ColorTable) );
       ++csbix.srWindow.Right;
       ++csbix.srWindow.Bottom;
       SetConsoleScreenBufferInfoX( hConOut, &csbix );
     }
+    memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
   }
 }
 
@@ -1206,6 +1263,10 @@ void InterpretEscSeq( void )
     if (suffix2 == 0 || suffix2 == '+') switch (suffix)
     {
       case 'm': // SGR
+      {
+	BYTE b = FOREGROUND_INTENSITY;
+	BYTE u = BACKGROUND_INTENSITY;
+
 	if (es_argc == 0) es_argc++; // ESC[m == ESC[0m
 	for (i = 0; i < es_argc; i++)
 	{
@@ -1232,26 +1293,42 @@ void InterpretEscSeq( void )
 	    // only one parameter, which is divided into elements.  So where
 	    // xterm does "38;2;R;G;B" it should really be "38:2:I:R:G:B" (I is
 	    // a color space identifier).
-	    if (i+1 < es_argc)
+	    if (++i < es_argc)
 	    {
-	      if (es_argv[i+1] == 2)		// rgb
-		i += 4;
-	      else if (es_argv[i+1] == 5)	// index
+	      COLORREF col = CLR_INVALID;
+	      int idx = -1;
+	      int arg = es_argv[i-1];
+
+	      if (es_argv[i] == 2)		// rgb
 	      {
-		if (i+2 < es_argc && es_argv[i+2] < 16)
+		if (i+3 < es_argc)
+		  col = RGB( es_argv[i+1], es_argv[i+2], es_argv[i+3] );
+		i += 3;
+	      }
+	      else if (es_argv[i] == 5) 	// index
+	      {
+		if (++i < es_argc)
 		{
-		  if (es_argv[i] == 38)
-		  {
-		    pState->sgr.foreground = es_argv[i+2];
-		    pState->sgr.bold = es_argv[i+2] & FOREGROUND_INTENSITY;
-		  }
-		  else
-		  {
-		    pState->sgr.background = es_argv[i+2];
-		    pState->sgr.underline = es_argv[i+2] & BACKGROUND_INTENSITY;
-		  }
+		  if (es_argv[i] < 16)
+		    idx = es_argv[i];
+		  else if (es_argv[i] < 256)
+		    col = pState->x_palette[es_argv[i] - 16];
 		}
-		i += 2;
+	      }
+	      if (col != CLR_INVALID)
+		idx = attr2ansi[find_nearest_color( col )];
+	      if (idx != -1)
+	      {
+		if (arg == 38)
+		{
+		  pState->sgr.foreground = idx;
+		  b = 0;
+		}
+		else
+		{
+		  pState->sgr.background = idx;
+		  u = 0;
+		}
 	      }
 	    }
 	  }
@@ -1308,20 +1385,22 @@ void InterpretEscSeq( void )
 	    case 28: pState->sgr.concealed = 0; break;
 	  }
 	}
+	b &= pState->sgr.bold;
+	u &= pState->sgr.underline;
 	if (pState->sgr.concealed)
 	{
 	  if (pState->sgr.rvideo)
 	  {
 	    attribut = foregroundcolor[pState->sgr.foreground]
 		     | backgroundcolor[pState->sgr.foreground];
-	    if (pState->sgr.bold)
+	    if (b)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	  else
 	  {
 	    attribut = foregroundcolor[pState->sgr.background]
 		     | backgroundcolor[pState->sgr.background];
-	    if (pState->sgr.underline)
+	    if (u)
 	      attribut |= FOREGROUND_INTENSITY | BACKGROUND_INTENSITY;
 	  }
 	}
@@ -1329,17 +1408,16 @@ void InterpretEscSeq( void )
 	{
 	  attribut = foregroundcolor[pState->sgr.background]
 		   | backgroundcolor[pState->sgr.foreground];
-	  if (pState->sgr.bold)
-	    attribut |= BACKGROUND_INTENSITY;
-	  if (pState->sgr.underline)
-	    attribut |= FOREGROUND_INTENSITY;
+	  if (b) attribut |= BACKGROUND_INTENSITY;
+	  if (u) attribut |= FOREGROUND_INTENSITY;
 	}
 	else
-	  attribut = foregroundcolor[pState->sgr.foreground] | pState->sgr.bold
-		   | backgroundcolor[pState->sgr.background] | pState->sgr.underline;
+	  attribut = foregroundcolor[pState->sgr.foreground] | b
+		   | backgroundcolor[pState->sgr.background] | u;
 	if (pState->sgr.reverse)
 	  attribut = ((attribut >> 4) & 15) | ((attribut & 15) << 4);
 	SetConsoleTextAttribute( hConOut, attribut );
+      }
       return;
 
       case 'J': // ED
@@ -1788,9 +1866,8 @@ void InterpretEscSeq( void )
     {
       CONSOLE_SCREEN_BUFFER_INFOX csbix;
       csbix.cbSize = sizeof(csbix);
-      if (!GetConsoleScreenBufferInfoX ||
-	  !GetConsoleScreenBufferInfoX( hConOut, &csbix ))
-	return;
+      if (!GetConsoleScreenBufferInfoX( hConOut, &csbix ))
+	memcpy( csbix.ColorTable, legacy_palette, sizeof(legacy_palette) );
       if (es_argv[0] == 4)
       {
 	BYTE r, g, b;
@@ -1800,7 +1877,7 @@ void InterpretEscSeq( void )
 	for (beg = Pt_arg;; beg = end + 1)
 	{
 	  i = (int)wcstoul( beg, &end, 10 );
-	  if (end == beg || (*end != ';' && *end != '\0') || i >= 16)
+	  if (end == beg || (*end != ';' && *end != '\0') || i >= 256)
 	    break;
 	  if (end[2] == ';' || end[2] == '\0')
 	  {
@@ -1809,11 +1886,18 @@ void InterpretEscSeq( void )
 	      SendSequence( L"\33]4;" );
 	      end[1] = '\0';
 	      SendSequence( beg );
-	      for (; i < 16; ++i)
-	      {
-		send_palette_sequence( csbix.ColorTable[attr2ansi[i]] );
-		SendSequence( (i == 15) ? L"\a" : L"," );
-	      }
+	      if (i < 16)
+		for (; i < 16; ++i)
+		{
+		  send_palette_sequence( csbix.ColorTable[attr2ansi[i]] );
+		  SendSequence( (i == 15) ? L"\a" : L"," );
+		}
+	      else
+		for (; i < 256; ++i)
+		{
+		  send_palette_sequence( pState->x_palette[i - 16] );
+		  SendSequence( (i == 255) ? L"\a" : L"," );
+		}
 	    }
 	    else if (end[1] == '?')
 	    {
@@ -1825,7 +1909,8 @@ void InterpretEscSeq( void )
 	      SendSequence( L";" );
 	      end[1] = '\0';
 	      SendSequence( beg );
-	      send_palette_sequence( csbix.ColorTable[attr2ansi[i]] );
+	      send_palette_sequence( (i < 16) ? csbix.ColorTable[attr2ansi[i]]
+					      : pState->x_palette[i - 16] );
 	    }
 	    else
 	      break;
@@ -1905,8 +1990,13 @@ void InterpretEscSeq( void )
 		}
 	      }
 	      if (valid)
-		csbix.ColorTable[attr2ansi[i++]] = RGB( r, g, b );
-	      if (*end != ',' || i == 16)
+	      {
+		if (i < 16)
+		  csbix.ColorTable[attr2ansi[i++]] = RGB( r, g, b );
+		else
+		  pState->x_palette[i++ - 16] = RGB( r, g, b );
+	      }
+	      if (*end != ',' || i == 256)
 	      {
 		while (*end != ';' && *end != '\0')
 		  ++end;
@@ -1924,25 +2014,36 @@ void InterpretEscSeq( void )
       {
 	// Reset each index, or the entire palette.
 	if (Pt_len == 0)
-	  memcpy( csbix.ColorTable, pState->palette, sizeof(csbix.ColorTable) );
+	{
+	  memcpy(csbix.ColorTable, pState->o_palette, sizeof(csbix.ColorTable));
+	  memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
+	}
 	else
 	{
 	  LPTSTR beg, end;
 	  for (beg = Pt_arg;; beg = end + 1)
 	  {
 	    i = (int)wcstoul( beg, &end, 10 );
-	    if (end == beg || (*end != ';' && *end != '\0') || i >= 16)
+	    if (end == beg || (*end != ';' && *end != '\0') || i >= 256)
 	      break;
-	    i = attr2ansi[i];
-	    csbix.ColorTable[i] = pState->palette[i];
+	    if (i < 16)
+	    {
+	      i = attr2ansi[i];
+	      csbix.ColorTable[i] = pState->o_palette[i];
+	    }
+	    else
+	      pState->x_palette[i - 16] = xterm_palette[i - 16];
 	    if (*end == '\0')
 	      break;
 	  }
 	}
       }
-      ++csbix.srWindow.Right;
-      ++csbix.srWindow.Bottom;
-      SetConsoleScreenBufferInfoX( hConOut, &csbix );
+      if (SetConsoleScreenBufferInfoX)
+      {
+	++csbix.srWindow.Right;
+	++csbix.srWindow.Bottom;
+	SetConsoleScreenBufferInfoX( hConOut, &csbix );
+      }
     }
   }
 }
@@ -3709,6 +3810,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     hKernel = GetModuleHandleA( APIKernel );
     GetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
 				     hKernel, "GetConsoleScreenBufferInfoEx" );
+    if (GetConsoleScreenBufferInfoX == NULL)
+      GetConsoleScreenBufferInfoX = GetConsoleScreenBufferInfoEx_repl;
     SetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
 				     hKernel, "SetConsoleScreenBufferInfoEx" );
     SetCurrentConsoleFontX	= (PHBCFIX)GetProcAddress(

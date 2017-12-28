@@ -334,10 +334,13 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.81-wip - 26 December, 2017:
+    1.81-wip - 28 December, 2017:
     - fix multiple CRs before LF (including preventing an immediate flush);
     - fix CR, BS and partial RM during CRM;
-    - fix buffer overflow caused by incorrect critical section.
+    - fix buffer overflow caused by incorrect critical section;
+    * support the entire 256-color palette;
+    * setting color by index or RGB will use the nearest console color;
+    * setting color by index will leave bold/underline unchanged.
 
     1.80 - 24 December, 2017:
     - fix unloading;
@@ -573,6 +576,8 @@ Acknowledgments
     Vincent Fatica for pointing out \e[K was not right.
     Nat Kuhn for pointing out the problem with report cursor position.
 
+    Thiadmer Riemersma for the nearest color algorithm.
+
 
 Contact
 =======
@@ -595,4 +600,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 26 December, 2017.
+Jason Hood, 28 December, 2017.
