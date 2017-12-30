@@ -334,7 +334,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.81-wip - 28 December, 2017:
+    1.81 - 28 December, 2017:
     - fix multiple CRs before LF (including preventing an immediate flush);
     - fix CR, BS and partial RM during CRM;
     - fix buffer overflow caused by incorrect critical section;

@@ -180,7 +180,7 @@
     added DECSTR & RIS;
     fix state problems with windowless processes.
 
-  v1.81-wip, 26 to 28 December, 2017:
+  v1.81, 26 to 28 December, 2017:
     combine multiple CRs as one (to ignore all CRs before LF);
     don't process CR or BS during CRM;
     don't flush CR immediately (to catch following LF);
