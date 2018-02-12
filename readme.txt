@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2017 Jason Hood
 
-			    Version 1.80.  Freeware
+			  Version 1.82-wip.  Freeware
 
 
 Description
@@ -134,6 +134,11 @@ Usage
     utes, restoring the originals on exit; all other programs will use the cur-
     rent attributes.  The shift state and insert mode are always reset for a
     new process.
+
+    ANSICON will detect when a line wraps at the right margin and suppress a
+    following newline.	Some programs detect the wrap themselves and so the
+    following newline is actually for a blank line; use the ANSICON_WRAP
+    variable to indicate as such (see ANSICON_API below).
 
     My version of WriteConsoleA will always set the number of characters writt-
     en, not the number of bytes.  This means writing a double-byte character as
@@ -333,6 +338,9 @@ Version History
 ===============
 
     Legend: + added, - bug-fixed, * changed.
+
+    1.82-wip - 12 February, 2018:
+    - add ANSICON_WRAP for programs that expect the wrap at right margin.
 
     1.81 - 28 December, 2017:
     - fix multiple CRs before LF (including preventing an immediate flush);
@@ -600,4 +608,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 28 December, 2017.
+Jason Hood, 12 February, 2018.

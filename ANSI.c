@@ -187,6 +187,9 @@
     fix CRM with all partial RM sequences;
     check for the empty buffer within the critical section;
     palette improvements.
+
+  v1.82-wip, 12 February, 2018:
+    add ANSICON_WRAP environment variable for programs that expect the wrap.
 */
 
 #include "ansicon.h"
@@ -233,6 +236,7 @@ int   es_argv[MAX_ARG]; 	// escape sequence args
 TCHAR Pt_arg[4096];		// text parameter for Operating System Command
 int   Pt_len;
 BOOL  shifted, G0_special, SaveG0;
+BOOL  wm = FALSE;		// does program detect wrap itself?
 BOOL  awm = TRUE;		// autowrap mode
 BOOL  im;			// insert mode
 int   screen_top = -1;		// initial window top when cleared
@@ -662,7 +666,7 @@ void FlushBuffer( void )
     return;
   }
 
-  if (!awm && !im)
+  if ((wm || !awm) && !im && !pState->tb_margins)
   {
     if (pState->crm)
     {
@@ -867,6 +871,11 @@ void PushBuffer( WCHAR c )
     if (pState->crm)
       ChBuffer[nCharInBuffer++] = c;
     FlushBuffer();
+    if (wm)
+    {
+      MoveDown( TRUE );
+      return;
+    }
     // Avoid writing the newline if wrap has already occurred.
     GetConsoleScreenBufferInfo( hConOut, &Info );
     if (pState->crm)
@@ -3840,6 +3849,9 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
     bResult = HookAPIAllMod( Hooks, FALSE, FALSE );
     OriginalAttr( lpReserved );
+
+    if (search_env( L"ANSICON_WRAP", prog ))
+      wm = TRUE;
 
     NtQueryInformationThread = (PNTQIT)GetProcAddress(
 		 GetModuleHandle( L"ntdll.dll" ), "NtQueryInformationThread" );
