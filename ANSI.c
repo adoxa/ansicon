@@ -2549,6 +2549,7 @@ const char APIProcessThreads[]	   = "API-MS-Win-Core-ProcessThreads-";
 const char APIProcessEnvironment[] = "API-MS-Win-Core-ProcessEnvironment-";
 const char APILibraryLoader[]	   = "API-MS-Win-Core-LibraryLoader-";
 const char APIFile[]		   = "API-MS-Win-Core-File-";
+const char APIHandle[]		   = "API-MS-Win-Core-Handle-";
 
 typedef struct
 {
@@ -2564,6 +2565,7 @@ API_DATA APIs[] =
   { APIProcessEnvironment, sizeof(APIProcessEnvironment) - 1, NULL },
   { APILibraryLoader,	   sizeof(APILibraryLoader) - 1,      NULL },
   { APIFile,		   sizeof(APIFile) - 1, 	      NULL },
+  { APIHandle,		   sizeof(APIHandle) - 1,	      NULL },
   { NULL,		   0,				      NULL }
 };
 
@@ -3569,6 +3571,27 @@ WINAPI MyCreateConsoleScreenBuffer( DWORD dwDesiredAccess, DWORD dwShareMode,
 				    lpScreenBufferData );
 }
 
+BOOL
+WINAPI MyCloseHandle( HANDLE hObject )
+{
+  int c;
+
+  EnterCriticalSection( &CritSect );
+
+  FlushBuffer();
+
+  for (c = 0; c < CACHE; ++c)
+    if (cache[c].h == hObject)
+    {
+      cache[c].h = INVALID_HANDLE_VALUE;
+      break;
+    }
+
+  LeaveCriticalSection( &CritSect );
+
+  return CloseHandle( hObject );
+}
+
 
 //-----------------------------------------------------------------------------
 //   My...
@@ -3731,6 +3754,7 @@ HookFn Hooks[] = {
   HOOK( APIFile,	       CreateFileA ),
   HOOK( APIFile,	       CreateFileW ),
   HOOK( APIKernel,	       CreateConsoleScreenBuffer ),
+  HOOK( APIHandle,	       CloseHandle ),
   HOOK( APIKernel,	       FillConsoleOutputAttribute ),
   HOOK( APIKernel,	       FillConsoleOutputCharacterA ),
   HOOK( APIKernel,	       FillConsoleOutputCharacterW ),
