@@ -3189,6 +3189,8 @@ BOOL IsConsoleHandle( HANDLE h )
 {
   int c;
 
+  EnterCriticalSection( &CritSect );
+
   for (c = 0; c < CACHE; ++c)
     if (cache[c].h == h)
     {
@@ -3198,7 +3200,9 @@ BOOL IsConsoleHandle( HANDLE h )
 	do cache[c] = cache[c-1]; while (--c > 0);
 	cache[0] = tc;
       }
-      return (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+      c = (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+      LeaveCriticalSection( &CritSect );
+      return c;
     }
 
   while (--c > 0)
@@ -3216,7 +3220,11 @@ BOOL IsConsoleHandle( HANDLE h )
       cache[0].mode = ENABLE_PROCESSED_OUTPUT;
   }
 
-  return (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+  c = (cache[0].mode & ENABLE_PROCESSED_OUTPUT);
+
+  LeaveCriticalSection( &CritSect );
+
+  return c;
 }
 
 //-----------------------------------------------------------------------------
