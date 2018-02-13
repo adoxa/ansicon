@@ -188,7 +188,7 @@
     check for the empty buffer within the critical section;
     palette improvements.
 
-  v1.82-wip, 12 & 13 February, 2018:
+  v1.82, 12 & 13 February, 2018:
     add ANSICON_WRAP environment variable for programs that expect the wrap;
     flush and invalidate the cache on CloseHandle;
     make IsConsoleHandle a critical section, for multithreaded processes;

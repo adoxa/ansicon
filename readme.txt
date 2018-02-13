@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2018 Jason Hood
 
-			  Version 1.82-wip.  Freeware
+			    Version 1.82.  Freeware
 
 
 Description
@@ -339,7 +339,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.82-wip - 13 February, 2018:
+    1.82 - 13 February, 2018:
     - add ANSICON_WRAP for programs that expect the wrap at right margin;
     - make IsConsoleHandle a critical section, for multithreaded processes;
     - use APIConsole for all console functions (Windows 10).
