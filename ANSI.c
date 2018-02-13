@@ -188,8 +188,11 @@
     check for the empty buffer within the critical section;
     palette improvements.
 
-  v1.82-wip, 12 February, 2018:
-    add ANSICON_WRAP environment variable for programs that expect the wrap.
+  v1.82-wip, 12 & 13 February, 2018:
+    add ANSICON_WRAP environment variable for programs that expect the wrap;
+    flush and invalidate the cache on CloseHandle;
+    make IsConsoleHandle a critical section, for multithreaded processes;
+    use APIConsole for all console functions (needed for Windows 10).
 */
 
 #include "ansicon.h"
@@ -3648,6 +3651,7 @@ FLUSH5( ReadConsoleOutputCharacterW, LPWSTR, DWORD, COORD, LPDWORD )
 FLUSH5( ScrollConsoleScreenBufferA, SMALL_RECT*,SMALL_RECT*, COORD, CHAR_INFO* )
 FLUSH5( ScrollConsoleScreenBufferW, SMALL_RECT*,SMALL_RECT*, COORD, CHAR_INFO* )
 FLUSH2( SetConsoleCursorPosition, COORD )
+FLUSH2X( SetConsoleScreenBufferInfo, PCONSOLE_SCREEN_BUFFER_INFOX )
 FLUSH2( SetConsoleScreenBufferSize, COORD )
 FLUSH2( SetConsoleTextAttribute, WORD )
 FLUSH3( SetConsoleWindowInfo, BOOL, const SMALL_RECT* )
@@ -3761,34 +3765,35 @@ HookFn Hooks[] = {
   HOOK( APILibraryLoader,      FreeLibrary ),
   HOOK( APIFile,	       CreateFileA ),
   HOOK( APIFile,	       CreateFileW ),
-  HOOK( APIKernel,	       CreateConsoleScreenBuffer ),
+  HOOK( APIConsole,	       CreateConsoleScreenBuffer ),
   HOOK( APIHandle,	       CloseHandle ),
-  HOOK( APIKernel,	       FillConsoleOutputAttribute ),
-  HOOK( APIKernel,	       FillConsoleOutputCharacterA ),
-  HOOK( APIKernel,	       FillConsoleOutputCharacterW ),
-  HOOK( APIKernel,	       GetConsoleScreenBufferInfo ),
-  HOOK( APIKernel,	       GetConsoleScreenBufferInfoEx ),
+  HOOK( APIConsole,	       FillConsoleOutputAttribute ),
+  HOOK( APIConsole,	       FillConsoleOutputCharacterA ),
+  HOOK( APIConsole,	       FillConsoleOutputCharacterW ),
+  HOOK( APIConsole,	       GetConsoleScreenBufferInfo ),
+  HOOK( APIConsole,	       GetConsoleScreenBufferInfoEx ),
   HOOK( APIFile,	       ReadFile ),
   HOOK( APIConsole,	       ReadConsoleA ),
   HOOK( APIConsole,	       ReadConsoleW ),
   HOOK( APIConsole,	       ReadConsoleInputA ),
   HOOK( APIConsole,	       ReadConsoleInputW ),
-  HOOK( APIKernel,	       ReadConsoleOutputA ),
-  HOOK( APIKernel,	       ReadConsoleOutputW ),
-  HOOK( APIKernel,	       ReadConsoleOutputAttribute ),
-  HOOK( APIKernel,	       ReadConsoleOutputCharacterA ),
-  HOOK( APIKernel,	       ReadConsoleOutputCharacterW ),
-  HOOK( APIKernel,	       ScrollConsoleScreenBufferA ),
-  HOOK( APIKernel,	       ScrollConsoleScreenBufferW ),
-  HOOK( APIKernel,	       SetConsoleCursorPosition ),
-  HOOK( APIKernel,	       SetConsoleScreenBufferSize ),
-  HOOK( APIKernel,	       SetConsoleTextAttribute ),
-  HOOK( APIKernel,	       SetConsoleWindowInfo ),
-  HOOK( APIKernel,	       WriteConsoleOutputA ),
-  HOOK( APIKernel,	       WriteConsoleOutputW ),
-  HOOK( APIKernel,	       WriteConsoleOutputAttribute ),
-  HOOK( APIKernel,	       WriteConsoleOutputCharacterA ),
-  HOOK( APIKernel,	       WriteConsoleOutputCharacterW ),
+  HOOK( APIConsole,	       ReadConsoleOutputA ),
+  HOOK( APIConsole,	       ReadConsoleOutputW ),
+  HOOK( APIConsole,	       ReadConsoleOutputAttribute ),
+  HOOK( APIConsole,	       ReadConsoleOutputCharacterA ),
+  HOOK( APIConsole,	       ReadConsoleOutputCharacterW ),
+  HOOK( APIConsole,	       ScrollConsoleScreenBufferA ),
+  HOOK( APIConsole,	       ScrollConsoleScreenBufferW ),
+  HOOK( APIConsole,	       SetConsoleCursorPosition ),
+  HOOK( APIConsole,	       SetConsoleScreenBufferInfoEx ),
+  HOOK( APIConsole,	       SetConsoleScreenBufferSize ),
+  HOOK( APIConsole,	       SetConsoleTextAttribute ),
+  HOOK( APIConsole,	       SetConsoleWindowInfo ),
+  HOOK( APIConsole,	       WriteConsoleOutputA ),
+  HOOK( APIConsole,	       WriteConsoleOutputW ),
+  HOOK( APIConsole,	       WriteConsoleOutputAttribute ),
+  HOOK( APIConsole,	       WriteConsoleOutputCharacterA ),
+  HOOK( APIConsole,	       WriteConsoleOutputCharacterW ),
   { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 

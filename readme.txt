@@ -1,7 +1,7 @@
 
 				    ANSICON
 
-			 Copyright 2005-2017 Jason Hood
+			 Copyright 2005-2018 Jason Hood
 
 			  Version 1.82-wip.  Freeware
 
@@ -339,8 +339,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.82-wip - 12 February, 2018:
-    - add ANSICON_WRAP for programs that expect the wrap at right margin.
+    1.82-wip - 13 February, 2018:
+    - add ANSICON_WRAP for programs that expect the wrap at right margin;
+    - make IsConsoleHandle a critical section, for multithreaded processes;
+    - use APIConsole for all console functions (Windows 10).
 
     1.81 - 28 December, 2017:
     - fix multiple CRs before LF (including preventing an immediate flush);
@@ -608,4 +610,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 12 February, 2018.
+Jason Hood, 13 February, 2018.
