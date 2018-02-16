@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2018 Jason Hood
 
-			    Version 1.82.  Freeware
+			    Version 1.83.  Freeware
 
 
 Description
@@ -339,6 +339,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.83 - 16 February, 2018:
+    - create the flush thread on first use.
+
     1.82 - 13 February, 2018:
     - add ANSICON_WRAP for programs that expect the wrap at right margin;
     - make IsConsoleHandle a critical section, for multithreaded processes;
@@ -610,4 +613,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 13 February, 2018.
+Jason Hood, 16 February, 2018.

@@ -193,6 +193,9 @@
     flush and invalidate the cache on CloseHandle;
     make IsConsoleHandle a critical section, for multithreaded processes;
     use APIConsole for all console functions (needed for Windows 10).
+
+  v1.83, 16 February, 2018:
+    create the flush thread on first use.
 */
 
 #include "ansicon.h"
@@ -212,7 +215,7 @@ WORD	orgattr;		// original attributes
 DWORD	orgmode;		// original mode
 CONSOLE_CURSOR_INFO orgcci;	// original cursor state
 HANDLE	hHeap;			// local memory heap
-HANDLE	hBell;
+HANDLE	hBell, hFlush;
 
 #define CACHE	5
 struct Cache
@@ -2528,6 +2531,8 @@ ParseAndPrintString( HANDLE hDev,
     {
       LARGE_INTEGER due;
       due.QuadPart = -150000;
+      if (hFlush == NULL)
+	hFlush = CreateThread( NULL, 4096, FlushThread, NULL, 0, NULL );
       SetWaitableTimer( hFlushTimer, &due, 0, NULL, NULL, FALSE );
     }
   }
@@ -3897,7 +3902,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
     InitializeCriticalSection( &CritSect );
     hFlushTimer = CreateWaitableTimer( NULL, FALSE, NULL );
-    CreateThread( NULL, 4096, FlushThread, NULL, 0, NULL );
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
