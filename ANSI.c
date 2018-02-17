@@ -196,6 +196,9 @@
 
   v1.83, 16 February, 2018:
     create the flush thread on first use.
+
+  v1.84-wip, 17 February, 2018:
+    close the flush handles on detach.
 */
 
 #include "ansicon.h"
@@ -3905,7 +3908,14 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
+    CloseHandle( hFlushTimer );
     FlushBuffer();
+    DeleteCriticalSection( &CritSect );
+    if (hFlush != NULL)
+    {
+      TerminateThread( hFlush, 0 );
+      CloseHandle( hFlush );
+    }
     if (lpReserved == NULL)
     {
       DEBUGSTR( 1, "Unloading" );

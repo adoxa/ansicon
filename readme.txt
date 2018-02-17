@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2018 Jason Hood
 
-			    Version 1.83.  Freeware
+			  Version 1.84-wip.  Freeware
 
 
 Description
@@ -339,6 +339,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.84-wip - 17 February, 2018:
+    - close the flush handles on detach.
+
     1.83 - 16 February, 2018:
     - create the flush thread on first use.
 
@@ -613,4 +616,4 @@ Distribution
 
 
 ==============================
-Jason Hood, 16 February, 2018.
+Jason Hood, 17 February, 2018.
