@@ -23,21 +23,45 @@ Requirements
 Installation
 ============
 
-    There are three ways to install, depending on your usage.
+    * Download the ANSICON zip file (including the executables) from the
+      Releases page (https://github.com/adoxa/ansicon/releases) or 
+      http://adoxa.altervista.org/ansicon/ or http://ansicon.adoxa.vze.com/
 
-    * Add "x86" (if your OS is 32-bit) or "x64" (if 64-bit) to your PATH, or
-      copy the relevant files to a directory already on the PATH (but NOT to
-      "System32" on a 64-bit system).  This means you explicitly run 'ansicon'
-      whenever you want to use it.
+    * Unzip the files into a directory such as C:\Program Files (x86)\ansicon\
+      (for 32-bit OS) or into C:\Program Files\ansicon\ (for 64-bit OS).
 
-    * Use option '-i' (or '-I', if permitted) to add an entry to CMD.EXE's
-      AutoRun registry value (current user or local machine, respectively).
-      This means "Command Prompt" and any program started by CMD.EXE will
-      automatically have sequences.
+Launching
+---------
 
-    * Add "d:\path\to\ansicon.exe -p" to your Startup group (run minimized to
-      avoid the console window flashing).  This means any console program
-      started by Explorer will automatically have sequences.
+    There are different ways to launch, depending on your usage.
+
+    * Manual launch: 1) Open the Command Prompt, 2) change to the program's
+      directory that was created in the steps above.
+    
+        "cd \Program Files (x86)\ansicon\x86" (for 32-bit OS)
+        "cd \Program Files\ansicon\x64" (for 64-bit OS)
+
+      3) Type 'ansicon' to launch the upgraded command prompt.
+    
+    * Manual launch from anywhere in the system: Edit your PATH environment
+      variable to include the location of the program file. Open System 
+      Properties (Control Panel > System and Security > System > Advanced
+      system settings) and open the "Advanced" tab. Click the "Environment
+      Variables..." button and edit the Path variable. Add one of the paths
+      below to the end of the PATH value:
+
+        ";\Program Files (x86)\ansicon\x86;" (for 32-bit OS)
+        ";\Program Files\ansicon\x64;" (for 64-bit OS)
+
+    * Automatic Launch: Use option '-i' (or '-I', if permitted) to add an
+      entry to CMD.EXE's AutoRun registry value (current user or local
+      machine, respectively). This means "Command Prompt" and any program
+      started by CMD.EXE will automatically have sequences.
+
+    * Automatic Launch: Add "d:\path\to\ansicon.exe -p" to your Startup
+      group (run minimized to avoid the console window flashing).  This
+      means any console program started by Explorer will automatically
+      have sequences.
 
     Uninstall involves closing any programs that are currently using it; using
     the Run dialog to run "d:\path\to\ansicon.exe -pu" to remove it from
