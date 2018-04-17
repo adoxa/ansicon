@@ -27,8 +27,7 @@ Installation
       Releases page (https://github.com/adoxa/ansicon/releases) or 
       http://ansicon.adoxa.vze.com/
 
-    * Unzip the files into a directory such as C:\Program Files (x86)\ansicon\
-      (for 32-bit OS) or into C:\Program Files\ansicon\ (for 64-bit OS).
+    * Unzip the files into a directory such as C:\Program Files\ansicon\
 
 Launching
 ---------
