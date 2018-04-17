@@ -25,7 +25,7 @@ Installation
 
     * Download the ANSICON zip file (including the executables) from the
       Releases page (https://github.com/adoxa/ansicon/releases) or 
-      http://adoxa.altervista.org/ansicon/ or http://ansicon.adoxa.vze.com/
+      http://ansicon.adoxa.vze.com/
 
     * Unzip the files into a directory such as C:\Program Files (x86)\ansicon\
       (for 32-bit OS) or into C:\Program Files\ansicon\ (for 64-bit OS).
@@ -38,7 +38,7 @@ Launching
     * Manual launch: 1) Open the Command Prompt, 2) change to the program's
       directory that was created in the steps above.
     
-        "cd \Program Files (x86)\ansicon\x86" (for 32-bit OS)
+        "cd \Program Files\ansicon\x86" (for 32-bit OS)
         "cd \Program Files\ansicon\x64" (for 64-bit OS)
 
       3) Type 'ansicon' to launch the upgraded command prompt.
@@ -50,7 +50,7 @@ Launching
       Variables..." button and edit the Path variable. Add one of the paths
       below to the end of the PATH value:
 
-        ";\Program Files (x86)\ansicon\x86;" (for 32-bit OS)
+        ";\Program Files\ansicon\x86;" (for 32-bit OS)
         ";\Program Files\ansicon\x64;" (for 64-bit OS)
 
     * Automatic Launch: Use option '-i' (or '-I', if permitted) to add an
