@@ -60,13 +60,14 @@ SHARE = /MD
 MT = mt.exe
 
 CFLAGS = /nologo /W3 /O2 $(SHARE) /D_CRT_SECURE_NO_WARNINGS
-LIBS = advapi32.lib user32.lib winmm.lib $(LIBS64)
+LIBS = advapi32.lib $(LIBS64)
 
 # Identify ansicon.exe using "ANSI" as a version number.
 LINK = /link /version:20033.18771
 
 X86OBJS = x86\injdll.obj x86\proctype.obj x86\util.obj
 X64OBJS = x64\injdll.obj x64\proctype.obj x64\util.obj x64\procrva.obj
+X6432OBJS = x86\injdll.obj x64\proctype32.obj x86\util.obj
 
 !IF !DEFINED(V)
 V = 0
@@ -118,7 +119,7 @@ x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
 		      /base:0xAC000000
 
-x64\ANSI32.dll: x64\ANSI32.obj x64\proctype32.obj x86\injdll.obj x86\util.obj x86\ansi.res
+x64\ANSI32.dll: x64\ANSI32.obj $(X6432OBJS) x86\ansi.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /LD /Fe$@ $** $(LIBS) /link \
 		      /base:0xAC0000 /filealign:512 /largeaddressaware
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"

@@ -9,12 +9,6 @@
 static PIMAGE_DOS_HEADER pDosHeader;
 
 
-static int export_cmp( const void* a, const void* b )
-{
-  return strcmp( (LPCSTR)a, MakeVA( LPCSTR, *(const PDWORD)b ) );
-}
-
-
 #ifdef _WIN64
 DWORD GetProcRVA( LPCTSTR module, LPCSTR func, int bits )
 #else
@@ -28,8 +22,8 @@ DWORD GetProcRVA( LPCTSTR module, LPCSTR func )
   PIMAGE_EXPORT_DIRECTORY pExportDir;
   PDWORD  fun_table, name_table;
   PWORD   ord_table;
-  PDWORD  pFunc;
   DWORD   rva;
+  int	  lo, mid, hi, cmp;
 
 #ifdef _WIN64
   if (bits == 32)
@@ -65,20 +59,30 @@ DWORD GetProcRVA( LPCTSTR module, LPCSTR func )
   name_table = MakeVA( PDWORD, pExportDir->AddressOfNames );
   ord_table  = MakeVA( PWORD,  pExportDir->AddressOfNameOrdinals );
 
-  pFunc = bsearch( func, name_table, pExportDir->NumberOfNames,
-		   sizeof(DWORD), export_cmp );
-  if (pFunc == NULL)
+  rva = 0;
+  lo = 0;
+  hi = pExportDir->NumberOfNames - 1;
+  while (lo <= hi)
+  {
+    mid = (lo + hi) / 2;
+    cmp = strcmp( func, MakeVA( LPCSTR, name_table[mid] ) );
+    if (cmp == 0)
+    {
+      rva = fun_table[ord_table[mid]];
+      break;
+    }
+    if (cmp < 0)
+      hi = mid - 1;
+    else
+      lo = mid + 1;
+  }
+  if (rva == 0)
   {
 #ifdef _WIN64
     DEBUGSTR( 1, "Could not find %u-bit %s!", bits, func );
 #else
     DEBUGSTR( 1, "Could not find %s!", func );
 #endif
-    rva = 0;
-  }
-  else
-  {
-    rva = fun_table[ord_table[pFunc - name_table]];
   }
   FreeLibrary( hMod );
   return rva;

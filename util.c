@@ -107,14 +107,20 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
   if (len == 0)
   {
     if (str == 0)
-      pos += wsprintfA( buf + pos, "<null>" );
+    {
+      memcpy( buf + pos, "<null>", 6 );
+      pos += 6;
+    }
     else if (quote)
     {
       buf[pos++] = '"';
       buf[pos++] = '"';
     }
     else if (alt)
-      pos += wsprintfA( buf + pos, "<empty>" );
+    {
+      memcpy( buf + pos, "<empty>", 7 );
+      pos += 7;
+    }
     return pos;
   }
 
@@ -165,7 +171,7 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 	  case '\r': buf[pos++] = 'r'; break;
 	  case	27 : buf[pos++] = 'e'; break;
 	  default:
-	    pos += wsprintfA( buf + pos, "x%.2X", ch );
+	    pos += sprintf( buf + pos, "x%.2X", ch );
 	}
       }
       else
@@ -194,7 +200,7 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 	}
       }
       if (quote && start_trail)
-	pos += wsprintfA( buf + pos, "\\x%.2X", ch );
+	pos += sprintf( buf + pos, "\\x%.2X", ch );
       else
 	buf[pos++] = ch;
     }
@@ -203,8 +209,8 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
       int mb = WideCharToMultiByte( cp, flags, src.w - 1, 1, buf + pos, 12,
 				    NULL, pDef );
       if (def)
-	mb = wsprintfA( buf + pos, ch < 0x100 ? "%cx%.2X" : "%cu%.4X",
-			(quote) ? '\\' : '^', ch );
+	mb = sprintf( buf + pos, ch < 0x100 ? "%cx%.2X" : "%cu%.4X",
+		      (quote) ? '\\' : '^', ch );
       pos += mb;
     }
   }
@@ -240,7 +246,7 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
     }
     buf = HeapAlloc( hHeap, 0, 2048 );
     buf_len = (DWORD)HeapSize( hHeap, 0, buf );
-    prefix_len = wsprintfA( buf, "%S (%lu): ", prog, GetCurrentProcessId() );
+    prefix_len = sprintf( buf, "%S (%lu): ", prog, GetCurrentProcessId() );
   }
   if (WaitForSingleObject( mutex, 500 ) == WAIT_TIMEOUT)
     return;
@@ -274,11 +280,11 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
     }
 
     GetLocalTime( &now );
-    len = wsprintfA( buf, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d)"
-			  " started %d-%.2d-%.2d %d:%.2d:%.2d\r\n",
-			  log_level,
-			  now.wYear, now.wMonth, now.wDay,
-			  now.wHour, now.wMinute, now.wSecond );
+    len = sprintf( buf, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d)"
+			" started %d-%.2d-%.2d %d:%.2d:%.2d\r\n",
+			log_level,
+			now.wYear, now.wMonth, now.wDay,
+			now.wHour, now.wMinute, now.wSecond );
     WriteFile( file, buf, len, &written, NULL );
     if (szFormat == NULL)
     {
@@ -349,16 +355,16 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
       num = va_arg( pArgList, DWORD_PTR );
       switch (*szFormat++)
       {
-	case 'u': len += wsprintfA( buf + len, "%u", (DWORD)num ); break;
-	case 'X': len += wsprintfA( buf + len, "%X", (DWORD)num ); break;
+	case 'u': len += sprintf( buf + len, "%u", (DWORD)num ); break;
+	case 'X': len += sprintf( buf + len, "%X", (DWORD)num ); break;
 	case 'p':
 #ifdef _WIN64
-	  len += wsprintfA( buf + len, "%.8X_%.8X",
-				       (DWORD)(num >> 32), (DWORD)num );
+	  len += sprintf( buf + len, "%.8X_%.8X",
+				     (DWORD)(num >> 32), (DWORD)num );
 	  break;
 #endif
-	case 'q': len += wsprintfA( buf + len, "%.8X", (DWORD)num ); break;
-	case 'P': len += wsprintfA( buf + len, "00000000_%.8X", (DWORD)num ); break;
+	case 'q': len += sprintf( buf + len, "%.8X", (DWORD)num ); break;
+	case 'P': len += sprintf( buf + len, "00000000_%.8X", (DWORD)num ); break;
 	case 's': len = str_format( len, FALSE, num, slen ); break;
 	case 'S': len = str_format( len, TRUE, num, slen ); break;
 	default:

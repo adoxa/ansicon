@@ -91,7 +91,7 @@
     use -pu to unload from the parent.
 */
 
-#define PDATE L"17 February, 2018"
+#define PDATE L"30 April, 2018"
 
 #include "ansicon.h"
 #include "version.h"
@@ -199,7 +199,8 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
   len = (DWORD)(prog - prog_path);
   memcpy( DllName, prog_path, TSIZE(len) );
 #ifdef _WIN64
-  wsprintf( DllName + len, L"ANSI%d.dll", (type == 48) ? 64 : type );
+  _snwprintf( DllName + len, MAX_PATH-1 - len,
+	      L"ANSI%d.dll", (type == 48) ? 64 : type );
   DllNameType = DllName + len + 4;
   set_ansi_dll();
   if (type == 64)
@@ -269,7 +270,7 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app, BOOL unload )
   memcpy( DllName, prog_path, TSIZE(len) );
 #ifdef _WIN64
   type = (IsWow64Process( ppi->hProcess, &WOW64 ) && WOW64) ? 32 : 64;
-  wsprintf( DllName + len, L"ANSI%d.dll", type );
+  _snwprintf( DllName + len, MAX_PATH-1 - len, L"ANSI%d.dll", type );
 #endif
   me.dwSize = sizeof(MODULEENTRY32);
   for (fOk = Module32First( hSnap, &me ); fOk; fOk = Module32Next( hSnap, &me ))

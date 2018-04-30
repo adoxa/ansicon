@@ -197,17 +197,24 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 2018:
-    close the flush handles on detach.
+  v1.84-wip, 17 February, 26 to 30 April, 2018:
+    close the flush handles on detach;
+    dynamically load WINMM.DLL;
+    use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
+    replace bsearch (in procrva.c) with specific code.
 */
 
 #include "ansicon.h"
 #include "version.h"
-#include <mmsystem.h>
 
+#include <mmsystem.h>
 #ifndef SND_SENTRY
 #define SND_SENTRY 0x80000
 #endif
+#undef PlaySound
+typedef BOOL (WINAPI *FnPlaySound)( LPCWSTR, HMODULE, DWORD );
+FnPlaySound PlaySound;
+HMODULE winmm;
 
 #define is_digit(c) ('0' <= (c) && (c) <= '9')
 
@@ -483,7 +490,7 @@ void get_state( void )
 
   valid_state = TRUE;
 
-  wsprintf( buf, L"ANSICON_State_%X", PtrToUint( hwnd ) );
+  _snwprintf( buf, lenof(buf), L"ANSICON_State_%X", PtrToUint( hwnd ) );
   hMap = CreateFileMapping( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
 			    0, sizeof(STATE), buf );
   init = (GetLastError() != ERROR_ALREADY_EXISTS);
@@ -552,7 +559,7 @@ void get_state( void )
 	*a++ = '-';
 	ATTR = ((ATTR >> 4) & 15) | ((ATTR & 15) << 4);
       }
-      wsprintf( a, L"%X", ATTR & 255 );
+      _snwprintf( a, 3, L"%X", ATTR & 255 );
       SetEnvironmentVariable( L"ANSICON_DEF", def );
     }
     set_ansicon( &Info );
@@ -1018,9 +1025,9 @@ void send_palette_sequence( COLORREF c )
   g = GetGValue( c );
   b = GetBValue( c );
   if ((c & 0x0F0F0F) == ((c >> 4) & 0x0F0F0F))
-    wsprintf( buf, L"#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
+    _snwprintf( buf, lenof(buf), L"#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
   else
-    wsprintf( buf, L"#%02X%02X%02X", r, g, b );
+    _snwprintf( buf, lenof(buf), L"#%02X%02X%02X", r, g, b );
   SendSequence( buf );
 }
 
@@ -1765,9 +1772,9 @@ void InterpretEscSeq( void )
 	  case 6: // ESC[6n Report cursor position
 	  {
 	    TCHAR buf[32];
-	    wsprintf( buf, L"\33[%d;%d%sR",
-		      CUR.Y - top + 1, CUR.X + 1,
-		      (suffix2 == '+') ? L"+" : L"" );
+	    _snwprintf( buf, lenof(buf), L"\33[%d;%d%sR",
+			CUR.Y - top + 1, CUR.X + 1,
+			(suffix2 == '+') ? L"+" : L"" );
 	    SendSequence( buf );
 	  }
 	  return;
@@ -2236,7 +2243,17 @@ ParseAndPrintString( HANDLE hDev,
       else if (pState->crm) PushBuffer( (WCHAR)c );
       else if (c == BEL)
       {
-	if (hBell == NULL)
+	if (PlaySound == NULL)
+	{
+	  winmm = LoadLibraryEx( L"winmm.dll", NULL, 0 );
+	  if (winmm != NULL)
+	    PlaySound = (FnPlaySound)GetProcAddress( winmm, "PlaySoundW" );
+	  if (PlaySound == NULL)
+	    PlaySound = INVALID_HANDLE_VALUE;
+	}
+	if (PlaySound == INVALID_HANDLE_VALUE)
+	  PushBuffer( (WCHAR)c );
+	else if (hBell == NULL)
 	  hBell = CreateThread( NULL, 4096, BellThread, NULL, 0, NULL );
       }
       else if (c == SO) shifted = TRUE;
@@ -2975,7 +2992,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       STARTUPINFO si;
       PROCESS_INFORMATION pi;
       wcscpy( DllNameType, L"CON.exe" );
-      wsprintf( args, L"ansicon -P%ld", child_pi->dwProcessId );
+      _snwprintf( args, lenof(args), L"ansicon -P%lu", child_pi->dwProcessId );
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
       if (CreateProcess( DllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
@@ -3689,10 +3706,10 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
     pcsbi = &csbi;
   }
 
-  wsprintf( buf, L"%dx%d (%dx%d)",
-	    pcsbi->dwSize.X, pcsbi->dwSize.Y,
-	    pcsbi->srWindow.Right - pcsbi->srWindow.Left + 1,
-	    pcsbi->srWindow.Bottom - pcsbi->srWindow.Top + 1 );
+  _snwprintf( buf, lenof(buf), L"%dx%d (%dx%d)",
+	      pcsbi->dwSize.X, pcsbi->dwSize.Y,
+	      pcsbi->srWindow.Right - pcsbi->srWindow.Left + 1,
+	      pcsbi->srWindow.Bottom - pcsbi->srWindow.Top + 1 );
   SetEnvironmentVariable( L"ANSICON", buf );
 }
 
@@ -3920,6 +3937,8 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     {
       DEBUGSTR( 1, "Unloading" );
       HookAPIAllMod( Hooks, TRUE, FALSE );
+      if (winmm != NULL)
+	FreeLibrary( winmm );
     }
     else
     {
