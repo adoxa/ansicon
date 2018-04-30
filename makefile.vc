@@ -18,6 +18,10 @@
 #
 # 18 July, 2013:
 #   hide the commands (use V=1 to show them).
+#
+# 30 April, 2018:
+#   use undocumented rc option /s to remove its logo;
+#   use a batch rule (even if this project is too small to make a difference).
 
 #BITS = 32
 #BITS = 64
@@ -59,6 +63,7 @@ SHARE = /MD
 # Manifest tool to embed the manifest required by 2008.
 MT = mt.exe
 
+RFLAGS = /s
 CFLAGS = /nologo /W3 /O2 $(SHARE) /D_CRT_SECURE_NO_WARNINGS
 LIBS = advapi32.lib $(LIBS64)
 
@@ -79,8 +84,8 @@ LDmsg = @echo $@&
 MTmsg = @echo Embedding manifest&
 !ENDIF
 
-{}.c{$(DIR)}.obj:
-	$(CCmsg)$(CC) /c $(CFLAGS) /Fo$@ $<
+{}.c{$(DIR)}.obj::
+	$(CCmsg)$(CC) /c $(CFLAGS) /Fo$(DIR)\ $<
 
 {}.rc{$(DIR)}.res:
 	$(RCmsg)$(RC) $(RFLAGS) /fo$@ $<
