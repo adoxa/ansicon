@@ -197,11 +197,12 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 to 30 April, 2018:
+  v1.84-wip, 17 February, 26 April to 2 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
-    replace bsearch (in procrva.c) with specific code.
+    replace bsearch (in procrva.c) with specific code;
+    if the primary thread is detached exit the process.
 */
 
 #include "ansicon.h"
@@ -3859,6 +3860,19 @@ void OriginalAttr( PVOID lpReserved )
 }
 
 
+// A Win10 process that returns (rather than calling ExitProcess) may have a 30
+// second delay before terminating.  This seems due to another thread being
+// created for the console.  If the primary thread is detached, wait for it to
+// finish, then explicitly exit.
+DWORD WINAPI exit_thread( LPVOID lpParameter )
+{
+  DWORD rc;
+  WaitForSingleObject( lpParameter, 30000 );
+  GetExitCodeThread( lpParameter, &rc );
+  ExitProcess( rc );
+}
+
+
 //-----------------------------------------------------------------------------
 //   DllMain()
 // Function called by the system when processes and threads are initialized
@@ -3874,6 +3888,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   TCHAR   logstr[4];
   typedef LONG (WINAPI *PNTQIT)( HANDLE, int, PVOID, ULONG, PULONG );
   static PNTQIT NtQueryInformationThread;
+  static DWORD primary_tid;
 
   if (dwReason == DLL_PROCESS_ATTACH)
   {
@@ -3917,11 +3932,16 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
     NtQueryInformationThread = (PNTQIT)GetProcAddress(
 		 GetModuleHandle( L"ntdll.dll" ), "NtQueryInformationThread" );
-    if (NtQueryInformationThread == NULL)
-      DisableThreadLibraryCalls( hInstance );
 
     InitializeCriticalSection( &CritSect );
     hFlushTimer = CreateWaitableTimer( NULL, FALSE, NULL );
+
+    // If it's a static load, assume this is the primary thread.
+    if (lpReserved)
+      primary_tid = GetCurrentThreadId();
+
+    if (NtQueryInformationThread == NULL && primary_tid == 0)
+      DisableThreadLibraryCalls( hInstance );
   }
   else if (dwReason == DLL_PROCESS_DETACH)
   {
@@ -3964,9 +3984,19 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
   else if (dwReason == DLL_THREAD_DETACH)
   {
     PVOID start;
-    if (NtQueryInformationThread( GetCurrentThread(),
-				  9 /* ThreadQuerySetWin32StartAddress */,
-				  &start, sizeof(start), NULL ) == 0
+    if (primary_tid && GetCurrentThreadId() == primary_tid)
+    {
+      HANDLE hThread;
+      DuplicateHandle( GetCurrentProcess(), GetCurrentThread(),
+		       GetCurrentProcess(), &hThread,
+		       0, FALSE, DUPLICATE_SAME_ACCESS );
+      CloseHandle( CreateThread( NULL, 4096, exit_thread, hThread, 0, NULL ) );
+      DEBUGSTR( 1, "Primary thread detached, exiting process" );
+    }
+    else if (NtQueryInformationThread &&
+	     NtQueryInformationThread( GetCurrentThread(),
+				       9 /* ThreadQuerySetWin32StartAddress */,
+				       &start, sizeof(start), NULL ) == 0
 	&& (start == Hooks[0].oldfunc || start == Hooks[1].oldfunc
 	 || start == Hooks[0].apifunc || start == Hooks[1].apifunc))
     {
