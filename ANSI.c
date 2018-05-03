@@ -202,7 +202,8 @@
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
     replace bsearch (in procrva.c) with specific code;
-    if the primary thread is detached exit the process.
+    if the primary thread is detached exit the process;
+    get real WriteFile handle before testing for console.
 */
 
 #include "ansicon.h"
@@ -3490,12 +3491,11 @@ BOOL
 WINAPI MyWriteFile( HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 		    LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped )
 {
+  if (HandleToULong( hFile ) == STD_OUTPUT_HANDLE ||
+      HandleToULong( hFile ) == STD_ERROR_HANDLE)
+    hFile = GetStdHandle( HandleToULong( hFile ) );
   if (nNumberOfBytesToWrite != 0 && IsConsoleHandle( hFile ))
   {
-    if (HandleToULong( hFile ) == STD_OUTPUT_HANDLE ||
-	HandleToULong( hFile ) == STD_ERROR_HANDLE)
-      hFile = GetStdHandle( HandleToULong( hFile ) );
-
     write_func = "WriteFile";
     MyWriteConsoleA( hFile, lpBuffer,nNumberOfBytesToWrite, NULL,lpOverlapped );
     if (lpNumberOfBytesWritten != NULL)

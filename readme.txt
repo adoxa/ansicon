@@ -339,8 +339,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.84-wip - 2 May, 2018:
+    1.84-wip - 3 May, 2018:
     - close the flush handles on detach;
+    - use remote load on Win8+ if the process has no IAT;
+    - WriteFile wasn't properly testing if its handle was for a console;
     * remove dependency on USER32, dynamically load WINMM;
     * exit process if the primary thread is detached (for processes on Win10
       that return, rather than call ExitProcess).
@@ -619,4 +621,4 @@ Distribution
 
 
 ========================
-Jason Hood, 2 May, 2018.
+Jason Hood, 3 May, 2018.
