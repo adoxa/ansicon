@@ -91,7 +91,7 @@
     use -pu to unload from the parent.
 */
 
-#define PDATE L"30 April, 2018"
+#define PDATE L"4 May, 2018"
 
 #include "ansicon.h"
 #include "version.h"
@@ -208,7 +208,7 @@ BOOL Inject( LPPROCESS_INFORMATION ppi, BOOL* gui, LPCTSTR app )
   else if (type == 32)
     InjectDLL32( ppi, base );
   else // (type == 48)
-    InjectDLL64( ppi );
+    RemoteLoad64( ppi );
 #else
   wcscpy( DllName + len, L"ANSI32.dll" );
   set_ansi_dll();

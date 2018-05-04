@@ -74,6 +74,20 @@ void set_ansi_dll( void )
 }
 
 
+// GetVersion and GetVersionEx use Win32VersionValue from the header, which
+// could be anything.  Retrieve the OS version from NTDLL's header.
+DWORD get_os_version( void )
+{
+  PIMAGE_DOS_HEADER pDosHeader;
+  PIMAGE_NT_HEADERS pNTHeader;
+
+  pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( L"ntdll.dll" );
+  pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
+  return pNTHeader->OptionalHeader.MajorOperatingSystemVersion << 8 |
+	 pNTHeader->OptionalHeader.MinorOperatingSystemVersion;
+}
+
+
 static LPSTR buf;
 static DWORD buf_len;
 static BOOL  quote, alt;

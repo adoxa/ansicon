@@ -84,6 +84,19 @@ void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   pNTHeader = (PIMAGE_NT_HEADERS)(pBase + DosHeader.e_lfanew);
   ReadProcVar( pNTHeader, &NTHeader );
 
+  // Windows 8 and later require the IDT to be part of a section when there's
+  // no IAT.  This means we can't move the imports, so remote load instead.
+  if (NTHeader.DATADIRS <= IMAGE_DIRECTORY_ENTRY_IAT &&
+      get_os_version() >= 0x602)
+  {
+#ifdef _WIN64
+     RemoteLoad64( ppi );
+#else
+     RemoteLoad32( ppi );
+#endif
+     return;
+  }
+
   import_size = sizeof_imports( ppi, pBase, NTHeader.IMPORTDIR.VirtualAddress );
   len = 2 * PTRSZ + ansi_len + sizeof(*pImports) + import_size;
   pImports = HeapAlloc( hHeap, 0, len );
@@ -173,6 +186,13 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   pNTHeader = (PIMAGE_NT_HEADERS32)(pBase + DosHeader.e_lfanew);
   ReadProcVar( pNTHeader, &NTHeader );
 
+  if (NTHeader.DATADIRS <= IMAGE_DIRECTORY_ENTRY_IAT &&
+      get_os_version() >= 0x602)
+  {
+    RemoteLoad32( ppi );
+    return;
+  }
+
   import_size = sizeof_imports( ppi, pBase, NTHeader.IMPORTDIR.VirtualAddress );
   len = 8 + ansi_len + sizeof(*pImports) + import_size;
   pImports = HeapAlloc( hHeap, 0, len );
@@ -232,16 +252,21 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
     }
   }
 }
+#endif
 
 
 /*
-  Locate the base address of 64-bit ntdll.dll.	This is supposedly really at
-  the same address for every process, but let's find it anyway.  A newly-
-  created suspended 64-bit process has two images in memory: the process itself
-  and ntdll.dll - the one that is a DLL must be ntdll.dll.  (A 32-bit WOW64
-  process has three images - the process and both 64- & 32-bit ntdll.dll).
+  Locate the base address of ntdll.dll.  This is supposedly really at the same
+  address for every process, but let's find it anyway.  A newly-created
+  suspended process has two images in memory: the process itself and ntdll.dll.
+  Thus the one that is a DLL must be ntdll.dll.  However, a WOW64 process also
+  has the 64-bit version, so test the machine.
 */
+#ifdef _WIN64
+static PBYTE get_ntdll( LPPROCESS_INFORMATION ppi, WORD machine )
+#else
 static PBYTE get_ntdll( LPPROCESS_INFORMATION ppi )
+#endif
 {
   PBYTE  ptr;
   MEMORY_BASIC_INFORMATION minfo;
@@ -258,7 +283,11 @@ static PBYTE get_ntdll( LPPROCESS_INFORMATION ppi )
 	&& ReadProcVar( (PBYTE)minfo.BaseAddress + dos_header.e_lfanew,
 			&nt_header )
 	&& nt_header.Signature == IMAGE_NT_SIGNATURE
-	&& (nt_header.FileHeader.Characteristics & IMAGE_FILE_DLL))
+	&& (nt_header.FileHeader.Characteristics & IMAGE_FILE_DLL)
+#ifdef _WIN64
+	&& nt_header.FileHeader.Machine == machine
+#endif
+       )
     {
       return minfo.BaseAddress;
     }
@@ -269,7 +298,8 @@ static PBYTE get_ntdll( LPPROCESS_INFORMATION ppi )
 }
 
 
-void InjectDLL64( LPPROCESS_INFORMATION ppi )
+#ifdef _WIN64
+void RemoteLoad64( LPPROCESS_INFORMATION ppi )
 {
   PBYTE  ntdll;
   DWORD  rLdrLoadDll;
@@ -285,7 +315,7 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi )
     PBYTE*  pL;
   } ip;
 
-  ntdll = get_ntdll( ppi );
+  ntdll = get_ntdll( ppi, IMAGE_FILE_MACHINE_AMD64 );
   if (ntdll == NULL)
     return;
 
@@ -327,3 +357,67 @@ void InjectDLL64( LPPROCESS_INFORMATION ppi )
   VirtualFreeEx( ppi->hProcess, pMem, 0, MEM_RELEASE );
 }
 #endif
+
+
+void RemoteLoad32( LPPROCESS_INFORMATION ppi )
+{
+  PBYTE  ntdll;
+  DWORD  rLdrLoadDll;
+  PBYTE  pMem;
+  DWORD  bMem;
+  DWORD  len;
+  HANDLE thread;
+  BYTE	 code[64];
+  union
+  {
+    PBYTE   pB;
+    PUSHORT pS;
+    PDWORD  pD;
+  } ip;
+
+#ifdef _WIN64
+  ntdll = get_ntdll( ppi, IMAGE_FILE_MACHINE_I386 );
+#else
+  ntdll = get_ntdll( ppi );
+#endif
+  if (ntdll == NULL)
+    return;
+
+#ifdef _WIN64
+  rLdrLoadDll = GetProcRVA( L"ntdll.dll", "LdrLoadDll", 32 );
+#else
+  rLdrLoadDll = GetProcRVA( L"ntdll.dll", "LdrLoadDll" );
+#endif
+  if (rLdrLoadDll == 0)
+    return;
+
+  pMem = VirtualAllocEx( ppi->hProcess, NULL, 4096, MEM_COMMIT,
+			 PAGE_EXECUTE_READ );
+  if (pMem == NULL)
+  {
+    DEBUGSTR(1, "  Failed to allocate virtual memory (%u)", GetLastError());
+    return;
+  }
+  bMem = PtrToUint( pMem );
+
+  len = (DWORD)TSIZE(wcslen( DllName ) + 1);
+  ip.pB = code;
+
+  *ip.pS++ = 0x5451;			// push  ecx esp
+  *ip.pB++ = 0x68;			// push
+  *ip.pD++ = bMem + 20; 		//	 L"path\to\ANSI32.dll"
+  *ip.pD++ = 0x006A006A;		// push  0 0
+  *ip.pB++ = 0xe8;			// call  LdrLoadDll
+  *ip.pD++ = PtrToUint( ntdll ) + rLdrLoadDll - (bMem + 16);
+  *ip.pD++ = 0xc359;			// pop	 ecx / ret and padding
+  *ip.pS++ = (USHORT)(len - TSIZE(1));	// UNICODE_STRING.Length
+  *ip.pS++ = (USHORT)len;		// UNICODE_STRING.MaximumLength
+  *ip.pD++ = bMem + 28; 		// UNICODE_STRING.Buffer
+  WriteProcMem( pMem, code, ip.pB - code );
+  WriteProcMem( pMem + (ip.pB - code), DllName, len );
+  thread = CreateRemoteThread( ppi->hProcess, NULL, 4096,
+			       (LPTHREAD_START_ROUTINE)pMem, NULL, 0, NULL );
+  WaitForSingleObject( thread, INFINITE );
+  CloseHandle( thread );
+  VirtualFreeEx( ppi->hProcess, pMem, 0, MEM_RELEASE );
+}

@@ -197,13 +197,14 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 2 May, 2018:
+  v1.84-wip, 17 February, 26 April to 4 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
     replace bsearch (in procrva.c) with specific code;
     if the primary thread is detached exit the process;
-    get real WriteFile handle before testing for console.
+    get real WriteFile handle before testing for console;
+    use remote load on Win8+ when the process has no IAT.
 */
 
 #include "ansicon.h"
@@ -2984,7 +2985,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
     }
     else // (type == 48)
     {
-      InjectDLL64( child_pi );
+      RemoteLoad64( child_pi );
     }
 #else
 #ifdef W32ON64
@@ -3840,17 +3841,25 @@ void OriginalAttr( PVOID lpReserved )
 
   // If we were loaded dynamically, remember the current attributes to restore
   // upon unloading.  However, if we're the 64-bit DLL, but the image is 32-
-  // bit, then the dynamic load was due to injecting into AnyCPU.
+  // bit, then the dynamic load was due to injecting into AnyCPU.  It may also
+  // be dynamic due to lack of the IAT.
   if (lpReserved == NULL)
   {
-#ifdef _WIN64
+    BOOL dynamic = TRUE;
     PIMAGE_DOS_HEADER pDosHeader;
     PIMAGE_NT_HEADERS pNTHeader;
     pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
     pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
-    if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
+#ifdef _WIN64
+    if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
+      dynamic = FALSE;
+    else
 #endif
-    orgattr = ATTR;
+    if (pNTHeader->DATADIRS <= IMAGE_DIRECTORY_ENTRY_IAT &&
+	get_os_version() >= 0x602)
+      dynamic = FALSE;
+    if (dynamic)
+      orgattr = ATTR;
     GetConsoleMode( hConOut, &orgmode );
     GetConsoleCursorInfo( hConOut, &orgcci );
   }

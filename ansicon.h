@@ -87,9 +87,10 @@ int    ProcessType( LPPROCESS_INFORMATION, PBYTE*, BOOL* );
 BOOL   Wow64Process( HANDLE );
 
 void   InjectDLL( LPPROCESS_INFORMATION, PBYTE );
+void   RemoteLoad32( LPPROCESS_INFORMATION );
 #ifdef _WIN64
 void   InjectDLL32( LPPROCESS_INFORMATION, PBYTE );
-void   InjectDLL64( LPPROCESS_INFORMATION );
+void   RemoteLoad64( LPPROCESS_INFORMATION );
 DWORD  GetProcRVA( LPCTSTR, LPCSTR, int );
 #else
 DWORD  GetProcRVA( LPCTSTR, LPCSTR );
@@ -107,6 +108,7 @@ extern char   ansi_dll[MAX_PATH];
 extern DWORD  ansi_len;
 extern char*  ansi_bits;
 void   set_ansi_dll( void );
+DWORD  get_os_version( void );
 
 extern int log_level;
 void   DEBUGSTR( int level, LPCSTR szFormat, ... );
