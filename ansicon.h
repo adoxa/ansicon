@@ -83,34 +83,62 @@ typedef struct IMAGE_COR20_HEADER
 #define VirtProtVar(a, b)     VirtualProtectEx( ppi->hProcess, a, sizeof(*(a)), b, &pr )
 
 
-int    ProcessType( LPPROCESS_INFORMATION, PBYTE*, BOOL* );
+#ifdef PDATE	       // i.e. from ansicon.c
+#define EXTERN __declspec(dllimport) extern
+#else
+#define EXTERN __declspec(dllexport) extern
+#endif
+
+EXTERN int ProcessType( LPPROCESS_INFORMATION, PBYTE*, BOOL* );
 BOOL   Wow64Process( HANDLE );
 
+#ifdef _WIN64
+EXTERN
+#endif
 void   InjectDLL( LPPROCESS_INFORMATION, PBYTE );
 void   RemoteLoad32( LPPROCESS_INFORMATION );
 #ifdef _WIN64
 void   InjectDLL32( LPPROCESS_INFORMATION, PBYTE );
-void   RemoteLoad64( LPPROCESS_INFORMATION );
-DWORD  GetProcRVA( LPCTSTR, LPCSTR, int );
+EXTERN void  RemoteLoad64( LPPROCESS_INFORMATION );
+EXTERN DWORD GetProcRVA( LPCTSTR, LPCSTR, int );
 #else
-DWORD  GetProcRVA( LPCTSTR, LPCSTR );
+EXTERN DWORD GetProcRVA( LPCTSTR, LPCSTR );
 #endif
 
 extern HANDLE hHeap;
 
-extern TCHAR  prog_path[MAX_PATH];
+EXTERN TCHAR  prog_path[MAX_PATH];
 extern LPTSTR prog;
 LPTSTR get_program_name( LPTSTR );
 
-extern TCHAR  DllName[MAX_PATH];
-extern LPTSTR DllNameType;
+EXTERN TCHAR  DllName[MAX_PATH];
+EXTERN LPTSTR DllNameType;
 extern char   ansi_dll[MAX_PATH];
 extern DWORD  ansi_len;
 extern char*  ansi_bits;
 void   set_ansi_dll( void );
 DWORD  get_os_version( void );
 
-extern int log_level;
-void   DEBUGSTR( int level, LPCSTR szFormat, ... );
+EXTERN int  log_level;
+EXTERN void DEBUGSTR( int level, LPCSTR szFormat, ... );
+
+// Replacements for C runtime functions.
+#undef RtlFillMemory
+#undef RtlMoveMemory
+#undef RtlZeroMemory
+void WINAPI RtlFillMemory( PVOID, SIZE_T, BYTE );
+void WINAPI RtlMoveMemory( PVOID, const VOID*, SIZE_T );
+void WINAPI RtlZeroMemory( PVOID, SIZE_T );
+
+#define arrcpy( dst, src ) RtlMoveMemory( dst, src, sizeof(dst) )
+
+unsigned long ac_wcstoul( const wchar_t*, wchar_t**, int );
+int	      ac_wtoi( const wchar_t* );
+long	      ac_wcstol( const wchar_t*, wchar_t**, int );
+wchar_t*      ac_wcspbrk( const wchar_t*, const wchar_t* );
+wchar_t*      ac_wcsrchr( const wchar_t*, wchar_t );
+int	      ac_strnicmp( const char*, const char*, size_t );
+int	      ac_sprintf( char*, const char*, ... );
+int	      ac_wprintf( wchar_t*, const char*, ... );
 
 #endif

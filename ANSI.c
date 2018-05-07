@@ -197,14 +197,17 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 4 May, 2018:
+  v1.84-wip, 17 February, 26 April to 7 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
     replace bsearch (in procrva.c) with specific code;
     if the primary thread is detached exit the process;
     get real WriteFile handle before testing for console;
-    use remote load on Win8+ when the process has no IAT.
+    use remote load on Win8+ when the process has no IAT;
+    remove dependency on the CRT;
+    increase heap to 256KiB to fix logging of really long command lines;
+    default to 7 or -7 if ANSICON_DEF could not be parsed.
 */
 
 #include "ansicon.h"
@@ -445,6 +448,8 @@ typedef struct
   BYTE	reverse;	// swap console foreground & background attributes
 } SGR;
 
+SGR orgsgr;		// original SGR
+
 typedef struct
 {
   SGR	   sgr, SaveSgr;
@@ -493,7 +498,7 @@ void get_state( void )
 
   valid_state = TRUE;
 
-  _snwprintf( buf, lenof(buf), L"ANSICON_State_%X", PtrToUint( hwnd ) );
+  ac_wprintf( buf, "ANSICON_State_%X", PtrToUint( hwnd ) );
   hMap = CreateFileMapping( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
 			    0, sizeof(STATE), buf );
   init = (GetLastError() != ERROR_ALREADY_EXISTS);
@@ -518,11 +523,11 @@ void get_state( void )
       Info.dwSize = csbix.dwSize;
       ATTR = csbix.wAttributes;
       WIN  = csbix.srWindow;
-      memcpy( pState->o_palette, csbix.ColorTable, sizeof(csbix.ColorTable) );
+      arrcpy( pState->o_palette, csbix.ColorTable );
     }
     else
     {
-      memcpy( pState->o_palette, legacy_palette, sizeof(legacy_palette) );
+      arrcpy( pState->o_palette, legacy_palette );
       if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
       {
 	DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
@@ -536,35 +541,32 @@ void get_state( void )
 	BOTTOM	= 24;
       }
     }
-    memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
-    if (GetEnvironmentVariable( L"ANSICON_REVERSE", NULL, 0 ))
+    arrcpy( pState->x_palette, xterm_palette );
+
+    pState->sgr.foreground = attr2ansi[ATTR & 7];
+    pState->sgr.background = attr2ansi[(ATTR >> 4) & 7];
+    pState->sgr.bold	   = ATTR & FOREGROUND_INTENSITY;
+    pState->sgr.underline  = ATTR & BACKGROUND_INTENSITY;
+
+    CloseHandle( hConOut );
+  }
+
+  if (!GetEnvironmentVariable( L"ANSICON_DEF", NULL, 0 ))
+  {
+    TCHAR  def[4];
+    LPTSTR a = def;
+    hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				      FILE_SHARE_READ | FILE_SHARE_WRITE,
+				      NULL, OPEN_EXISTING, 0, NULL );
+    if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
+      ATTR = 7;
+    if (pState->sgr.reverse)
     {
-      SetEnvironmentVariable( L"ANSICON_REVERSE", NULL );
-      pState->sgr.reverse  = TRUE;
-      pState->sgr.foreground = attr2ansi[(ATTR >> 4) & 7];
-      pState->sgr.background = attr2ansi[ATTR & 7];
-      pState->sgr.bold	     = (ATTR & BACKGROUND_INTENSITY) >> 4;
-      pState->sgr.underline  = (ATTR & FOREGROUND_INTENSITY) << 4;
+      *a++ = '-';
+      ATTR = ((ATTR >> 4) & 15) | ((ATTR & 15) << 4);
     }
-    else
-    {
-      pState->sgr.foreground = attr2ansi[ATTR & 7];
-      pState->sgr.background = attr2ansi[(ATTR >> 4) & 7];
-      pState->sgr.bold	     = ATTR & FOREGROUND_INTENSITY;
-      pState->sgr.underline  = ATTR & BACKGROUND_INTENSITY;
-    }
-    if (!GetEnvironmentVariable( L"ANSICON_DEF", NULL, 0 ))
-    {
-      TCHAR  def[4];
-      LPTSTR a = def;
-      if (pState->sgr.reverse)
-      {
-	*a++ = '-';
-	ATTR = ((ATTR >> 4) & 15) | ((ATTR & 15) << 4);
-      }
-      _snwprintf( a, 3, L"%X", ATTR & 255 );
-      SetEnvironmentVariable( L"ANSICON_DEF", def );
-    }
+    ac_wprintf( a, "%X", ATTR & 255 );
+    SetEnvironmentVariable( L"ANSICON_DEF", def );
     set_ansicon( &Info );
     CloseHandle( hConOut );
   }
@@ -611,7 +613,7 @@ BOOL search_env( LPCTSTR var, LPCTSTR val )
 	break;
       }
     } while (*end != '\0');
-    if (_wcsicmp( val, var ) == 0)
+    if (lstrcmpi( val, var ) == 0)
       return !not;
   }
 
@@ -1002,7 +1004,7 @@ void SendSequence( LPTSTR seq )
   DWORD len;
   HANDLE hStdIn = GetStdHandle( STD_INPUT_HANDLE );
 
-  in = HeapAlloc( hHeap, HEAP_ZERO_MEMORY, 2 * wcslen( seq ) * sizeof(*in) );
+  in = HeapAlloc( hHeap, HEAP_ZERO_MEMORY, 2 * lstrlen( seq ) * sizeof(*in) );
   if (in == NULL)
     return;
   for (len = 0; *seq; len += 2, ++seq)
@@ -1028,9 +1030,9 @@ void send_palette_sequence( COLORREF c )
   g = GetGValue( c );
   b = GetBValue( c );
   if ((c & 0x0F0F0F) == ((c >> 4) & 0x0F0F0F))
-    _snwprintf( buf, lenof(buf), L"#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
+    ac_wprintf( buf, "#%X%X%X", r & 0xF, g & 0xF, b & 0xF );
   else
-    _snwprintf( buf, lenof(buf), L"#%02X%02X%02X", r, g, b );
+    ac_wprintf( buf, "#%2X%2X%2X", r, g, b );
   SendSequence( buf );
 }
 
@@ -1040,7 +1042,7 @@ void init_tabs( int size )
 {
   int i;
 
-  memset( pState->tab_stop, FALSE, MAX_TABS );
+  RtlZeroMemory( pState->tab_stop, MAX_TABS );
   for (i = 0; i < MAX_TABS; i += size)
     pState->tab_stop[i] = TRUE;
   pState->tabs = TRUE;
@@ -1130,12 +1132,12 @@ void Reset( BOOL hard )
     csbix.cbSize = sizeof(csbix);
     if (GetConsoleScreenBufferInfoX( hConOut, &csbix ))
     {
-      memcpy( csbix.ColorTable, pState->o_palette, sizeof(csbix.ColorTable) );
+      arrcpy( csbix.ColorTable, pState->o_palette );
       ++csbix.srWindow.Right;
       ++csbix.srWindow.Bottom;
       SetConsoleScreenBufferInfoX( hConOut, &csbix );
     }
-    memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
+    arrcpy( pState->x_palette, xterm_palette );
   }
 }
 
@@ -1370,7 +1372,9 @@ void InterpretEscSeq( void )
 	      int   a;
 	      *def = '7'; def[1] = '\0';
 	      GetEnvironmentVariable( L"ANSICON_DEF", def, lenof(def) );
-	      a = wcstol( def, NULL, 16 );
+	      a = ac_wcstol( def, NULL, 16 );
+	      if (a == 0)
+		a = (*def == '-') ? -7 : 7;
 	      pState->sgr.reverse = FALSE;
 	      if (a < 0)
 	      {
@@ -1696,7 +1700,7 @@ void InterpretEscSeq( void )
 	  return;
 
 	  case 3: // ESC[3g Clear all tabs
-	    memset( pState->tab_stop, FALSE, MAX_TABS );
+	    RtlZeroMemory( pState->tab_stop, MAX_TABS );
 	    pState->tabs = TRUE;
 	  return;
 
@@ -1775,9 +1779,9 @@ void InterpretEscSeq( void )
 	  case 6: // ESC[6n Report cursor position
 	  {
 	    TCHAR buf[32];
-	    _snwprintf( buf, lenof(buf), L"\33[%d;%d%sR",
-			CUR.Y - top + 1, CUR.X + 1,
-			(suffix2 == '+') ? L"+" : L"" );
+	    ac_wprintf( buf, "\33[%d;%d%cR",
+			     CUR.Y - top + 1, CUR.X + 1,
+			     (suffix2 == '+') ? '+' : '\0' );
 	    SendSequence( buf );
 	  }
 	  return;
@@ -1904,7 +1908,7 @@ void InterpretEscSeq( void )
 	BOOL started = FALSE;
 	for (beg = Pt_arg;; beg = end + 1)
 	{
-	  i = (int)wcstoul( beg, &end, 10 );
+	  i = (int)ac_wcstoul( beg, &end, 10 );
 	  if (end == beg || (*end != ';' && *end != '\0') || i >= 256)
 	    break;
 	  if (end[2] == ';' || end[2] == '\0')
@@ -1957,7 +1961,7 @@ void InterpretEscSeq( void )
 	      if (*beg == '#')
 	      {
 		valid = TRUE;
-		c = (DWORD)wcstoul( ++beg, &end, 16 );
+		c = (DWORD)ac_wcstoul( ++beg, &end, 16 );
 		if (end - beg == 3)
 		{
 		  r = (BYTE)(c >> 8);
@@ -1976,18 +1980,18 @@ void InterpretEscSeq( void )
 		else
 		  valid = FALSE;
 	      }
-	      else if (wcsncmp( beg, L"rgb:", 4 ) == 0)
+	      else if (memcmp( beg, L"rgb:", 8 ) == 0)
 	      {
 		valid = FALSE;
-		c = (DWORD)wcstoul( beg += 4, &end, 16 );
+		c = (DWORD)ac_wcstoul( beg += 4, &end, 16 );
 		if (*end == '/' && (end - beg == 2 || end - beg == 4))
 		{
 		  r = (BYTE)(end - beg == 2 ? c : c >> 8);
-		  c = (DWORD)wcstoul( beg = end + 1, &end, 16 );
+		  c = (DWORD)ac_wcstoul( beg = end + 1, &end, 16 );
 		  if (*end == '/' && (end - beg == 2 || end - beg == 4))
 		  {
 		    g = (BYTE)(end - beg == 2 ? c : c >> 8);
-		    c = (DWORD)wcstoul( beg = end + 1, &end, 16 );
+		    c = (DWORD)ac_wcstoul( beg = end + 1, &end, 16 );
 		    if ((*end == ',' || *end == ';' || *end == '\0') &&
 			(end - beg == 2 || end - beg == 4))
 		    {
@@ -2000,15 +2004,15 @@ void InterpretEscSeq( void )
 	      else
 	      {
 		valid = FALSE;
-		c = (DWORD)wcstoul( beg, &end, 10 );
+		c = (DWORD)ac_wcstoul( beg, &end, 10 );
 		if (*end == ',' && c < 256)
 		{
 		  r = (BYTE)c;
-		  c = (DWORD)wcstoul( end + 1, &end, 10 );
+		  c = (DWORD)ac_wcstoul( end + 1, &end, 10 );
 		  if (*end == ',' && c < 256)
 		  {
 		    g = (BYTE)c;
-		    c = (DWORD)wcstoul( end + 1, &end, 10 );
+		    c = (DWORD)ac_wcstoul( end + 1, &end, 10 );
 		    if ((*end == ',' || *end == ';' || *end == '\0') && c < 256)
 		    {
 		      b = (BYTE)c;
@@ -2043,15 +2047,15 @@ void InterpretEscSeq( void )
 	// Reset each index, or the entire palette.
 	if (Pt_len == 0)
 	{
-	  memcpy(csbix.ColorTable, pState->o_palette, sizeof(csbix.ColorTable));
-	  memcpy( pState->x_palette, xterm_palette, sizeof(xterm_palette) );
+	  arrcpy( csbix.ColorTable, pState->o_palette );
+	  arrcpy( pState->x_palette, xterm_palette );
 	}
 	else
 	{
 	  LPTSTR beg, end;
 	  for (beg = Pt_arg;; beg = end + 1)
 	  {
-	    i = (int)wcstoul( beg, &end, 10 );
+	    i = (int)ac_wcstoul( beg, &end, 10 );
 	    if (end == beg || (*end != ';' && *end != '\0') || i >= 256)
 	      break;
 	    if (i < 16)
@@ -2575,12 +2579,13 @@ ParseAndPrintString( HANDLE hDev,
 // - Jeffrey Richter ~ Programming Applications for Microsoft Windows 4th ed.
 
 const char APIKernel[]		   = "kernel32.dll";
-const char APIConsole[] 	   = "API-MS-Win-Core-Console-";
-const char APIProcessThreads[]	   = "API-MS-Win-Core-ProcessThreads-";
-const char APIProcessEnvironment[] = "API-MS-Win-Core-ProcessEnvironment-";
-const char APILibraryLoader[]	   = "API-MS-Win-Core-LibraryLoader-";
-const char APIFile[]		   = "API-MS-Win-Core-File-";
-const char APIHandle[]		   = "API-MS-Win-Core-Handle-";
+const char APIcore[]		   = "api-ms-win-core-";
+const char APIConsole[] 	   = "console-";
+const char APIProcessThreads[]	   = "processthreads-";
+const char APIProcessEnvironment[] = "processenvironment-";
+const char APILibraryLoader[]	   = "libraryloader-";
+const char APIFile[]		   = "file-";
+const char APIHandle[]		   = "handle-";
 
 typedef struct
 {
@@ -2686,15 +2691,20 @@ BOOL HookAPIOneMod(
   // for the module whose name matches the pszFunctionModule parameter.
   for (; pImportDesc->Name; pImportDesc++)
   {
-    BOOL kernel = TRUE;
+    BOOL kernel = EOF;
     PSTR pszModName = MakeVA( PSTR, pImportDesc->Name );
-    if (_strnicmp( pszModName, APIKernel, 8 ) != 0 ||
-	(_stricmp( pszModName+8, APIKernel+8 ) != 0 && pszModName[8] != '\0'))
+    if (ac_strnicmp( pszModName, APIKernel, 8 ) == 0 &&
+	(pszModName[8] == '\0' ||
+	 ac_strnicmp( pszModName+8, APIKernel+8, 5 ) == 0))
+    {
+      kernel = TRUE;
+    }
+    else if (ac_strnicmp( pszModName, APIcore, 16 ) == 0)
     {
       PAPI_DATA lib;
       for (lib = APIs; lib->name; ++lib)
       {
-	if (_strnicmp( pszModName, lib->name, lib->len ) == 0)
+	if (ac_strnicmp( pszModName+16, lib->name, lib->len ) == 0)
 	{
 	  if (lib->base == NULL)
 	  {
@@ -2703,16 +2713,16 @@ BOOL HookAPIOneMod(
 	      if (hook->lib == lib->name)
 		hook->apifunc = GetProcAddress( lib->base, hook->name );
 	  }
+	  kernel = FALSE;
 	  break;
 	}
       }
-      if (lib->name == NULL)
-      {
-	if (log_level & 16)
-	  DEBUGSTR( 2, " %s%s %s", sp, zIgnoring, pszModName );
-	continue;
-      }
-      kernel = FALSE;
+    }
+    if (kernel == EOF)
+    {
+      if (log_level & 16)
+	DEBUGSTR( 2, " %s%s %s", sp, zIgnoring, pszModName );
+      continue;
     }
     if (log_level & 16)
       DEBUGSTR( 2, " %s%s %s", sp, zScanning, pszModName );
@@ -2871,8 +2881,6 @@ BOOL HookAPIAllMod( PHookFn Hooks, BOOL restore, BOOL indent )
 static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
 			   BOOL wide, LPCVOID lpApp, LPCVOID lpCmd )
 {
-  app[MAX_DEV_PATH-1] = '\0';
-
   if (lpApp == NULL)
   {
     typedef DWORD (WINAPI *PGPIFNW)( HANDLE, LPTSTR, DWORD );
@@ -2905,7 +2913,7 @@ static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
 	  term = L"\"";
 	  ++pos;
 	}
-	wcsncpy( app, pos, MAX_DEV_PATH-1 );
+	lstrcpyn( app, pos, MAX_DEV_PATH );
       }
       else
       {
@@ -2916,13 +2924,13 @@ static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
 	  term = L"\"";
 	  ++pos;
 	}
-	MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_DEV_PATH-1 );
+	MultiByteToWideChar( CP_ACP, 0, pos, -1, app, MAX_DEV_PATH );
       }
       // CreateProcess only works with surrounding quotes ('"a name"' works,
       // but 'a" "name' fails), so that's all I'll test, too.  However, it also
       // tests for a file at each separator ('a name' tries "a.exe" before
       // "a name.exe") which I won't do.
-      name = wcspbrk( app, term );
+      name = ac_wcspbrk( app, term );
       if (name != NULL)
 	*name = '\0';
     }
@@ -2930,9 +2938,9 @@ static LPTSTR get_program( LPTSTR app, HANDLE hProcess,
   else
   {
     if (wide)
-      wcsncpy( app, lpApp, MAX_DEV_PATH-1 );
+      lstrcpyn( app, lpApp, MAX_DEV_PATH );
     else
-      MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_DEV_PATH-1 );
+      MultiByteToWideChar( CP_ACP, 0, lpApp, -1, app, MAX_DEV_PATH );
   }
   return get_program_name( app );
 }
@@ -2994,8 +3002,8 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       TCHAR args[64];
       STARTUPINFO si;
       PROCESS_INFORMATION pi;
-      wcscpy( DllNameType, L"CON.exe" );
-      _snwprintf( args, lenof(args), L"ansicon -P%lu", child_pi->dwProcessId );
+      memcpy( DllNameType, L"CON.exe", 16 );
+      ac_wprintf( args, "ansicon -P%u", child_pi->dwProcessId );
       ZeroMemory( &si, sizeof(si) );
       si.cb = sizeof(si);
       if (CreateProcess( DllName, args, NULL, NULL, FALSE, 0, NULL, NULL,
@@ -3007,7 +3015,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
       }
       else
 	DEBUGSTR( 1, "Could not execute %\"S (%u)", DllName, GetLastError() );
-      wcscpy( DllNameType, L"32.dll" );
+      memcpy( DllNameType, L"32.dll", 14 );
     }
     else
 #endif
@@ -3413,7 +3421,7 @@ WINAPI MyWriteConsoleA( HANDLE hCon, LPCVOID lpBuffer,
 	  if (mb_size <= 4 && mb_size > len - pos)
 	  {
 	    mb_len = len - pos;
-	    memcpy( mb, aBuf + pos, mb_len );
+	    RtlMoveMemory( mb, aBuf + pos, mb_len );
 	    len = pos;
 	    if (log_level & 4)
 	    {
@@ -3569,10 +3577,13 @@ WINAPI MyCreateFileA( LPCSTR lpFileName, DWORD dwDesiredAccess,
 {
   if (dwDesiredAccess == GENERIC_WRITE)
   {
-    if (_stricmp( lpFileName, "con" ) == 0)
+    PDWORD con = (PDWORD)lpFileName;
+    if ((con[0] | 0x202020) == 'noc' ||
+	((con[0] | 0x20202020) == 'onoc' && (con[1] | 0x2020) == '$tu'))
+    {
       lpFileName = "CONOUT$";
-    if (_stricmp( lpFileName, "CONOUT$" ) == 0)
       dwDesiredAccess |= GENERIC_READ;
+    }
   }
   return CreateFileA( lpFileName, dwDesiredAccess, dwShareMode,
 		      lpSecurityAttributes, dwCreationDisposition,
@@ -3588,10 +3599,22 @@ WINAPI MyCreateFileW( LPCWSTR lpFileName, DWORD dwDesiredAccess,
 {
   if (dwDesiredAccess == GENERIC_WRITE)
   {
-    if (_wcsicmp( lpFileName, L"con" ) == 0)
+#ifdef _WIN64
+    __int64* con = (__int64*)lpFileName;
+    if ((con[0] | 0x2000200020) == 0x6E006F0063/*L'noc'*/ ||
+	((con[0] | 0x20002000200020) == 0x6F006E006F0063/*L'onoc'*/ &&
+	 (con[1] | 0x200020) == 0x2400740075/*L'$tu'*/))
+#else
+    PDWORD con = (PDWORD)lpFileName;
+    if ((con[0] | 0x200020) == 0x6F0063/*L'oc'*/ && ((con[1] | 0x20) == 'n' ||
+	((con[1] | 0x200020) == 0x6F006E/*L'on'*/ &&
+	 (con[2] | 0x200020) == 0x740075/*L'tu'*/ &&
+	 (con[3] == '$'))))
+#endif
+    {
       lpFileName = L"CONOUT$";
-    if (_wcsicmp( lpFileName, L"CONOUT$" ) == 0)
       dwDesiredAccess |= GENERIC_READ;
+    }
   }
   return CreateFileW( lpFileName, dwDesiredAccess, dwShareMode,
 		      lpSecurityAttributes, dwCreationDisposition,
@@ -3708,7 +3731,7 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
     pcsbi = &csbi;
   }
 
-  _snwprintf( buf, lenof(buf), L"%dx%d (%dx%d)",
+  ac_wprintf( buf, "%dx%d (%dx%d)",
 	      pcsbi->dwSize.X, pcsbi->dwSize.Y,
 	      pcsbi->srWindow.Right - pcsbi->srWindow.Left + 1,
 	      pcsbi->srWindow.Bottom - pcsbi->srWindow.Top + 1 );
@@ -3718,7 +3741,7 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
 DWORD
 WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
 {
-  if (_stricmp( lpName, "ANSICON_VER" ) == 0)
+  if (lstrcmpiA( lpName, "ANSICON_VER" ) == 0)
   {
     if (nSize < sizeof(PVEREA))
       return sizeof(PVEREA);
@@ -3726,7 +3749,7 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
     return sizeof(PVEREA) - 1;
   }
 
-  if (_stricmp( lpName, "CLICOLOR" ) == 0)
+  if (lstrcmpiA( lpName, "CLICOLOR" ) == 0)
   {
     if (nSize < 2)
       return 2;
@@ -3735,7 +3758,7 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
     return 1;
   }
 
-  if (_stricmp( lpName, "ANSICON" ) == 0)
+  if (lstrcmpiA( lpName, "ANSICON" ) == 0)
     set_ansicon( NULL );
 
   return GetEnvironmentVariableA( lpName, lpBuffer, nSize );
@@ -3744,7 +3767,7 @@ WINAPI MyGetEnvironmentVariableA( LPCSTR lpName, LPSTR lpBuffer, DWORD nSize )
 DWORD
 WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
 {
-  if (_wcsicmp( lpName, L"ANSICON_VER" ) == 0)
+  if (lstrcmpi( lpName, L"ANSICON_VER" ) == 0)
   {
     if (nSize < lenof(PVERE))
       return lenof(PVERE);
@@ -3752,7 +3775,7 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
     return lenof(PVERE) - 1;
   }
 
-  if (_wcsicmp( lpName, L"CLICOLOR" ) == 0)
+  if (lstrcmpi( lpName, L"CLICOLOR" ) == 0)
   {
     if (nSize < 2)
       return 2;
@@ -3761,7 +3784,7 @@ WINAPI MyGetEnvironmentVariableW( LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize )
     return 1;
   }
 
-  if (_wcsicmp( lpName, L"ANSICON" ) == 0)
+  if (lstrcmpi( lpName, L"ANSICON" ) == 0)
     set_ansicon( NULL );
 
   return GetEnvironmentVariableW( lpName, lpBuffer, nSize );
@@ -3832,12 +3855,14 @@ void OriginalAttr( PVOID lpReserved )
 {
   HANDLE hConOut;
   CONSOLE_SCREEN_BUFFER_INFO Info;
+  PIMAGE_DOS_HEADER pDosHeader;
+  PIMAGE_NT_HEADERS pNTHeader;
+  BOOL org;
 
-  hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
-				    FILE_SHARE_READ | FILE_SHARE_WRITE,
-				    NULL, OPEN_EXISTING, 0, NULL );
-  if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
-    ATTR = 7;
+  get_state();
+
+  pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
+  pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
 
   // If we were loaded dynamically, remember the current attributes to restore
   // upon unloading.  However, if we're the 64-bit DLL, but the image is 32-
@@ -3845,27 +3870,35 @@ void OriginalAttr( PVOID lpReserved )
   // be dynamic due to lack of the IAT.
   if (lpReserved == NULL)
   {
-    BOOL dynamic = TRUE;
-    PIMAGE_DOS_HEADER pDosHeader;
-    PIMAGE_NT_HEADERS pNTHeader;
-    pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle( NULL );
-    pNTHeader = MakeVA( PIMAGE_NT_HEADERS, pDosHeader->e_lfanew );
+    org = TRUE;
 #ifdef _WIN64
     if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-      dynamic = FALSE;
+      org = FALSE;
     else
 #endif
     if (pNTHeader->DATADIRS <= IMAGE_DIRECTORY_ENTRY_IAT &&
 	get_os_version() >= 0x602)
-      dynamic = FALSE;
-    if (dynamic)
-      orgattr = ATTR;
+      org = FALSE;
+  }
+  else
+  {
+    // We also want to restore the original attributes for ansicon.exe.
+    org = (pNTHeader->OptionalHeader.MajorImageVersion == 20033 && // 'AN'
+	   pNTHeader->OptionalHeader.MinorImageVersion == 18771);  // 'SI'
+  }
+  if (org)
+  {
+    hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				      FILE_SHARE_READ | FILE_SHARE_WRITE,
+				      NULL, OPEN_EXISTING, 0, NULL );
+    if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
+      ATTR = 7;
+    orgattr = ATTR;
+    orgsgr  = pState->sgr;
     GetConsoleMode( hConOut, &orgmode );
     GetConsoleCursorInfo( hConOut, &orgcci );
+    CloseHandle( hConOut );
   }
-  CloseHandle( hConOut );
-
-  get_state();
 }
 
 
@@ -3888,8 +3921,6 @@ DWORD WINAPI exit_thread( LPVOID lpParameter )
 // and terminated.
 //-----------------------------------------------------------------------------
 
-// Need to export something for static loading to work, this is as good as any.
-__declspec(dllexport)
 BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 {
   BOOL	  bResult = TRUE;
@@ -3901,7 +3932,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
   if (dwReason == DLL_PROCESS_ATTACH)
   {
-    hHeap = HeapCreate( 0, 0, 128 * 1024 );
+    hHeap = HeapCreate( 0, 0, 256 * 1024 );
     hKernel = GetModuleHandleA( APIKernel );
     GetConsoleScreenBufferInfoX = (PHCSBIX)GetProcAddress(
 				     hKernel, "GetConsoleScreenBufferInfoEx" );
@@ -3914,7 +3945,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
 
     *logstr = '\0';
     GetEnvironmentVariable( L"ANSICON_LOG", logstr, lenof(logstr) );
-    log_level = _wtoi( logstr );
+    log_level = ac_wtoi( logstr );
     prog = get_program_name( NULL );
 #if defined(_WIN64) || defined(W32ON64)
     DllNameType = DllName - 6 +
@@ -3982,6 +4013,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
       SetConsoleMode( hConOut, orgmode );
       SetConsoleCursorInfo( hConOut, &orgcci );
       CloseHandle( hConOut );
+      pState->sgr = orgsgr;
     }
     if (hMap != NULL)
     {

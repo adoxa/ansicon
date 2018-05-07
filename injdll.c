@@ -117,7 +117,7 @@ void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   ip.pL = (PLONG_PTR)pImports;
   *ip.pL++ = IMAGE_ORDINAL_FLAG + 1;
   *ip.pL++ = 0;
-  memcpy( ip.pB, ansi_dll, ansi_len );
+  RtlMoveMemory( ip.pB, ansi_dll, ansi_len );
   ip.pB += ansi_len;
   ip.pI->OriginalFirstThunk = 0;
   ip.pI->TimeDateStamp = 0;
@@ -213,7 +213,7 @@ void InjectDLL32( LPPROCESS_INFORMATION ppi, PBYTE pBase )
   ip.pL = (PLONG)pImports;
   *ip.pL++ = IMAGE_ORDINAL_FLAG32 + 1;
   *ip.pL++ = 0;
-  memcpy( ip.pB, ansi_dll, ansi_len );
+  RtlMoveMemory( ip.pB, ansi_dll, ansi_len );
   ip.pB += ansi_len;
   ip.pI->OriginalFirstThunk = 0;
   ip.pI->TimeDateStamp = 0;
@@ -331,7 +331,7 @@ void RemoteLoad64( LPPROCESS_INFORMATION ppi )
     return;
   }
 
-  len = (DWORD)TSIZE(wcslen( DllName ) + 1);
+  len = (DWORD)TSIZE(lstrlen( DllName ) + 1);
   ip.pB = code;
 
   *ip.pL++ = ntdll + rLdrLoadDll;	// address of LdrLoadDll
@@ -400,7 +400,7 @@ void RemoteLoad32( LPPROCESS_INFORMATION ppi )
   }
   bMem = PtrToUint( pMem );
 
-  len = (DWORD)TSIZE(wcslen( DllName ) + 1);
+  len = (DWORD)TSIZE(lstrlen( DllName ) + 1);
   ip.pB = code;
 
   *ip.pS++ = 0x5451;			// push  ecx esp

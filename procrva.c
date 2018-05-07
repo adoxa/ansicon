@@ -32,7 +32,7 @@ DWORD GetProcRVA( LPCTSTR module, LPCSTR func )
 #endif
   len = GetSystemDirectory( buf, MAX_PATH );
   buf[len++] = '\\';
-  wcscpy( buf + len, module );
+  lstrcpy( buf + len, module );
   hMod = LoadLibraryEx( buf, NULL, LOAD_LIBRARY_AS_IMAGE_RESOURCE );
   if (hMod == NULL)
   {

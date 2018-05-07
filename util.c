@@ -30,12 +30,12 @@ LPTSTR get_program_name( LPTSTR program )
     GetModuleFileName( NULL, prog_path, lenof(prog_path) );
     program = prog_path;
   }
-  name = wcsrchr( program, '\\' );
+  name = ac_wcsrchr( program, '\\' );
   if (name != NULL)
     ++name;
   else
     name = program;
-  ext = wcsrchr( name, '.' );
+  ext = ac_wcsrchr( name, '.' );
   if (ext != NULL && ext != name)
     *ext = '\0';
 
@@ -107,13 +107,13 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 
   src.a = (LPSTR)str;
   if (len == 0 && str != 0)
-    len = (DWORD)(wide ? wcslen( src.w ) : strlen( src.a ));
+    len = (DWORD)(wide ? lstrlen( src.w ) : strlen( src.a ));
 
   if (pos + len * 6 + 8 >= buf_len)
   {
     LPVOID tmp = HeapReAlloc( hHeap, 0, buf, buf_len + len * 6 + 8 );
     if (tmp == NULL)
-      return 0;
+      return pos;
     buf = tmp;
     buf_len = (DWORD)HeapSize( hHeap, 0, buf );
   }
@@ -185,7 +185,7 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 	  case '\r': buf[pos++] = 'r'; break;
 	  case	27 : buf[pos++] = 'e'; break;
 	  default:
-	    pos += sprintf( buf + pos, "x%.2X", ch );
+	    pos += ac_sprintf( buf + pos, "x%2X", ch );
 	}
       }
       else
@@ -214,7 +214,7 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
 	}
       }
       if (quote && start_trail)
-	pos += sprintf( buf + pos, "\\x%.2X", ch );
+	pos += ac_sprintf( buf + pos, "\\x%2X", ch );
       else
 	buf[pos++] = ch;
     }
@@ -223,8 +223,10 @@ static DWORD str_format( DWORD pos, BOOL wide, DWORD_PTR str, DWORD len )
       int mb = WideCharToMultiByte( cp, flags, src.w - 1, 1, buf + pos, 12,
 				    NULL, pDef );
       if (def)
-	mb = sprintf( buf + pos, ch < 0x100 ? "%cx%.2X" : "%cu%.4X",
-		      (quote) ? '\\' : '^', ch );
+      {
+	buf[pos++] = (quote) ? '\\' : '^';
+	mb = ac_sprintf( buf + pos, ch < 0x100 ? "x%2X" : "u%4X", ch );
+      }
       pos += mb;
     }
   }
@@ -255,12 +257,13 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
     mutex = CreateMutex( NULL, FALSE, L"ANSICON_debug_file" );
     if (mutex == NULL)
     {
-      file = INVALID_HANDLE_VALUE;
+      log_level = 0;
       return;
     }
     buf = HeapAlloc( hHeap, 0, 2048 );
     buf_len = (DWORD)HeapSize( hHeap, 0, buf );
-    prefix_len = sprintf( buf, "%S (%lu): ", prog, GetCurrentProcessId() );
+    prefix_len = str_format( 0, TRUE, (DWORD_PTR)prog, 0 );
+    prefix_len += ac_sprintf(buf+prefix_len, " (%u): ", GetCurrentProcessId());
   }
   if (WaitForSingleObject( mutex, 500 ) == WAIT_TIMEOUT)
     return;
@@ -273,7 +276,6 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
   if (file == INVALID_HANDLE_VALUE)
   {
     ReleaseMutex( mutex );
-    CloseHandle( mutex );
     return;
   }
 
@@ -287,18 +289,18 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
 
     if (len != 0)
     {
-      memset( buf + 2, '=', 72 );
+      RtlFillMemory( buf + 2, 72, '=' );
       buf[0] = buf[74] = buf[76] = '\r';
       buf[1] = buf[75] = buf[77] = '\n';
       WriteFile( file, buf, 78, &written, NULL );
     }
 
     GetLocalTime( &now );
-    len = sprintf( buf, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d)"
-			" started %d-%.2d-%.2d %d:%.2d:%.2d\r\n",
-			log_level,
-			now.wYear, now.wMonth, now.wDay,
-			now.wHour, now.wMinute, now.wSecond );
+    len = ac_sprintf( buf, "ANSICON (" BITSA "-bit) v" PVERSA " log (%d)"
+			   " started %d-%2d-%2d %d:%2d:%2d\r\n",
+			   log_level,
+			   now.wYear, now.wMonth, now.wDay,
+			   now.wHour, now.wMinute, now.wSecond );
     WriteFile( file, buf, len, &written, NULL );
     if (szFormat == NULL)
     {
@@ -369,16 +371,16 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
       num = va_arg( pArgList, DWORD_PTR );
       switch (*szFormat++)
       {
-	case 'u': len += sprintf( buf + len, "%u", (DWORD)num ); break;
-	case 'X': len += sprintf( buf + len, "%X", (DWORD)num ); break;
+	case 'u': len += ac_sprintf( buf + len, "%u", (DWORD)num ); break;
+	case 'X': len += ac_sprintf( buf + len, "%X", (DWORD)num ); break;
 	case 'p':
 #ifdef _WIN64
-	  len += sprintf( buf + len, "%.8X_%.8X",
-				     (DWORD)(num >> 32), (DWORD)num );
+	  len += ac_sprintf( buf + len, "%8X_%8X",
+					(DWORD)(num >> 32), (DWORD)num );
 	  break;
 #endif
-	case 'q': len += sprintf( buf + len, "%.8X", (DWORD)num ); break;
-	case 'P': len += sprintf( buf + len, "00000000_%.8X", (DWORD)num ); break;
+	case 'q': len += ac_sprintf( buf + len, "%8X", (DWORD)num ); break;
+	case 'P': len += ac_sprintf( buf + len, "00000000_%8X", (DWORD)num ); break;
 	case 's': len = str_format( len, FALSE, num, slen ); break;
 	case 'S': len = str_format( len, TRUE, num, slen ); break;
 	default:
@@ -406,4 +408,264 @@ void DEBUGSTR( int level, LPCSTR szFormat, ... )
   size = GetFileSize( file, NULL );
   CloseHandle( file );
   ReleaseMutex( mutex );
+}
+
+
+// Provide custom versions of used C runtime functions, to remove dependence on
+// the runtime library.
+
+// For my purposes (palette index and colors):
+// * no leading space;
+// * base is 10 or 16;
+// * number doesn't overflow.
+unsigned long ac_wcstoul( const wchar_t* str, wchar_t** end, int base )
+{
+  unsigned c, n;
+  unsigned long num = 0;
+
+  for (;;)
+  {
+    n = -1;
+    c = *str;
+    if (c >= '0' && c <= '9')
+      n = c - '0';
+    else if (base == 16)
+    {
+      c |= 0x20;
+      if (c >= 'a' && c <= 'f')
+	n = c - 'a' + 10;
+    }
+    if (n == -1)
+      break;
+
+    num = num * base + n;
+    ++str;
+  }
+
+  if (end != NULL)
+    *end = (wchar_t*)str;
+  return num;
+}
+
+
+// For my purposes (log level):
+// * same as ac_wcstoul.
+int ac_wtoi( const wchar_t* str )
+{
+  return (int)ac_wcstoul( str, NULL, 10 );
+}
+
+
+// For my purposes (default attribute):
+// * same as ac_wcstoul.
+long ac_wcstol( const wchar_t* str, wchar_t** end, int base )
+{
+  int neg = (*str == '-');
+  long num = ac_wcstoul( str + neg, end, base );
+  return neg ? -num : num;
+}
+
+
+// For my purposes (program separator):
+// * set is only one or two characters.
+wchar_t* ac_wcspbrk( const wchar_t* str, const wchar_t* set )
+{
+  while (*str != '\0')
+  {
+    if (*str == set[0] || *str == set[1])
+      return (wchar_t*)str;
+    ++str;
+  }
+  return NULL;
+}
+
+
+// For my purposes (path components):
+// * c is not null.
+wchar_t* ac_wcsrchr( const wchar_t* str, wchar_t c )
+{
+  wchar_t* last = NULL;
+
+  while (*str != '\0')
+  {
+    if (*str == c)
+      last = (wchar_t*)str;
+    ++str;
+  }
+
+  return last;
+}
+
+
+// For my purposes (import module matching):
+// * A-Z becomes a-z;
+// * s2 is lower case;
+// * both strings are at least LEN long;
+// * returns 0 for match, 1 for no match.
+int ac_strnicmp( const char* s1, const char* s2, size_t len )
+{
+  while (len--)
+  {
+    if (*s1 != *s2)
+    {
+      if (*s2 < 'a' || *s2 > 'z' || (*s1 | 0x20) != *s2)
+	return 1;
+    }
+    ++s1;
+    ++s2;
+  }
+  return 0;
+}
+
+
+static const char hex[16] = { '0','1','2','3','4','5','6','7',
+			      '8','9','A','B','C','D','E','F' };
+
+// For my purposes:
+// * BUF is big enough;
+// * FMT is valid;
+// * width implies zero fill and the number is not bigger than the width;
+// * only types d, u & X are supported, all as 32-bit unsigned;
+// * BUF is NOT NUL-terminated.
+int ac_sprintf( char* buf, const char* fmt, ... )
+{
+  va_list args;
+  DWORD   num;
+  int	  t, width;
+  char*   beg = buf;
+
+  va_start( args, fmt );
+
+  while (*fmt)
+  {
+    t = *fmt++;
+    if (t != '%')
+      *buf++ = t;
+    else
+    {
+      num = va_arg( args, DWORD );
+      t = *fmt++;
+      width = 0;
+      if (t == '2' || t == '4' || t == '8')
+      {
+	width = t - '0';
+	t = *fmt++;
+      }
+      if (t == 'X')
+      {
+	int bits;
+	if (width == 0)
+	{
+	  if (num & 0xF0000000)
+	    bits = 32;
+	  else
+	  {
+	    bits = 4;
+	    while (num >> bits)
+	      bits += 4;
+	  }
+	}
+	else
+	  bits = width * 4;
+	do
+	{
+	  bits -= 4;
+	  *buf++ = hex[num >> bits & 0xF];
+	} while (bits);
+      }
+      else // (t == 'd' || t == 'u')
+      {
+	if (width == 2)
+	{
+	  *buf++ = (int)(num / 10) + '0';
+	  *buf++ = (int)(num % 10) + '0';
+	}
+	else
+	{
+	  unsigned power;
+	  if (num >= 1000000000)
+	    power = 1000000000;
+	  else
+	  {
+	    power = 1;
+	    while (num / (power * 10))
+	      power *= 10;
+	  }
+	  do
+	  {
+	    *buf++ = (unsigned)(num / power) % 10 + '0';
+	    power /= 10;
+	  } while (power);
+	}
+      }
+    }
+  }
+
+  return (int)(buf - beg);
+}
+
+
+// For my purposes:
+// * BUF is big enough;
+// * FMT is valid;
+// * width is only for X, is only 2 and the number is not bigger than that;
+// * X, d & u are 32-bit unsigned decimal, a digit less than maximum;
+// * c is not output if NUL;
+// * no other type is used;
+// * return value is not used.
+int ac_wprintf( wchar_t* buf, const char* fmt, ... )
+{
+  va_list args;
+  DWORD   num;
+  int	  t;
+
+  va_start( args, fmt );
+
+  while (*fmt)
+  {
+    t = *fmt++;
+    if (t != '%')
+      *buf++ = t;
+    else
+    {
+      num = va_arg( args, DWORD );
+      t = *fmt++;
+      if (t == '2')
+      {
+	++fmt;
+	*buf++ = hex[num >> 4];
+	*buf++ = hex[num & 0xF];
+      }
+      else if (t == 'X')
+      {
+	int bits = 4;
+	while (num >> bits)
+	  bits += 4;
+	do
+	{
+	  bits -= 4;
+	  *buf++ = hex[num >> bits & 0xF];
+	} while (bits);
+      }
+      else if (t == 'c')
+      {
+	if (num)
+	  *buf++ = (wchar_t)num;
+      }
+      else // (t == 'd' || t == 'u')
+      {
+	int power = 10;
+	while (num / power)
+	  power *= 10;
+	do
+	{
+	  power /= 10;
+	  *buf++ = (int)(num / power) % 10 + '0';
+	} while (power != 1);
+      }
+    }
+  }
+  *buf = '\0';
+
+  return 0;
 }

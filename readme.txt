@@ -339,13 +339,16 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.84-wip - 4 May, 2018:
+    1.84-wip - 7 May, 2018:
     - close the flush handles on detach;
     - WriteFile wasn't properly testing if its handle was for a console;
     - use remote load on Win8+ if the process has no IAT;
-    * remove dependency on USER32, dynamically load WINMM;
+    - fix logging really long command lines;
+    - default to 7 or -7 if ANSICON_DEF could not be parsed;
+    * remove dependency on CRT & USER32, dynamically load WINMM;
     * exit process if the primary thread is detached (for processes on Win10
-      that return, rather than call ExitProcess).
+      that return, rather than call ExitProcess);
+    * ansicon.exe statically loads the DLL.
 
     1.83 - 16 February, 2018:
     - create the flush thread on first use.
@@ -621,4 +624,4 @@ Distribution
 
 
 ========================
-Jason Hood, 4 May, 2018.
+Jason Hood, 7 May, 2018.

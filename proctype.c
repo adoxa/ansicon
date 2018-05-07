@@ -46,6 +46,22 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
   MEMORY_BASIC_INFORMATION minfo;
   IMAGE_DOS_HEADER dos_header;
   IMAGE_NT_HEADERS nt_header;
+  PBYTE dummy_base;
+  BOOL	dummy_gui;
+  BOOL	skip_log;
+
+  // There's no need to log if we're only getting one value.
+  skip_log = FALSE;
+  if (pBase == NULL)
+  {
+    pBase = &dummy_base;
+    skip_log = TRUE;
+  }
+  if (gui == NULL)
+  {
+    gui = &dummy_gui;
+    skip_log = TRUE;
+  }
 
   *pBase = NULL;
   *gui = FALSE;
@@ -62,7 +78,7 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
 	&& nt_header.Signature == IMAGE_NT_SIGNATURE
 	&& !(nt_header.FileHeader.Characteristics & IMAGE_FILE_DLL))
     {
-      // Don't load into ansicon.exe, it wants to do that itself.
+      // Don't load into ansicon.exe, it's already imported.
       if (nt_header.OptionalHeader.MajorImageVersion == 20033 &&    // 'AN'
 	  nt_header.OptionalHeader.MinorImageVersion == 18771)	    // 'SI'
 	return -1;
@@ -102,27 +118,27 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
 #endif
 	    }
 	  }
-	  DEBUGSTR( 1, "  32-bit %s (base = %q)",
-		       (*gui) ? "GUI" : "console", minfo.BaseAddress );
+	  if (!skip_log)
+	    DEBUGSTR( 1, "  32-bit %s (base = %q)",
+			 (*gui) ? "GUI" : "console", minfo.BaseAddress );
 	  return 32;
 	}
 	if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 	{
 #ifdef _WIN64
-	  DEBUGSTR( 1, "  64-bit %s (base = %p)",
-		       (*gui) ? "GUI" : "console", minfo.BaseAddress );
-	  return 64;
-#elif defined(W32ON64)
-	  // Console will log due to -P, but GUI may be ignored (if not,
-	  // this'll show up twice).
-	  if (*gui)
-	    DEBUGSTR( 1, "  64-bit GUI (base = %P)", minfo.BaseAddress );
+	  if (!skip_log)
+	    DEBUGSTR( 1, "  64-bit %s (base = %p)",
+			 (*gui) ? "GUI" : "console", minfo.BaseAddress );
 	  return 64;
 #else
 	  DEBUGSTR( 1, "  64-bit %s (base = %P)",
 		       (*gui) ? "GUI" : "console", minfo.BaseAddress );
+#if defined(W32ON64)
+	  return 64;
+#else
 	  DEBUGSTR( 1, "  Unsupported (use x64\\ansicon)" );
 	  return 0;
+#endif
 #endif
 	}
 	DEBUGSTR( 1, "  Ignoring unsupported machine (0x%X)",
