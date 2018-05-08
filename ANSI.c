@@ -197,7 +197,7 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 7 May, 2018:
+  v1.84-wip, 17 February, 26 April to 8 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
@@ -207,7 +207,8 @@
     use remote load on Win8+ when the process has no IAT;
     remove dependency on the CRT;
     increase heap to 256KiB to fix logging of really long command lines;
-    default to 7 or -7 if ANSICON_DEF could not be parsed.
+    default to 7 or -7 if ANSICON_DEF could not be parsed;
+    scrolling will use the default attribute for new lines.
 */
 
 #include "ansicon.h"
@@ -670,6 +671,25 @@ void set_pos( int x, int y )
 }
 
 
+// Get the default attribute, as-is if !ATTR (i.e. preserve negative), else for
+// the console (swap foreground/background if negative).
+int get_default_attr( BOOL attr )
+{
+  TCHAR def[4];
+  int	a;
+
+  *def = '7'; def[1] = '\0';
+  GetEnvironmentVariable( L"ANSICON_DEF", def, lenof(def) );
+  a = ac_wcstol( def, NULL, 16 );
+  if (a == 0)
+    a = (*def == '-') ? -7 : 7;
+  if (a > 0 || !attr)
+    return a;
+  a = -a;
+  return ((a >> 4) & 15) | ((a & 15) << 4);
+}
+
+
 //-----------------------------------------------------------------------------
 //   FlushBuffer()
 // Writes the buffer to the console and empties it.
@@ -835,7 +855,7 @@ void FlushBuffer( void )
 	  CHAR_INFO  ci;
 
 	  ci.Char.UnicodeChar = ' ';
-	  ci.Attributes       = ATTR;
+	  ci.Attributes = get_default_attr( TRUE );
 	  c.X	    =
 	  sr.Left   = LEFT;
 	  sr.Right  = RIGHT;
@@ -859,6 +879,26 @@ void FlushBuffer( void )
 	sr.Left = CUR.X;
 	cr.Left = CUR.X = wi.CURPOS.X;
 	ScrollConsoleScreenBuffer( hConOut, &sr, &cr, CUR, &ci );
+      }
+      else if (nWrapped && CUR.Y + nWrapped > LAST)
+      {
+	// The buffer is going to scroll; do it manually in order to use the
+	// default attribute, not current.
+	SMALL_RECT sr;
+	COORD	   c;
+	CHAR_INFO  ci;
+
+	ci.Char.UnicodeChar = ' ';
+	ci.Attributes = get_default_attr( TRUE );
+	c.X	  =
+	sr.Left   = LEFT;
+	sr.Right  = RIGHT;
+	sr.Top	  = 0;
+	sr.Bottom = LAST;
+	c.Y	  = -wi.CURPOS.Y;
+	ScrollConsoleScreenBuffer( hConOut, &sr, &sr, c, &ci );
+	CUR.Y -= wi.CURPOS.Y;
+	SetConsoleCursorPos( hConOut, CUR );
       }
       if (pState->crm)
       {
@@ -1368,13 +1408,7 @@ void InterpretEscSeq( void )
 	    case 39:
 	    case 49:
 	    {
-	      TCHAR def[4];
-	      int   a;
-	      *def = '7'; def[1] = '\0';
-	      GetEnvironmentVariable( L"ANSICON_DEF", def, lenof(def) );
-	      a = ac_wcstol( def, NULL, 16 );
-	      if (a == 0)
-		a = (*def == '-') ? -7 : 7;
+	      int a = get_default_attr( FALSE );
 	      pState->sgr.reverse = FALSE;
 	      if (a < 0)
 	      {
@@ -1572,7 +1606,7 @@ void InterpretEscSeq( void )
 	}
 	Pos.Y = Rect.Top + (suffix == 'T' ? p1 : -p1);
 	CharInfo.Char.UnicodeChar = ' ';
-	CharInfo.Attributes = ATTR;
+	CharInfo.Attributes = get_default_attr( TRUE );
 	ScrollConsoleScreenBuffer( hConOut, &Rect, &Rect, Pos, &CharInfo );
       return;
 
@@ -2098,7 +2132,7 @@ void MoveDown( BOOL home )
     Pos.X = LEFT;
     Pos.Y = TOP + pState->top_margin;
     CharInfo.Char.UnicodeChar = ' ';
-    CharInfo.Attributes = ATTR;
+    CharInfo.Attributes = get_default_attr( TRUE );
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
     if (home)
     {
@@ -2122,7 +2156,7 @@ void MoveDown( BOOL home )
     Rect.Bottom = LAST;
     Pos.X = Pos.Y = 0;
     CharInfo.Char.UnicodeChar = ' ';
-    CharInfo.Attributes = ATTR;
+    CharInfo.Attributes = get_default_attr( TRUE );
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
     if (home)
     {
@@ -2155,7 +2189,7 @@ void MoveUp( void )
     Pos.X = LEFT;
     Pos.Y = TOP + pState->top_margin + 1;
     CharInfo.Char.UnicodeChar = ' ';
-    CharInfo.Attributes = ATTR;
+    CharInfo.Attributes = get_default_attr( TRUE );
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
   }
   else if (pState->tb_margins && CUR.Y == TOP)
@@ -2171,7 +2205,7 @@ void MoveUp( void )
     Pos.X = LEFT;
     Pos.Y = 1;
     CharInfo.Char.UnicodeChar = ' ';
-    CharInfo.Attributes = ATTR;
+    CharInfo.Attributes = get_default_attr( TRUE );
     ScrollConsoleScreenBuffer( hConOut, &Rect, NULL, Pos, &CharInfo );
   }
   else
