@@ -90,11 +90,11 @@ void InjectDLL( LPPROCESS_INFORMATION ppi, PBYTE pBase )
       get_os_version() >= 0x602)
   {
 #ifdef _WIN64
-     RemoteLoad64( ppi );
+    RemoteLoad64( ppi );
 #else
-     RemoteLoad32( ppi );
+    RemoteLoad32( ppi );
 #endif
-     return;
+    return;
   }
 
   import_size = sizeof_imports( ppi, pBase, NTHeader.IMPORTDIR.VirtualAddress );
@@ -349,6 +349,7 @@ void RemoteLoad64( LPPROCESS_INFORMATION ppi )
   *ip.pD++ = 0; 			// padding
   *ip.pL++ = pMem + 56; 		// UNICODE_STRING.Buffer
   WriteProcMem( pMem, code, ip.pB - code );
+  *(PDWORD)DllNameType = 0x340036/*L'46'*/;
   WriteProcMem( pMem + (ip.pB - code), DllName, len );
   thread = CreateRemoteThread( ppi->hProcess, NULL, 4096,
 			   (LPTHREAD_START_ROUTINE)(pMem + 8), NULL, 0, NULL );
@@ -414,6 +415,9 @@ void RemoteLoad32( LPPROCESS_INFORMATION ppi )
   *ip.pS++ = (USHORT)len;		// UNICODE_STRING.MaximumLength
   *ip.pD++ = bMem + 28; 		// UNICODE_STRING.Buffer
   WriteProcMem( pMem, code, ip.pB - code );
+#ifdef _WIN64
+  *(PDWORD)DllNameType = 0x320033/*L'23'*/;
+#endif
   WriteProcMem( pMem + (ip.pB - code), DllName, len );
   thread = CreateRemoteThread( ppi->hProcess, NULL, 4096,
 			       (LPTHREAD_START_ROUTINE)pMem, NULL, 0, NULL );

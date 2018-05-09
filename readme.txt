@@ -339,7 +339,7 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.84-wip - 8 May, 2018:
+    1.84-wip - 9 May, 2018:
     - close the flush handles on detach;
     - WriteFile wasn't properly testing if its handle was for a console;
     - use remote load on Win8+ if the process has no IAT;
@@ -625,4 +625,4 @@ Distribution
 
 
 ========================
-Jason Hood, 8 May, 2018.
+Jason Hood, 9 May, 2018.

@@ -197,7 +197,7 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 8 May, 2018:
+  v1.84-wip, 17 February, 26 April to 9 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;

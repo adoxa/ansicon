@@ -48,19 +48,19 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
   IMAGE_NT_HEADERS nt_header;
   PBYTE dummy_base;
   BOOL	dummy_gui;
-  BOOL	skip_log;
+  int	log;
 
-  // There's no need to log if we're only getting one value.
-  skip_log = FALSE;
+  // Don't log if we're only getting one value, as it's already been logged.
+  log = 1;
   if (pBase == NULL)
   {
     pBase = &dummy_base;
-    skip_log = TRUE;
+    log = 128;
   }
   if (gui == NULL)
   {
     gui = &dummy_gui;
-    skip_log = TRUE;
+    log = 128;
   }
 
   *pBase = NULL;
@@ -102,52 +102,48 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
 	    if ((ComHeader.Flags & COMIMAGE_FLAGS_ILONLY) &&
 		!(ComHeader.Flags & COMIMAGE_FLAGS_32BITREQUIRED))
 	    {
-#if defined(_WIN64) || !defined(W32ON64)	// W32ON64 will log due to -P
-	      DEBUGSTR( 1, "  AnyCPU %s (base = %q)",
-			   (*gui) ? "GUI" : "console", minfo.BaseAddress );
-#endif
+	      DEBUGSTR( log, "  AnyCPU %s (base = %q)",
+			     (*gui) ? "GUI" : "console", minfo.BaseAddress );
 #if defined(_WIN64) || defined(W32ON64)
 	      return 48;
 #else
 	      if (ProcessIs64( ppi->hProcess ))
 	      {
-		DEBUGSTR( 1, "  Unsupported (use x64\\ansicon)" );
+		DEBUGSTR( log, "  Unsupported (use x64\\ansicon)" );
 		return 0;
 	      }
 	      return 32;
 #endif
 	    }
 	  }
-	  if (!skip_log)
-	    DEBUGSTR( 1, "  32-bit %s (base = %q)",
+	  DEBUGSTR( log, "  32-bit %s (base = %q)",
 			 (*gui) ? "GUI" : "console", minfo.BaseAddress );
 	  return 32;
 	}
 	if (nt_header.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
 	{
 #ifdef _WIN64
-	  if (!skip_log)
-	    DEBUGSTR( 1, "  64-bit %s (base = %p)",
+	  DEBUGSTR( log, "  64-bit %s (base = %p)",
 			 (*gui) ? "GUI" : "console", minfo.BaseAddress );
 	  return 64;
 #else
-	  DEBUGSTR( 1, "  64-bit %s (base = %P)",
-		       (*gui) ? "GUI" : "console", minfo.BaseAddress );
+	  DEBUGSTR( log, "  64-bit %s (base = %P)",
+			 (*gui) ? "GUI" : "console", minfo.BaseAddress );
 #if defined(W32ON64)
 	  return 64;
 #else
-	  DEBUGSTR( 1, "  Unsupported (use x64\\ansicon)" );
+	  DEBUGSTR( log, "  Unsupported (use x64\\ansicon)" );
 	  return 0;
 #endif
 #endif
 	}
-	DEBUGSTR( 1, "  Ignoring unsupported machine (0x%X)",
-		     nt_header.FileHeader.Machine );
+	DEBUGSTR( log, "  Ignoring unsupported machine (0x%X)",
+		       nt_header.FileHeader.Machine );
       }
       else
       {
-	DEBUGSTR( 1, "  Ignoring unsupported subsystem (%u)",
-		     nt_header.OptionalHeader.Subsystem );
+	DEBUGSTR( log, "  Ignoring unsupported subsystem (%u)",
+		       nt_header.OptionalHeader.Subsystem );
       }
       return 0;
     }
@@ -157,16 +153,16 @@ int ProcessType( LPPROCESS_INFORMATION ppi, PBYTE* pBase, BOOL* gui )
     if (((DWORD)ptr >> 12) + ((DWORD)minfo.RegionSize >> 12) >= 0x100000)
     {
 #ifdef W32ON64
-      DEBUGSTR( 1, "  Pointer overflow: assuming 64-bit" );
+      DEBUGSTR( log, "  Pointer overflow: assuming 64-bit" );
       return 64;
 #else
-      DEBUGSTR( 1, "  Ignoring apparent 64-bit process (use x64\\ansicon)" );
+      DEBUGSTR( log, "  Ignoring apparent 64-bit process (use x64\\ansicon)" );
       return 0;
 #endif
     }
 #endif
   }
 
-  DEBUGSTR( 1, "  Ignoring non-Windows process" );
+  DEBUGSTR( log, "  Ignoring non-Windows process" );
   return 0;
 }
