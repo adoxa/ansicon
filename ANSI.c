@@ -197,7 +197,7 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 9 May, 2018:
+  v1.84-wip, 17 February, 26 April to 10 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
@@ -208,7 +208,8 @@
     remove dependency on the CRT;
     increase heap to 256KiB to fix logging of really long command lines;
     default to 7 or -7 if ANSICON_DEF could not be parsed;
-    scrolling will use the default attribute for new lines.
+    scrolling will use the default attribute for new lines;
+    workaround Windows 10 1803 console bug.
 */
 
 #include "ansicon.h"
@@ -771,6 +772,11 @@ void FlushBuffer( void )
 	SetConsoleMode( hConWrap, (awm) ? ENABLE_WRAP_AT_EOL_OUTPUT : 0 );
       else if (!awm)
 	SetConsoleMode( hConWrap, ENABLE_PROCESSED_OUTPUT );
+      else if (cache[0].mode & 4) // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+      {
+	// Windows 10 1803 writes to the active buffer if VT is enabled.
+	SetConsoleMode( hConWrap, cache[0].mode & ~4 );
+      }
       WriteConsole( hConWrap, ChBuffer, nCharInBuffer, &nWritten, NULL );
       GetConsoleScreenBufferInfo( hConWrap, &wi );
       if (pState->tb_margins && CUR.Y + wi.CURPOS.Y > TOP + pState->bot_margin)

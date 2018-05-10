@@ -94,7 +94,7 @@
     import the DLL.
 */
 
-#define PDATE L"9 May, 2018"
+#define PDATE L"10 May, 2018"
 
 #include "ansicon.h"
 #include "version.h"
