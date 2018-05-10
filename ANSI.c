@@ -200,12 +200,11 @@
   v1.84-wip, 17 February, 26 April to 10 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
-    use sprintf/_snprintf/_snwprintf instead of wsprintf, avoiding USER32.DLL;
+    remove dependency on the CRT and USER32.DLL;
     replace bsearch (in procrva.c) with specific code;
     if the primary thread is detached exit the process;
     get real WriteFile handle before testing for console;
     use remote load on Win8+ when the process has no IAT;
-    remove dependency on the CRT;
     increase heap to 256KiB to fix logging of really long command lines;
     default to 7 or -7 if ANSICON_DEF could not be parsed;
     scrolling will use the default attribute for new lines;
