@@ -19,12 +19,10 @@
 # 18 July, 2013:
 #   hide the commands (use V=1 to show them).
 #
-# 30 April, 2018:
-#   use undocumented rc option /s to remove its logo;
-#   use a batch rule (even if this project is too small to make a difference).
-#
-# 8 May, 2018:
-#   rc /s only removes the logo as a side-effect; use /nologo when available.
+# 30 April, 8 to 11 May 2018:
+#   use a batch rule (even if this project is too small to make a difference);
+#   add /nologo to RFLAGS if rc supports it;
+#   explicitly link the exe with MSVCRT.DLL.
 
 #BITS = 32
 #BITS = 64
@@ -48,29 +46,27 @@ DIR = x64
 !ENDIF
 
 # Disable security checks, but VC6 & 7 don't have /GS-.
-!IF "$(_NMAKE_VER)" == "7.00.8882" && $(BITS) == 32
-NOSECCHK =
-RFLAGS =
-# The 2003 Toolkit doesn't have MSVCRT.LIB, but VC98 does.
-!IF !DEFINED(SHARE) && !DEFINED(MSVCDIR)
-SHARE =
-!ENDIF
-!ELSE
+!IF "$(_NMAKE_VER)" != "7.00.8882" || $(BITS) == 64
 NOSECCHK = /GS-
 !ENDIF
 
 # 2008 (SDK v6) and earlier rc do not have /nologo.
-!IF [cmd /d /c exit /b $(_NMAKE_VER)] <= 9
+!IF [cmd /d /c exit $(_NMAKE_VER)] <= 9
 RFLAGS =
 !ENDIF
 
 # Link with MSVCRT.LIB by default.
 !IFNDEF SHARE
 SHARE = /MD
+CRT = $(DIR)\acrt.lib
+LINK = /entry:main /nod
+# The 2003 Toolkit has chkstk in libc, but the rest have it as itself.
+!IF "$(_NMAKE_VER)" == "7.00.8882" && $(BITS) == 32 && !DEFINED(MSVCDIR)
+LIBS = libc.lib
+!ELSE
+LIBS = chkstk.obj
 !ENDIF
-
-# Manifest tool to embed the manifest required by 2008.
-MT = mt.exe
+!ENDIF
 
 !IFNDEF RFLAGS
 RFLAGS = /nologo
@@ -79,10 +75,10 @@ RFLAGS = /nologo
 RFLAGS = $(RFLAGS) /D_WIN64
 !ENDIF
 CFLAGS = /nologo /W3 /O2 $(NOSECCHK) /D_CRT_SECURE_NO_WARNINGS
-LIBS = kernel32.lib advapi32.lib
+LIBS = $(LIBS) kernel32.lib advapi32.lib
 
 # Identify ansicon.exe using "ANSI" as a version number.
-LINK = /link /version:20033.18771
+LINK = /link /version:20033.18771 $(LINK) /fixed
 
 X86OBJS = x86\injdll.obj x86\procrva.obj x86\proctype.obj x86\util.obj
 X64OBJS = x64\injdll.obj x64\procrva.obj x64\proctype.obj x64\util.obj
@@ -95,7 +91,6 @@ V = 0
 CCmsg = @
 RCmsg = @echo $<&
 LDmsg = @echo $@&
-MTmsg = @echo Embedding manifest&
 !ENDIF
 
 {}.c{$(DIR)}.obj::
@@ -113,29 +108,28 @@ ansicon64: x64 x64\ANSI64.dll x64\ansicon.exe
 x86:
 	mkdir x86
 
-x86\ansicon.exe: x86\ansicon.obj x86\ansi32.lib x86\ansicon.res
+x86\ansicon.exe: x86\ansicon.obj x86\ansi32.lib $(CRT) x86\ansicon.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) $(LINK) /filealign:512
 !IF "$(_NMAKE_VER)" == "9.00.30729.01"
-	$(MTmsg)$(MT) /nologo -manifest $@.manifest -outputresource:$@;1
 	@del $@.manifest
 !ENDIF
 
 x86\ANSI32.dll: x86\ANSI.obj $(X86OBJS) x86\ansi.res
-	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** $(LIBS) /link \
+	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** kernel32.lib /link \
 		      /base:0xAC0000 /entry:DllMain /filealign:512
 
 x64:
 	mkdir x64
 
-x64\ansicon.exe: x64\ansicon.obj x64\ansi64.lib x64\ansicon.res
+x64\ansicon.exe: x64\ansicon.obj x64\ansi64.lib $(CRT) x64\ansicon.res
 	$(LDmsg)$(CC) /nologo $(SHARE) /Fe$@ $** $(LIBS) $(LINK)
 
 x64\ANSI64.dll: x64\ANSI.obj $(X64OBJS) x64\ansi.res
-	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** $(LIBS) /link \
+	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** kernel32.lib /link \
 		      /base:0xAC000000 /entry:DllMain
 
 x64\ANSI32.dll: x64\ANSI32.obj $(X6432OBJS) x86\ansi.res
-	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** $(LIBS) /link \
+	$(LDmsg)$(CC) /nologo /LD /Fe$@ $** kernel32.lib /link \
 		      /base:0xAC0000 /entry:DllMain /filealign:512 \
 		      /largeaddressaware
 
@@ -156,6 +150,12 @@ x64\ANSI32.obj: ANSI.c
 
 x64\proctype32.obj: proctype.c
 	$(CCmsg)$(CC) /DW32ON64 /c $(CFLAGS) /Fo$@ $?
+
+x86\acrt.lib: acrt.def
+	$(LDmsg)link /lib /nologo /def:acrt.def /machine:ix86 /name:msvcrt /out:$@
+
+x64\acrt.lib: acrt.def
+	$(LDmsg)link /lib /nologo /def:acrt.def /machine:amd64 /name:msvcrt /out:$@
 
 clean:
 	-del $(DIR)\*.obj $(DIR)\*.res $(DIR)\*.lib $(DIR)\*.exp

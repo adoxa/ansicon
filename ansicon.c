@@ -433,14 +433,12 @@ arg_out:
   {
     if (*cmd == '\0')
     {
-      if (GetEnvironmentVariable( L"ComSpec", arg, MAX_PATH ))
-	cmd = arg;
-      else
+      if (!GetEnvironmentVariable( L"ComSpec", arg, MAX_PATH ))
       {
 	// CreateProcessW writes to the string, so can't simply point to "cmd".
-	static TCHAR cmdstr[] = L"cmd";
-	cmd = cmdstr;
+	wcscpy( arg, L"cmd" );
       }
+      cmd = arg;
     }
 
     ZeroMemory( &si, sizeof(si) );
