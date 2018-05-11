@@ -14,11 +14,14 @@
 #   work with 32-bit only, 64-bit only or multilib compilers;
 #   hide the commands (use V=1 to show them).
 #
+# 11 May, 2018:
+#   update for the 1.84 changes.
+#
 # Tested with:
-# * MinGW/gcc 4.7.2;
-# * tdm-gcc-4.8.1-3;
-# * tdm64-gcc-4.8.1-3;
-# * MinGW-builds x64-4.8.1-release-posix-seh-rev1.
+# * MinGW/gcc 6.3.0;
+# * tdm-gcc-5.1.0-3;
+# * tdm64-gcc-5.1.0-2;
+# * MSYS2/gcc 7.3.0.
 
 CC ?= gcc
 ifeq ($(origin CC),default)
@@ -54,8 +57,9 @@ endif
 endif
 endif
 
-X86OBJS = x86/injdll.o x86/proctype.o x86/util.o
-X64OBJS = x64/injdll.o x64/proctype.o x64/util.o x64/procrva.o
+X86OBJS = x86/injdll.o x86/procrva.o x86/proctype.o x86/util.o
+X64OBJS = x64/injdll.o x64/procrva.o x64/proctype.o x64/util.o
+X6432OBJS = x86/injdll.o x86/procrva.o x64/proctype32.o x86/util.o
 
 # Determine the appropriate separator to run multiple commands - ";" for sh.exe
 # and "&" for CMD.EXE.  $(SHELL) is initially defined to "sh.exe" - if it
@@ -95,31 +99,33 @@ else
 all: ansicon$(ARCH)
 endif
 
-ansicon32: x86 x86/ansicon.exe x86/ANSI32.dll x64 x64/ANSI32.dll
+ansicon32: x86 x86/ANSI32.dll x86/ansicon.exe x64 x64/ANSI32.dll
 
-ansicon64: x64 x64/ansicon.exe x64/ANSI64.dll
+ansicon64: x64 x64/ANSI64.dll x64/ansicon.exe
 
 x86:
 	mkdir x86
 
-x86/ansicon.exe: x86/ansicon.o $(X86OBJS) x86/procrva.o x86/ansiconv.o
+x86/ansicon.exe: x86/ansicon.o x86/ANSI32.dll x86/ansiconv.o
 	$(LDmsg)$(CC) -m32 $+ -s -o $@ $(IVER)
 
 x86/ANSI32.dll: x86/ANSI.o $(X86OBJS) x86/ansiv.o
-	$(LDmsg)$(CC) -m32 $+ -lwinmm -s -o $@ -mdll -Wl,-shared,--image-base,0xAC0000
+	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -nostdlib -lkernel32 -lntdll \
+		      -Wl,-shared,--image-base,0xAC0000,-e,_DllMain@12
 
 x64:
 	mkdir x64
 
-x64/ansicon.exe: x64/ansicon.o $(X64OBJS) x64/ansiconv.o
+x64/ansicon.exe: x64/ansicon.o x64/ANSI64.dll x64/ansiconv.o
 	$(LDmsg)$(CC) -m64 $+ -s -o $@ $(IVER)
 
 x64/ANSI64.dll: x64/ANSI.o $(X64OBJS) x64/ansiv.o
-	$(LDmsg)$(CC) -m64 $+ -lwinmm -s -o $@ -mdll -Wl,-shared,--image-base,0xAC000000
+	$(LDmsg)$(CC) -m64 $+ -s -o $@ -mdll -nostdlib -lkernel32 -lntdll \
+		      -Wl,-shared,--image-base,0xAC000000,-e,DllMain
 
-x64/ANSI32.dll: x64/ANSI32.o x64/proctype32.o x86/injdll.o x86/util.o x86/ansiv.o
-	$(LDmsg)$(CC) -m32 $+ -lwinmm -s -o $@ -mdll \
-		      -Wl,-shared,--image-base,0xAC0000,--large-address-aware
+x64/ANSI32.dll: x64/ANSI32.o $(X6432OBJS) x86/ansiv.o
+	$(LDmsg)$(CC) -m32 $+ -s -o $@ -mdll -nostdlib -lkernel32 -lntdll \
+		      -Wl,-shared,--image-base,0xAC0000,-e,_DllMain@12,--large-address-aware
 
 x86/ansicon.o:	version.h
 x86/ANSI.o:	version.h

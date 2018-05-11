@@ -123,12 +123,14 @@ EXTERN int  log_level;
 EXTERN void DEBUGSTR( int level, LPCSTR szFormat, ... );
 
 // Replacements for C runtime functions.
+#ifdef _MSC_VER
 #undef RtlFillMemory
 #undef RtlMoveMemory
 #undef RtlZeroMemory
 void WINAPI RtlFillMemory( PVOID, SIZE_T, BYTE );
 void WINAPI RtlMoveMemory( PVOID, const VOID*, SIZE_T );
 void WINAPI RtlZeroMemory( PVOID, SIZE_T );
+#endif
 
 #define arrcpy( dst, src ) RtlMoveMemory( dst, src, sizeof(dst) )
 
