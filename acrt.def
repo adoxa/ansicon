@@ -1,6 +1,7 @@
 EXPORTS
 __iob_func
 _fileno
+_get_osfhandle
 _iob
 _isatty
 _setmode

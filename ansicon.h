@@ -89,6 +89,7 @@ typedef struct IMAGE_COR20_HEADER
 #define EXTERN __declspec(dllexport) extern
 #endif
 
+EXTERN BOOL IsConsoleHandle( HANDLE );
 EXTERN int ProcessType( LPPROCESS_INFORMATION, PBYTE*, BOOL* );
 BOOL   Wow64Process( HANDLE );
 

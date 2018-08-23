@@ -92,6 +92,9 @@
 
   v1.84, 7 May, 2018:
     import the DLL.
+
+  v1.85, 22 August, 2018:
+    use IsConsoleHandle for my_fputws, to distinguish NUL.
 */
 
 #define PDATE L"22 August, 2018"
@@ -140,7 +143,7 @@ static HANDLE hConOut;
 // heck, DIY.
 int my_fputws( const wchar_t* s, FILE* f )
 {
-  if (_isatty( _fileno( f ) ))
+  if (IsConsoleHandle( (HANDLE)_get_osfhandle( _fileno( f ) ) ))
   {
     DWORD written;
     WriteConsole( hConOut, s, (DWORD)wcslen( s ), &written, NULL );
