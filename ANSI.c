@@ -210,9 +210,10 @@
     scrolling will use the default attribute for new lines;
     workaround Windows 10 1803 console bug.
 
-  v1.85, 22 August, 2018:
+  v1.85, 22 & 23 August, 2018:
     fix creating the wrap buffer;
-    always inject from ansicon.exe, even if it's GUI or excluded.
+    always inject from ansicon.exe, even if it's GUI or excluded;
+    log CreateFile calls.
 */
 
 #include "ansicon.h"
@@ -3614,6 +3615,55 @@ WINAPI MyFreeLibrary( HMODULE hModule )
 // Add GENERIC_READ access to enable retrieving console info.
 //-----------------------------------------------------------------------------
 
+static void log_CreateFile( HANDLE h, LPCVOID name, BOOL wide, DWORD access,
+			    DWORD dwDesiredAccess, DWORD dwCreationDisposition )
+{
+  DWORD err = GetLastError();
+
+  static char log[] = "CreateFile%s: %*s, %s, %s, %\"s";
+  LPCSTR acc, op;
+  char state[32];
+  int  len;
+
+  if (access != dwDesiredAccess)
+    acc = "w->r/w";
+  else if (access == (GENERIC_READ | GENERIC_WRITE) ||
+	   (access & (FILE_READ_DATA | FILE_WRITE_DATA)) == (FILE_READ_DATA |
+							     FILE_WRITE_DATA))
+    acc = "r/w";
+  else if (access == GENERIC_WRITE ||
+	   access & (FILE_WRITE_DATA | FILE_APPEND_DATA))
+    acc = "write";
+  else if (access == GENERIC_READ ||
+	   access & FILE_READ_DATA)
+    acc = "read";
+  else
+    acc = "access";
+
+  switch (dwCreationDisposition)
+  {
+    case CREATE_ALWAYS:     op = "create";   break;
+    case CREATE_NEW:	    op = "new";      break;
+    case OPEN_ALWAYS:	    op = "open";     break;
+    case OPEN_EXISTING:     op = "existing"; break;
+    case TRUNCATE_EXISTING: op = "truncate"; break;
+    default:		    op = "unknown";  break;
+  }
+
+  if (h == INVALID_HANDLE_VALUE)
+    len = ac_sprintf( state, "failed (%u)", err );
+  else
+  {
+    state[0] = 'o';
+    state[1] = 'k';
+    len = 2;
+  }
+  log[sizeof(log) - 2] = wide ? 'S' : 's';
+  DEBUGSTR( 1, log, wide ? "W" : "A", len, state, op, acc, name );
+
+  SetLastError( err );
+}
+
 HANDLE
 WINAPI MyCreateFileA( LPCSTR lpFileName, DWORD dwDesiredAccess,
 		      DWORD dwShareMode,
@@ -3621,6 +3671,10 @@ WINAPI MyCreateFileA( LPCSTR lpFileName, DWORD dwDesiredAccess,
 		      DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes,
 		      HANDLE hTemplateFile )
 {
+  LPCSTR name = lpFileName;
+  DWORD access = dwDesiredAccess;
+  HANDLE h;
+
   if (dwDesiredAccess == GENERIC_WRITE)
   {
     PDWORD con = (PDWORD)lpFileName;
@@ -3631,9 +3685,13 @@ WINAPI MyCreateFileA( LPCSTR lpFileName, DWORD dwDesiredAccess,
       dwDesiredAccess |= GENERIC_READ;
     }
   }
-  return CreateFileA( lpFileName, dwDesiredAccess, dwShareMode,
-		      lpSecurityAttributes, dwCreationDisposition,
-		      dwFlagsAndAttributes, hTemplateFile );
+  h = CreateFileA( lpFileName, dwDesiredAccess, dwShareMode,
+		   lpSecurityAttributes, dwCreationDisposition,
+		   dwFlagsAndAttributes, hTemplateFile );
+  if (log_level & 32)
+    log_CreateFile( h, name, FALSE, access,
+		    dwDesiredAccess, dwCreationDisposition );
+  return h;
 }
 
 HANDLE
@@ -3643,6 +3701,10 @@ WINAPI MyCreateFileW( LPCWSTR lpFileName, DWORD dwDesiredAccess,
 		      DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes,
 		      HANDLE hTemplateFile )
 {
+  LPCWSTR name = lpFileName;
+  DWORD access = dwDesiredAccess;
+  HANDLE h;
+
   if (dwDesiredAccess == GENERIC_WRITE)
   {
 #ifdef _WIN64
@@ -3662,9 +3724,13 @@ WINAPI MyCreateFileW( LPCWSTR lpFileName, DWORD dwDesiredAccess,
       dwDesiredAccess |= GENERIC_READ;
     }
   }
-  return CreateFileW( lpFileName, dwDesiredAccess, dwShareMode,
-		      lpSecurityAttributes, dwCreationDisposition,
-		      dwFlagsAndAttributes, hTemplateFile );
+  h = CreateFileW( lpFileName, dwDesiredAccess, dwShareMode,
+		   lpSecurityAttributes, dwCreationDisposition,
+		   dwFlagsAndAttributes, hTemplateFile );
+  if (log_level & 32)
+    log_CreateFile( h, name, TRUE, access,
+		    dwDesiredAccess, dwCreationDisposition );
+  return h;
 }
 
 HANDLE

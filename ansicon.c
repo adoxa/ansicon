@@ -93,12 +93,13 @@
   v1.84, 7 May, 2018:
     import the DLL.
 
-  v1.85, 22 August, 2018:
+  v1.85, 22 & 23 August, 2018:
     use IsConsoleHandle for my_fputws, to distinguish NUL;
-    don't load into the parent if already loaded.
+    don't load into the parent if already loaded;
+    add log level 32 to log CreateFile.
 */
 
-#define PDATE L"22 August, 2018"
+#define PDATE L"23 August, 2018"
 
 #include "ansicon.h"
 #include "version.h"
@@ -870,25 +871,25 @@ L"http://ansicon.adoxa.vze.com/\n"
 L"\n"
 L"Process ANSI escape sequences in " WINTYPE L" console programs.\n"
 L"\n"
-L"ansicon [-l<level>] [-i] [-I] [-u] [-U] [-m[<attr>]] [-p[u]]\n"
-L"        [-e|E string | -t|T [file(s)] | program [args]]\n"
+L"ansicon [-lLEVEL] [-i] [-I] [-u] [-U] [-m[ATTR]] [-p[u]]\n"
+L"        [-e|E STRING | -t|T [FILE...] | PROGRAM [ARGS]]\n"
 L"\n"
 L"  -l\t\tset the logging level (1=process, 2=module, 3=function,\n"
-L"    \t\t +4=output, +8=append) for program (-p is unaffected)\n"
+L"    \t\t +4=output, +8=append, +16=imports, +32=files) for PROGRAM\n"
 L"  -i\t\tinstall - add ANSICON to CMD's AutoRun entry (also implies -p)\n"
 L"  -u\t\tuninstall - remove ANSICON from the AutoRun entry\n"
 L"  -I -U\t\tuse local machine instead of current user\n"
-L"  -m\t\tuse grey on black (\"monochrome\") or <attr> as default color\n"
+L"  -m\t\tuse grey on black (\"monochrome\") or ATTR as default color\n"
 L"  -p\t\thook into the parent process\n"
 L"  -pu\t\tunhook from the parent process\n"
-L"  -e\t\techo string\n"
-L"  -E\t\techo string, don't append newline\n"
+L"  -e\t\techo STRING\n"
+L"  -E\t\techo STRING, don't append newline\n"
 L"  -t\t\tdisplay files (\"-\" for stdin), combined as a single stream\n"
 L"  -T\t\tdisplay files, name first, blank line before and after\n"
-L"  program\trun the specified program\n"
+L"  PROGRAM\trun the specified program\n"
 L"  nothing\trun a new command processor, or display stdin if redirected\n"
 L"\n"
-L"<attr> is one or two hexadecimal digits; please use \"COLOR /?\" for details.\n"
+L"ATTR is one or two hexadecimal digits; please use \"COLOR /?\" for details.\n"
 L"It may start with '-' to reverse foreground and background (but not for -p)."
 	);
 }

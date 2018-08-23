@@ -102,6 +102,7 @@ Usage
 	4	Log console output (add to any of the above)
 	8	Append to the existing file (add to any of the above)
        16	Log all imported modules (add to any of the above)
+       32	Log CreateFile (add to any of the above)
 
     The log option will not work with '-p'; set the environment variable
     ANSICON_LOG (to the number) instead.  The variable is only read once when a
@@ -339,11 +340,12 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
-    1.85 - 22 August, 2018:
+    1.85 - 23 August, 2018:
     - fix wrap issues with a buffer bigger than the window;
     - fix -e et al when redirecting to NUL;
     - prevent -p from injecting when already injected;
-    - fix running directly via ansicon (hook even if it's GUI or excluded).
+    - fix running directly via ansicon (hook even if it's GUI or excluded);
+    + add log level 32 to monitor CreateFile.
 
     1.84 - 11 May, 2018:
     - close the flush handles on detach;
@@ -634,4 +636,4 @@ Distribution
 
 
 ============================
-Jason Hood, 22 August, 2018.
+Jason Hood, 23 August, 2018.
