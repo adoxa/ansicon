@@ -94,7 +94,8 @@
     import the DLL.
 
   v1.85, 22 August, 2018:
-    use IsConsoleHandle for my_fputws, to distinguish NUL.
+    use IsConsoleHandle for my_fputws, to distinguish NUL;
+    don't load into the parent if already loaded.
 */
 
 #define PDATE L"22 August, 2018"
@@ -219,10 +220,10 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app, BOOL unload )
     if (_wcsicmp( me.szModule, L"kernel32.dll" ) == 0)
     {
       proc = me.modBaseAddr;
-      if (!unload || param)
+      if (param)
 	break;
     }
-    else if (unload)
+    else
     {
 #ifdef _WIN64
       if (_wcsicmp( me.szModule, DllNameType - 4 ) == 0)
@@ -245,6 +246,11 @@ void RemoteLoad( LPPROCESS_INFORMATION ppi, LPCTSTR app, BOOL unload )
   if (unload && param == NULL)
   {
     DEBUGSTR( 1, "  Unable to locate ANSICON's DLL" );
+    return;
+  }
+  else if (!unload && param != NULL)
+  {
+    DEBUGSTR( 1, "  ANSICON already loaded" );
     return;
   }
 
