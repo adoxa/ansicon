@@ -345,6 +345,7 @@ Version History
     - fix -e et al when redirecting to NUL;
     - prevent -p from injecting when already injected;
     - fix running directly via ansicon (hook even if it's GUI or excluded);
+    - preserve last error;
     + add log level 32 to monitor CreateFile.
 
     1.84 - 11 May, 2018:

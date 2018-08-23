@@ -213,7 +213,8 @@
   v1.85, 22 & 23 August, 2018:
     fix creating the wrap buffer;
     always inject from ansicon.exe, even if it's GUI or excluded;
-    log CreateFile calls.
+    log CreateFile calls;
+    preserve last error.
 */
 
 #include "ansicon.h"
@@ -3113,7 +3114,9 @@ BOOL WINAPI MyCreateProcessA( LPCSTR lpApplicationName,
 		       lpStartupInfo,
 		       &child_pi ))
   {
-    DEBUGSTR( 1, "  Failed (%u)", GetLastError() );
+    DWORD err = GetLastError();
+    DEBUGSTR( 1, "  Failed (%u)", err );
+    SetLastError( err );
     return FALSE;
   }
 
@@ -3151,7 +3154,9 @@ BOOL WINAPI MyCreateProcessW( LPCWSTR lpApplicationName,
 		       lpStartupInfo,
 		       &child_pi ))
   {
-    DEBUGSTR( 1, "  Failed (%u)", GetLastError() );
+    DWORD err = GetLastError();
+    DEBUGSTR( 1, "  Failed (%u)", err );
+    SetLastError( err );
     return FALSE;
   }
 
@@ -3222,8 +3227,10 @@ FARPROC WINAPI MyGetProcAddress( HMODULE hModule, LPCSTR lpProcName )
 HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryA( lpFileName );
-  DEBUGSTR( 2, "LoadLibraryA %s", lpFileName );
+  DWORD err = GetLastError();
+  DEBUGSTR( 2, "LoadLibraryA %\"s", lpFileName );
   HookAPIAllMod( Hooks, FALSE, TRUE );
+  SetLastError( err );
   return hMod;
 }
 
@@ -3231,8 +3238,10 @@ HMODULE WINAPI MyLoadLibraryA( LPCSTR lpFileName )
 HMODULE WINAPI MyLoadLibraryW( LPCWSTR lpFileName )
 {
   HMODULE hMod = LoadLibraryW( lpFileName );
-  DEBUGSTR( 2, "LoadLibraryW %S", lpFileName );
+  DWORD err = GetLastError();
+  DEBUGSTR( 2, "LoadLibraryW %\"S", lpFileName );
   HookAPIAllMod( Hooks, FALSE, TRUE );
+  SetLastError( err );
   return hMod;
 }
 
@@ -3245,8 +3254,10 @@ HMODULE WINAPI MyLoadLibraryExA( LPCSTR lpFileName, HANDLE hFile,
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
   {
-    DEBUGSTR( 2, "LoadLibraryExA %s", lpFileName );
+    DWORD err = GetLastError();
+    DEBUGSTR( 2, "LoadLibraryExA %\"s", lpFileName );
     HookAPIAllMod( Hooks, FALSE, TRUE );
+    SetLastError( err );
   }
   return hMod;
 }
@@ -3260,8 +3271,10 @@ HMODULE WINAPI MyLoadLibraryExW( LPCWSTR lpFileName, HANDLE hFile,
 		   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE |
 		   LOAD_LIBRARY_AS_IMAGE_RESOURCE)))
   {
-    DEBUGSTR( 2, "LoadLibraryExW %S", lpFileName );
+    DWORD err = GetLastError();
+    DEBUGSTR( 2, "LoadLibraryExW %\"S", lpFileName );
     HookAPIAllMod( Hooks, FALSE, TRUE );
+    SetLastError( err );
   }
   return hMod;
 }
