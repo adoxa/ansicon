@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2018 Jason Hood
 
-			    Version 1.84.  Freeware
+			    Version 1.85.  Freeware
 
 
 Description
@@ -339,6 +339,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.85 - 22 August, 2018:
+    - fix wrap issues with a buffer bigger than the window.
+
     1.84 - 11 May, 2018:
     - close the flush handles on detach;
     - WriteFile wasn't properly testing if its handle was for a console;
@@ -601,6 +604,7 @@ Acknowledgments
 
     Vincent Fatica for pointing out \e[K was not right.
     Nat Kuhn for pointing out the problem with report cursor position.
+    Michel Kempeneers for discovering the buffer wrap issue.
 
     Thiadmer Riemersma for the nearest color algorithm.
 
@@ -625,5 +629,5 @@ Distribution
     in LICENSE.txt.
 
 
-=========================
-Jason Hood, 11 May, 2018.
+============================
+Jason Hood, 22 August, 2018.

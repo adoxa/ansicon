@@ -197,7 +197,7 @@
   v1.83, 16 February, 2018:
     create the flush thread on first use.
 
-  v1.84-wip, 17 February, 26 April to 10 May, 2018:
+  v1.84, 17 February, 26 April to 10 May, 2018:
     close the flush handles on detach;
     dynamically load WINMM.DLL;
     remove dependency on the CRT and USER32.DLL;
@@ -209,6 +209,9 @@
     default to 7 or -7 if ANSICON_DEF could not be parsed;
     scrolling will use the default attribute for new lines;
     workaround Windows 10 1803 console bug.
+
+  v1.85, 22 August, 2018:
+    fix creating the wrap buffer.
 */
 
 #include "ansicon.h"
@@ -757,12 +760,14 @@ void FlushBuffer( void )
       // Ensure the buffer is the same width (it gets created using the window
       // width) and contains sufficient lines.
       GetConsoleScreenBufferInfo( hConOut, &Info );
-      if (WIN.Right - WIN.Left + 1 != WIDTH ||
-	  BOTTOM - TOP < 2 * nCharInBuffer / WIDTH)
-      {
-	HEIGHT = 2 * nCharInBuffer / WIDTH + 1;
-	SetConsoleScreenBufferSize( hConWrap, Info.dwSize );
-      }
+      wi.dwSize.X = WIDTH;
+      wi.dwSize.Y = 0;
+      if (WIN.Right - WIN.Left + 1 != WIDTH)
+	wi.dwSize.Y = BOTTOM - TOP + 1;
+      if (BOTTOM - TOP < 2 * nCharInBuffer / WIDTH)
+	wi.dwSize.Y = 2 * nCharInBuffer / WIDTH + 1;
+      if (wi.dwSize.Y)
+	SetConsoleScreenBufferSize( hConWrap, wi.dwSize );
       // Put the cursor on the top line, in the same column.
       wi.CURPOS.X = CUR.X;
       wi.CURPOS.Y = 0;
