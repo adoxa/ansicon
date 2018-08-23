@@ -342,7 +342,8 @@ Version History
     1.85 - 22 August, 2018:
     - fix wrap issues with a buffer bigger than the window;
     - fix -e et al when redirecting to NUL;
-    - prevent -p from injecting when already injected.
+    - prevent -p from injecting when already injected;
+    - fix running directly via ansicon (hook even if it's GUI or excluded).
 
     1.84 - 11 May, 2018:
     - close the flush handles on detach;

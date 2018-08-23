@@ -211,7 +211,8 @@
     workaround Windows 10 1803 console bug.
 
   v1.85, 22 August, 2018:
-    fix creating the wrap buffer.
+    fix creating the wrap buffer;
+    always inject from ansicon.exe, even if it's GUI or excluded.
 */
 
 #include "ansicon.h"
@@ -236,6 +237,7 @@ DWORD	orgmode;		// original mode
 CONSOLE_CURSOR_INFO orgcci;	// original cursor state
 HANDLE	hHeap;			// local memory heap
 HANDLE	hBell, hFlush;
+BOOL	ansicon;		// are we in ansicon.exe?
 
 #define CACHE	5
 struct Cache
@@ -3003,7 +3005,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
 
   name = get_program( app, child_pi->hProcess, wide, lpApp, lpCmd );
   DEBUGSTR( 1, "%S (%u)", name, child_pi->dwProcessId );
-  if (search_env( L"ANSICON_EXC", name ))
+  if (!ansicon && search_env( L"ANSICON_EXC", name ))
   {
     DEBUGSTR( 1, "  Excluded" );
     type = 0;
@@ -3011,7 +3013,7 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   else
   {
     type = ProcessType( child_pi, &base, &gui );
-    if (gui && type > 0)
+    if (!ansicon && gui && type > 0)
     {
       if (!search_env( L"ANSICON_GUI", name ))
       {
@@ -3927,6 +3929,7 @@ void OriginalAttr( PVOID lpReserved )
   else
   {
     // We also want to restore the original attributes for ansicon.exe.
+    ansicon =
     org = (pNTHeader->OptionalHeader.MajorImageVersion == 20033 && // 'AN'
 	   pNTHeader->OptionalHeader.MinorImageVersion == 18771);  // 'SI'
   }
