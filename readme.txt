@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2018 Jason Hood
 
-			    Version 1.85.  Freeware
+			    Version 1.86.  Freeware
 
 
 Description
@@ -340,6 +340,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.86 - 4 November, 2018:
+    - check the DLL exists before importing it (allows renaming to update);
+    - unhook on terminate, as well (fixes issues with Vista and MinGW).
+
     1.85 - 23 August, 2018:
     - fix wrap issues with a buffer bigger than the window;
     - fix -e et al when redirecting to NUL;
@@ -636,5 +640,5 @@ Distribution
     in LICENSE.txt.
 
 
-============================
-Jason Hood, 23 August, 2018.
+=============================
+Jason Hood, 4 November, 2018.

@@ -215,6 +215,10 @@
     always inject from ansicon.exe, even if it's GUI or excluded;
     log CreateFile calls;
     preserve last error.
+
+  v1.86, 4 November, 2018:
+    always unhook, even on terminate;
+    check the DLL still exists before adding to imports.
 */
 
 #include "ansicon.h"
@@ -3026,6 +3030,17 @@ void Inject( DWORD dwCreationFlags, LPPROCESS_INFORMATION lpi,
   }
   if (type > 0)
   {
+#if defined(_WIN64) || defined(W32ON64)
+    if (type == 32)
+      *(PDWORD)DllNameType = 0x320033/*L'23'*/;
+    else
+      *(PDWORD)DllNameType = 0x340036/*L'46'*/;
+#endif
+    if (GetFileAttributes( DllName ) == INVALID_FILE_ATTRIBUTES)
+      type = 0;
+  }
+  if (type > 0)
+  {
 #ifdef _WIN64
     if (type == 64)
     {
@@ -4122,7 +4137,6 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     if (lpReserved == NULL)
     {
       DEBUGSTR( 1, "Unloading" );
-      HookAPIAllMod( Hooks, TRUE, FALSE );
       if (winmm != NULL)
 	FreeLibrary( winmm );
     }
@@ -4130,6 +4144,7 @@ BOOL WINAPI DllMain( HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved )
     {
       DEBUGSTR( 1, "Terminating" );
     }
+    HookAPIAllMod( Hooks, TRUE, FALSE );
     if (orgattr != 0)
     {
       hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,

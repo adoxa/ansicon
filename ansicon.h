@@ -23,6 +23,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef INVALID_FILE_ATTRIBUTES
+#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
+#endif
 #ifndef LOAD_LIBRARY_AS_IMAGE_RESOURCE
 #define LOAD_LIBRARY_AS_IMAGE_RESOURCE 0x20
 #endif
