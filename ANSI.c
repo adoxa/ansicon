@@ -219,6 +219,10 @@
   v1.86, 4 November, 2018:
     always unhook, even on terminate;
     check the DLL still exists before adding to imports.
+
+  v1.87, 3 February, 2019:
+    some hooked functions are not imported, so myimport wasn't set;
+    add missing SetCurrentConsoleFontEx to list of hooks.
 */
 
 #include "ansicon.h"
@@ -2802,6 +2806,10 @@ BOOL HookAPIOneMod(
 	    hook->myimport = &pThunk->u1.Function;
 	    DEBUGSTR( 3, "  %s%s", sp, hook->name );
 	  }
+	  else if (hook->myimport == 0)
+	  {
+	    patch = hook->newfunc;
+	  }
 	  else
 	  {
 	    // Don't hook if our import already points to the module being
@@ -3979,6 +3987,7 @@ HookFn Hooks[] = {
   HOOK( APIConsole,	       SetConsoleScreenBufferSize ),
   HOOK( APIConsole,	       SetConsoleTextAttribute ),
   HOOK( APIConsole,	       SetConsoleWindowInfo ),
+  HOOK( APIConsole,	       SetCurrentConsoleFontEx ),
   HOOK( APIConsole,	       WriteConsoleOutputA ),
   HOOK( APIConsole,	       WriteConsoleOutputW ),
   HOOK( APIConsole,	       WriteConsoleOutputAttribute ),

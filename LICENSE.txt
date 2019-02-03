@@ -1,4 +1,4 @@
-Copyright (C) 2005-2018 Jason Hood
+Copyright (C) 2005-2019 Jason Hood
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the author be held liable for any damages

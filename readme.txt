@@ -1,9 +1,9 @@
 
 				    ANSICON
 
-			 Copyright 2005-2018 Jason Hood
+			 Copyright 2005-2019 Jason Hood
 
-			    Version 1.86.  Freeware
+			    Version 1.87.  Freeware
 
 
 Description
@@ -340,6 +340,10 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.87 - 3 February, 2019:
+    - fix crash when some programs start (bug during hooking);
+    - properly hook SetCurrentConsoleFontEx.
+
     1.86 - 4 November, 2018:
     - check the DLL exists before importing it (allows renaming to update);
     - unhook on terminate, as well (fixes issues with Vista and MinGW).
@@ -641,4 +645,4 @@ Distribution
 
 
 =============================
-Jason Hood, 4 November, 2018.
+Jason Hood, 3 February, 2019.

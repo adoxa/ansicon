@@ -99,7 +99,7 @@
     add log level 32 to log CreateFile.
 */
 
-#define PDATE L"4 November, 2018"
+#define PDATE L"3 February, 2019"
 
 #include "ansicon.h"
 #include "version.h"
