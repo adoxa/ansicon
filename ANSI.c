@@ -223,6 +223,9 @@
   v1.87, 3 February, 2019:
     some hooked functions are not imported, so myimport wasn't set;
     add missing SetCurrentConsoleFontEx to list of hooks.
+
+  v1.88, 1 March, 2019:
+    a detached process has no console handle (fixes set_ansicon).
 */
 
 #include "ansicon.h"
@@ -3874,8 +3877,20 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
-    GetConsoleScreenBufferInfo( hConOut, &csbi );
-    CloseHandle( hConOut );
+    if (hConOut == INVALID_HANDLE_VALUE)
+    {
+      csbi.dwSize.X =
+      csbi.dwSize.Y =
+      csbi.srWindow.Left =
+      csbi.srWindow.Top =
+      csbi.srWindow.Right =
+      csbi.srWindow.Bottom = 0;
+    }
+    else
+    {
+      GetConsoleScreenBufferInfo( hConOut, &csbi );
+      CloseHandle( hConOut );
+    }
     pcsbi = &csbi;
   }
 

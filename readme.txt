@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2019 Jason Hood
 
-			    Version 1.87.  Freeware
+			    Version 1.88.  Freeware
 
 
 Description
@@ -340,6 +340,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.88 - 1 March, 2019:
+    - fix ANSICON environment variable when there is no console.
+
     1.87 - 3 February, 2019:
     - fix crash when some programs start (bug during hooking);
     - properly hook SetCurrentConsoleFontEx.
@@ -644,5 +647,5 @@ Distribution
     in LICENSE.txt.
 
 
-=============================
-Jason Hood, 3 February, 2019.
+==========================
+Jason Hood, 1 March, 2019.
