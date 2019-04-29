@@ -3,7 +3,7 @@
 
 			 Copyright 2005-2019 Jason Hood
 
-			    Version 1.88.  Freeware
+			    Version 1.89.  Freeware
 
 
 Description
@@ -340,6 +340,9 @@ Version History
 
     Legend: + added, - bug-fixed, * changed.
 
+    1.89 - 29 April, 2019:
+    - fix occasional freeze on startup (bug converting 8-digit window handle).
+
     1.88 - 1 March, 2019:
     - fix ANSICON environment variable when there is no console.
 
@@ -647,5 +650,5 @@ Distribution
     in LICENSE.txt.
 
 
-==========================
-Jason Hood, 1 March, 2019.
+===========================
+Jason Hood, 29 April, 2019.

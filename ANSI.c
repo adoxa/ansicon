@@ -226,6 +226,9 @@
 
   v1.88, 1 March, 2019:
     a detached process has no console handle (fixes set_ansicon).
+
+  v1.89, 29 April, 2019:
+    an eight-digit window handle would break my custom printf.
 */
 
 #include "ansicon.h"
