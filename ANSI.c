@@ -539,26 +539,14 @@ void get_state( void )
     csbix.cbSize = sizeof(csbix);
     if (GetConsoleScreenBufferInfoX( hConOut, &csbix ))
     {
-      Info.dwSize = csbix.dwSize;
-      ATTR = csbix.wAttributes;
-      WIN  = csbix.srWindow;
       arrcpy( pState->o_palette, csbix.ColorTable );
+      ATTR = csbix.wAttributes;
     }
     else
     {
       arrcpy( pState->o_palette, legacy_palette );
       if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
-      {
-	DEBUGSTR( 1, "Failed to get screen buffer info (%u) - assuming defaults",
-		     GetLastError() );
-	ATTR	= 7;
-	WIDTH	= 80;
-	HEIGHT	= 300;
-	WIN.Left = 0;
-	WIN.Right = 79;
-	TOP	= 0;
-	BOTTOM	= 24;
-      }
+	ATTR = 7;
     }
     arrcpy( pState->x_palette, xterm_palette );
 
@@ -578,7 +566,10 @@ void get_state( void )
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
     if (!GetConsoleScreenBufferInfo( hConOut, &Info ))
+    {
+      RtlZeroMemory( &Info, sizeof(Info) );
       ATTR = 7;
+    }
     if (pState->sgr.reverse)
     {
       *a++ = '-';
@@ -3877,20 +3868,9 @@ void set_ansicon( PCONSOLE_SCREEN_BUFFER_INFO pcsbi )
     hConOut = CreateFile( L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 				      FILE_SHARE_READ | FILE_SHARE_WRITE,
 				      NULL, OPEN_EXISTING, 0, NULL );
-    if (hConOut == INVALID_HANDLE_VALUE)
-    {
-      csbi.dwSize.X =
-      csbi.dwSize.Y =
-      csbi.srWindow.Left =
-      csbi.srWindow.Top =
-      csbi.srWindow.Right =
-      csbi.srWindow.Bottom = 0;
-    }
-    else
-    {
-      GetConsoleScreenBufferInfo( hConOut, &csbi );
-      CloseHandle( hConOut );
-    }
+    if (!GetConsoleScreenBufferInfo( hConOut, &csbi ))
+      RtlZeroMemory( &csbi, sizeof(csbi) );
+    CloseHandle( hConOut );
     pcsbi = &csbi;
   }
 
