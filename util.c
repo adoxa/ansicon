@@ -593,7 +593,7 @@ int ac_sprintf( char* buf, const char* fmt, ... )
 	  }
 	  do
 	  {
-	    *buf++ = (unsigned)(num / power) % 10 + '0';
+	    *buf++ = num / power % 10 + '0';
 	    power /= 10;
 	  } while (power);
 	}
@@ -609,7 +609,7 @@ int ac_sprintf( char* buf, const char* fmt, ... )
 // * BUF is big enough;
 // * FMT is valid;
 // * width is only for X, is only 2 and the number is not bigger than that;
-// * X, d & u are 32-bit unsigned decimal, a digit less than maximum;
+// * X, d & u are 32-bit unsigned decimal;
 // * c is not output if NUL;
 // * no other type is used;
 // * return value is not used.
@@ -638,9 +638,15 @@ int ac_wprintf( wchar_t* buf, const char* fmt, ... )
       }
       else if (t == 'X')
       {
-	int bits = 4;
-	while (num >> bits)
-	  bits += 4;
+	int bits;
+	if (num & 0xF0000000)
+	  bits = 32;
+	else
+	{
+	  bits = 4;
+	  while (num >> bits)
+	    bits += 4;
+	}
 	do
 	{
 	  bits -= 4;
@@ -654,14 +660,20 @@ int ac_wprintf( wchar_t* buf, const char* fmt, ... )
       }
       else // (t == 'd' || t == 'u')
       {
-	int power = 10;
-	while (num / power)
-	  power *= 10;
+	unsigned power;
+	if (num >= 1000000000)
+	  power = 1000000000;
+	else
+	{
+	  power = 1;
+	  while (num / (power * 10))
+	    power *= 10;
+	}
 	do
 	{
+	  *buf++ = num / power % 10 + '0';
 	  power /= 10;
-	  *buf++ = (int)(num / power) % 10 + '0';
-	} while (power != 1);
+	} while (power);
       }
     }
   }
