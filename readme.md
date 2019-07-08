@@ -5,7 +5,7 @@ provides much the same functionality as `ANSI.SYS` does for MS-DOS.
 
 ## Requirements
 
-* 32-bit: Windows 2000 Professional and later (it won't work with NT or 9X).
+* 32-bit: Windows 2000 Professional and later .
 * 64-bit: AMD64 (it won't work with IA64).
 
 ## How it Works
